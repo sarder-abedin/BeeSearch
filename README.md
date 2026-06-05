@@ -203,4 +203,4 @@ researchbuddy/
 
 ## License
 
-MIT
+ GNU Affero General Public License version 3 (AGPL-3.0)
