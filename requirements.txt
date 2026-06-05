@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────
+#  ResearchBuddy — Python Dependencies
+#  Systematic Review + Research Notebook modes
+# ─────────────────────────────────────────────────────────────
+
+# ── Agentic Orchestration ────────────────────────────────────
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-community>=0.3.0
+
+# ── Local LLM via Ollama ─────────────────────────────────────
+ollama>=0.3.0
+langchain-ollama>=0.2.0
+
+# ── Document Processing ──────────────────────────────────────
+pdfplumber>=0.11.0
+python-docx>=1.1.0
+docling>=2.0.0
+opencv-python-headless>=4.8.0
+
+# ── Hybrid RAG ───────────────────────────────────────────────
+faiss-cpu>=1.8.0
+chromadb>=0.5.0
+rank-bm25>=0.2.2
+
+# ── Academic / Scientific Search ─────────────────────────────
+arxiv>=2.1.0
+requests>=2.31.0
+
+# ── Web Search ───────────────────────────────────────────────
+ddgs>=9.0.0
+
+# ── MCP ──────────────────────────────────────────────────────
+mcp>=1.0.0
+langchain-mcp-adapters>=0.1.0
+orjson>=3.10.0
+
+# ── Output & Formatting ──────────────────────────────────────
+rich>=13.0.0
+jinja2>=3.1.0
+markdown>=3.6
+
+# ── Export ───────────────────────────────────────────────────
+reportlab>=4.2.0
+pydantic-settings>=2.0.0
+
+# ── Research Notebook extras ──────────────────────────────────
+graphviz>=0.21
+pyttsx3>=2.90
+
+# ── Streamlit UI ─────────────────────────────────────────────
+streamlit>=1.37.0
+streamlit-extras>=0.4.0
+
+# ── Utilities ────────────────────────────────────────────────
+python-dotenv>=1.0.0
+pydantic>=2.7.0
+tenacity>=8.3.0
+tqdm>=4.66.0
+tiktoken>=0.7.0
+psutil>=5.9.0
+
+# ── Optional: RAGchecker (install manually if needed) ────────
+# pip install ragchecker>=0.1.9
