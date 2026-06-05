@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────────────────────────
+# ResearchBuddy — Docker Compose (CPU)
+#
+# Starts two services:
+#   ollama  — Ollama LLM server (model storage persisted in a volume)
+#   app     — Streamlit web UI (http://localhost:8501)
+#
+# Usage:
+#   docker compose up --build          # first run (builds app image)
+#   docker compose up                  # subsequent runs
+#   docker compose down                # stop and remove containers
+#
+# Pull a different model:
+#   docker compose exec ollama ollama pull mistral-nemo:12b
+#
+# ⚠️  Apple Silicon Mac (M1/M2/M3): install native Ollama from
+#     https://ollama.com/download, pull your model, then set:
+#     OLLAMA_BASE_URL=http://host.docker.internal:11434
+#     and run only the app service:
+#       docker compose up app
+#
+# For GPU support:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Ollama LLM server ──────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: researchbuddy-ollama
+    volumes:
+      # Model weights persist across restarts
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/version 2>/dev/null || wget -qO- http://localhost:11434/api/version 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ── Pull the default model on first start ──────────────────────────────
+  model-init:
+    image: ollama/ollama:latest
+    container_name: researchbuddy-model-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ollama_models:/root/.ollama
+    entrypoint: ["ollama", "pull"]
+    command: "${OLLAMA_MODEL:-llama3.2:3b}"
+    restart: "no"
+
+  # ── Streamlit web application ────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: researchbuddy-app
+    ports:
+      - "${APP_PORT:-8501}:8501"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - NUM_CTX=${NUM_CTX:-32768}
+      - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
+      - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
+    volumes:
+      # Generated outputs and session memory persist on the host
+      - ./outputs:/app/outputs
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+# ── Named volumes ────────────────────────────────────────────────────
+volumes:
+  ollama_models:
