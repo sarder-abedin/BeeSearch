@@ -202,5 +202,4 @@ researchbuddy/
 ---
 
 ## License
-
- GNU Affero General Public License version 3 (AGPL-3.0)
+Please check the LICENSE.md file.
