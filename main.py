@@ -89,6 +89,7 @@ _KNOWN_FLAGS = [
     "--notebook-compare", "--compare-docs",
     "--notebook-timeline", "--notebook-study-table",
     "--notebook-pipeline", "--pipeline-query",
+    "--no-docling", "--ocr", "--large-doc-threshold",
     "-g", "-f", "-v",
 ]
 
@@ -141,6 +142,13 @@ def _parse_args():
                         help="Embedding model for Hybrid RAG (default: nomic-embed-text)")
     parser.add_argument("--top-k", type=int, default=8,
                         help="Chunks per query for Hybrid RAG (default: 8)")
+    parser.add_argument("--no-docling", action="store_true",
+                        help="Disable Docling and always use pdfplumber for document parsing")
+    parser.add_argument("--ocr", action="store_true",
+                        help="Enable OCR when using Docling (slower but handles scanned PDFs)")
+    parser.add_argument("--large-doc-threshold", type=int, default=None,
+                        help="PDFs with more pages than this switch from Docling to pdfplumber "
+                             "(default: LARGE_DOC_PAGE_THRESHOLD from settings, usually 50)")
     parser.add_argument("-o", "--output", type=Path, default=None,
                         help="Output path for the Markdown report")
     parser.add_argument("--check-system", action="store_true",
@@ -271,10 +279,13 @@ def _parse_args():
 
     args = parser.parse_args()
 
-    # Resolve model default
+    # Resolve defaults from settings
+    from config.settings import get_settings
+    _cfg = get_settings()
     if not args.model:
-        from config.settings import get_settings
-        args.model = get_settings().ollama_model or "llama3.2:3b"
+        args.model = _cfg.ollama_model or "llama3.2:3b"
+    if args.large_doc_threshold is None:
+        args.large_doc_threshold = _cfg.large_doc_page_threshold
 
     return args
 
@@ -1076,12 +1087,15 @@ def _cmd_notebook(args) -> None:
     from config.settings import get_settings
 
     settings_cfg = get_settings()
+    _use_docling = not getattr(args, "no_docling", False)
+    _use_ocr = getattr(args, "ocr", False)
+    _large_doc_threshold = getattr(args, "large_doc_threshold", settings_cfg.large_doc_page_threshold)
     settings = {
         "model": args.model,
         "num_ctx": args.num_ctx,
         "embed_model": getattr(args, "embed_model", settings_cfg.embedding_model),
-        "chunk_size": 800,
-        "chunk_overlap": 150,
+        "chunk_size": settings_cfg.chunk_size,
+        "chunk_overlap": settings_cfg.chunk_overlap,
     }
 
     memory = NotebookMemory()
@@ -1113,7 +1127,14 @@ def _cmd_notebook(args) -> None:
     if getattr(args, "files", None):
         from tools.hybrid_store import get_or_create_store
         with console.status("[bold]Processing documents…[/bold]"):
-            processed = _process_files(list(args.files))
+            processed = _process_files(
+                list(args.files),
+                chunk_size=settings["chunk_size"],
+                overlap=settings["chunk_overlap"],
+                use_docling=_use_docling,
+                use_ocr=_use_ocr,
+                large_doc_page_threshold=_large_doc_threshold,
+            )
         if processed:
             store = get_or_create_store(
                 session_id=f"notebook_{notebook_id}",
@@ -1215,7 +1236,14 @@ def _cmd_notebook(args) -> None:
 
             elif cmd == "/add":
                 fp = Path(arg.strip()) if arg.strip() else Path(Prompt.ask("File path"))
-                docs = _process_files([fp])
+                docs = _process_files(
+                    [fp],
+                    chunk_size=settings["chunk_size"],
+                    overlap=settings["chunk_overlap"],
+                    use_docling=_use_docling,
+                    use_ocr=_use_ocr,
+                    large_doc_page_threshold=_large_doc_threshold,
+                )
                 if docs:
                     from tools.hybrid_store import get_or_create_store
                     store = get_or_create_store(
