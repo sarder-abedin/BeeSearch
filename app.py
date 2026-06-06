@@ -29,8 +29,8 @@ cfg = get_settings()
 apply_theme()
 
 _PROJECT_MODULES = {
-    "mode4": "projects.mode4_systematic_review",
-    "mode5": "projects.mode5_notebook",
+    "mode1": "projects.mode1_systematic_review",
+    "mode2": "projects.mode2_notebook",
 }
 
 

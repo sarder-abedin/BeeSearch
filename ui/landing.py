@@ -4,7 +4,7 @@ import streamlit as st
 
 _PROJECTS = [
     {
-        "id": "mode4",
+        "id": "mode1",
         "label": "01",
         "name": "Systematic Literature Review",
         "description": (
@@ -20,7 +20,7 @@ _PROJECTS = [
         ],
     },
     {
-        "id": "mode5",
+        "id": "mode2",
         "label": "02",
         "name": "Research Notebook",
         "description": (

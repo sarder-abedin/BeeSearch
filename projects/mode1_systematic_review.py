@@ -1,4 +1,4 @@
-"""projects/mode1_systematic_review.py — Mode 1: Systematic Review."""
+"""projects/mode1_systematic_review.py — Mode 1: Systematic Literature Review."""
 from __future__ import annotations
 
 
