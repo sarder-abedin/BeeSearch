@@ -2,6 +2,9 @@
 ui/helpers.py
 ─────────────
 Shared rendering helpers used across multiple UI tabs.
+
+Covers: file upload processing, Socratic clarification form,
+citation download buttons, reference lists, key findings, and report display.
 """
 
 from __future__ import annotations
@@ -22,18 +25,24 @@ from tools.document_tools import DocumentProcessor, get_processor
 logger = logging.getLogger(__name__)
 cfg = get_settings()
 
+# ── Supported file-type lists ──────────────────────────────────────────────────
+
 _BASE_FILE_TYPES = ["pdf", "docx", "doc", "txt", "md"]
 _DOCLING_EXTRA_TYPES = ["pptx", "xlsx", "csv", "html", "png", "jpg", "jpeg"]
 
 
 def get_supported_file_types(use_docling: bool = False) -> list:
+    """Return the file extension list for st.file_uploader's type= parameter."""
     types = list(_BASE_FILE_TYPES)
     if use_docling:
         types.extend(_DOCLING_EXTRA_TYPES)
     return types
 
 
+# ── File helpers ───────────────────────────────────────────────────────────────
+
 def save_upload(uploaded_file) -> Path:
+    """Write a Streamlit UploadedFile to a temp file; return its path."""
     suffix = Path(uploaded_file.name).suffix
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(uploaded_file.getbuffer())
@@ -41,6 +50,14 @@ def save_upload(uploaded_file) -> Path:
 
 
 def process_uploads(uploaded_files, settings: dict) -> list:
+    """Process a list of Streamlit uploaded files into ProcessedDocuments.
+
+    Routes to DoclingProcessor when settings["use_docling"] is True, otherwise
+    uses the fast pdfplumber-based DocumentProcessor.
+
+    Streamlit passes DeletedFile sentinel objects when files are removed from
+    the uploader widget.  These have no .name / .getbuffer(), so we skip them.
+    """
     use_docling = settings.get("use_docling", True)
     use_ocr = settings.get("use_ocr", False)
 
@@ -71,10 +88,20 @@ def process_uploads(uploaded_files, settings: dict) -> list:
     return processed
 
 
+# ── Socratic clarification form ────────────────────────────────────────────────
+
 _OTHER_OPTION = "Other (please specify)"
 
 
 def render_clarification_form(mode_key: str, goal: str, settings: dict) -> dict:
+    """Render Socratic clarification questions as multiple-choice radio widgets.
+
+    Each question shows 3–4 preset options plus an 'Other' fallback for custom
+    input. The agent's recommended answer is pre-selected and shown as a hint.
+
+    Returns the answers dict (may be empty if questions not yet generated).
+    Call AFTER the goal text_area. Manages session_state keys internally.
+    """
     q_key = f"clarify_q_{mode_key}"
     g_key = f"clarify_goal_{mode_key}"
 
@@ -100,6 +127,7 @@ def render_clarification_form(mode_key: str, goal: str, settings: dict) -> dict:
             options: list = list(q.get("options") or [])
             recommended: str = q.get("recommended", "")
 
+            # Default to recommended index; fall back to first option
             default_idx = options.index(recommended) if recommended in options else 0
 
             st.markdown(f"**{q['question']}**")
@@ -153,7 +181,10 @@ def render_clarification_form(mode_key: str, goal: str, settings: dict) -> dict:
     return answers
 
 
+# ── Citation export ────────────────────────────────────────────────────────────
+
 def render_citation_downloads(references: list, key_suffix: str = "") -> None:
+    """Render BibTeX and RIS download buttons side by side."""
     if not references:
         return
     col_bib, col_ris = st.columns(2)
@@ -177,7 +208,10 @@ def render_citation_downloads(references: list, key_suffix: str = "") -> None:
         )
 
 
+# ── Reference list ─────────────────────────────────────────────────────────────
+
 def render_references(references: list, key_suffix: str = "") -> None:
+    """Render the reference list with citation export + expandable entries."""
     if not references:
         st.info("No academic references found for this run.")
         return
@@ -213,7 +247,10 @@ def render_references(references: list, key_suffix: str = "") -> None:
             st.code(ref["apa"], language=None)
 
 
+# ── Quality evaluation ────────────────────────────────────────────────────────
+
 def render_eval_result(eval_result: dict, key_suffix: str = "") -> None:
+    """Render quality evaluation scores as compact metrics in an expander."""
     if not eval_result or not eval_result.get("overall"):
         return
 
@@ -245,6 +282,7 @@ def render_eval_result(eval_result: dict, key_suffix: str = "") -> None:
         if summary:
             st.caption(summary)
 
+        # RAGchecker faithfulness section
         rag_faith = eval_result.get("ragchecker_faithfulness")
         if rag_faith and not rag_faith.get("skipped") and rag_faith.get("faithfulness_score") is not None:
             score = rag_faith["faithfulness_score"]
@@ -258,9 +296,11 @@ def render_eval_result(eval_result: dict, key_suffix: str = "") -> None:
 
 
 def render_rag_reflection(rag_reflection_info, key_suffix: str = "") -> None:
+    """Render self-reflective RAG metadata in a collapsed expander."""
     if not rag_reflection_info:
         return
 
+    # Normalise: chunk-based modes return List[Dict], paper-based return Dict
     if isinstance(rag_reflection_info, list):
         entries = rag_reflection_info
     else:
@@ -302,6 +342,8 @@ def render_rag_reflection(rag_reflection_info, key_suffix: str = "") -> None:
                 st.markdown("  \n".join(details))
 
 
+# ── Key findings + report ──────────────────────────────────────────────────────
+
 def render_key_findings(findings: list) -> None:
     if not findings:
         return
@@ -311,6 +353,7 @@ def render_key_findings(findings: list) -> None:
 
 
 def render_report(report: str, session_id: str) -> None:
+    """Display the report with a Markdown download button."""
     st.subheader("Full Research Report")
     st.markdown(report, unsafe_allow_html=False)
 
@@ -325,6 +368,8 @@ def render_report(report: str, session_id: str) -> None:
     )
 
 
+# ── Feedback & Refinement ─────────────────────────────────────────────────────
+
 def render_feedback_section(
     current_output: str,
     session_key: str,
@@ -335,6 +380,23 @@ def render_feedback_section(
     key_suffix: str = "",
     max_rounds: int | None = 3,
 ) -> str:
+    """
+    Render a feedback input section below any mode's output.
+
+    Stores refinement history in st.session_state (ephemeral — not persisted to disk).
+    Returns the current (possibly refined) output string.
+
+    Parameters
+    ----------
+    current_output : The output text currently shown to the user
+    session_key    : Unique key for this result (typically session_id)
+    mode           : Mode name for refine_with_feedback() prompt customisation
+    model_name     : Ollama model name
+    num_ctx        : LLM context window size
+    context        : Extra context injected into the refinement prompt (not shown to user)
+    key_suffix     : Added to all widget keys to avoid Streamlit key collisions
+    max_rounds     : Maximum refinement rounds. None = unlimited (default = MAX_FEEDBACK_ROUNDS).
+    """
     from agents.feedback_agent import refine_with_feedback, make_feedback_entry, MAX_FEEDBACK_ROUNDS
 
     history_key = f"_fb_history_{session_key}"

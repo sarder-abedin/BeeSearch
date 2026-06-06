@@ -6,6 +6,10 @@ Socratic clarification engine.
 Generates 2–3 focused clarifying questions tailored to the user's goal and
 research mode, using a single fast LLM call. Falls back to hardcoded
 per-mode questions if the LLM call fails.
+
+Every question is "select" type: 3–4 preset options plus an implicit
+"Other (please specify)" fallback rendered by the UI. Each question also
+carries a "recommended" field — the agent's suggested best-default answer.
 """
 
 from __future__ import annotations
@@ -46,15 +50,35 @@ Output format — an array of 2 or 3 objects:
 ]"""
 
 _MODE_CONTEXT: Dict[str, str] = {
-    "systematic_review": (
-        "The user wants to conduct a PRISMA-style systematic literature review. "
-        "Clarify: research question focus, inclusion/exclusion criteria, "
-        "intended audience, synthesis depth."
+    "document": (
+        "The user uploaded one or more documents (papers, reports, notes) and "
+        "wants an analysis. Clarify: analysis depth, focus area, intended "
+        "audience, comparison vs summary, specific questions to answer."
     ),
-    "notebook": (
-        "The user uploaded documents and wants to explore them interactively. "
-        "Clarify: analysis depth, focus area, intended audience, "
-        "comparison vs summary, specific questions to answer."
+    "search": (
+        "The user wants to search academic literature (arXiv, Semantic Scholar). "
+        "Clarify: date range, discipline focus, intended use (background / gap "
+        "analysis / citation gathering), audience."
+    ),
+    "hybrid": (
+        "The user has documents AND wants academic literature searched. "
+        "Clarify: whether to prioritise uploaded docs or the broader literature, "
+        "analysis depth, audience, key comparison dimensions."
+    ),
+    "proposal": (
+        "The user wants to write a research grant proposal. "
+        "Clarify: intended funder / audience, discipline, proposal length / "
+        "format, whether they have preliminary results."
+    ),
+    "story": (
+        "The user wants to learn a research concept interactively. "
+        "Clarify: their background level, what specifically confuses them, how "
+        "they intend to apply this understanding."
+    ),
+    "wisdom": (
+        "The user is seeking evidence-based wisdom about a life, health, or "
+        "professional question. Clarify: whether this is personal or professional, "
+        "what they have already tried, how urgent the decision is."
     ),
 }
 
@@ -66,6 +90,10 @@ def generate_clarifying_questions(
     ollama_base_url: str,
     num_ctx: int = 4096,
 ) -> List[Dict[str, Any]]:
+    """Return 2–3 Socratic clarifying questions tailored to goal and mode.
+
+    Falls back to hardcoded per-mode questions if the LLM call fails.
+    """
     mode_ctx = _MODE_CONTEXT.get(mode, "The user wants to conduct research.")
     human = (
         f"MODE: {mode}\n"
@@ -100,6 +128,11 @@ def generate_clarifying_questions(
 
 
 def _validate_questions(raw: Any) -> List[Dict[str, Any]]:
+    """Sanitise LLM-generated questions.
+
+    Ensures every question is "select" type with non-empty options and a
+    "recommended" field that exactly matches one of those options.
+    """
     if not isinstance(raw, list):
         return []
     valid = []
@@ -108,50 +141,181 @@ def _validate_questions(raw: Any) -> List[Dict[str, Any]]:
             continue
         if not q.get("key") or not q.get("question"):
             continue
-        q = dict(q)
+
+        q = dict(q)  # copy before mutating
         q["type"] = "select"
+
         if not q.get("options"):
             q["options"] = ["Yes", "No", "Partially", "Not applicable"]
+
         options = q["options"]
         recommended = q.get("recommended", "")
         if not recommended or recommended not in options:
             q["recommended"] = options[0]
+
         valid.append(q)
     return valid
 
 
 def _fallback_questions(mode: str) -> List[Dict[str, Any]]:
+    """Per-mode fallback questions used when the LLM call fails."""
     fallbacks: Dict[str, List[Dict[str, Any]]] = {
-        "systematic_review": [
-            {
-                "key": "audience",
-                "question": "Who is the intended audience for this systematic review?",
-                "type": "select",
-                "options": ["Academic researchers", "Clinical practitioners", "Policy makers", "Students"],
-                "recommended": "Academic researchers",
-            },
-            {
-                "key": "scope",
-                "question": "How broad should the literature search be?",
-                "type": "select",
-                "options": ["Narrow — specific subfield", "Moderate — field-wide", "Broad — cross-disciplinary"],
-                "recommended": "Moderate — field-wide",
-            },
-        ],
-        "notebook": [
+        "document": [
             {
                 "key": "audience",
                 "question": "Who is the intended audience for this analysis?",
                 "type": "select",
-                "options": ["Academic researchers", "Industry professionals", "Students", "General public"],
+                "options": [
+                    "Academic researchers",
+                    "Industry professionals",
+                    "Students",
+                    "General public",
+                ],
                 "recommended": "Academic researchers",
             },
             {
                 "key": "focus",
                 "question": "What should the analysis prioritise?",
                 "type": "select",
-                "options": ["Key findings and conclusions", "Methodology critique", "Comparison across documents", "Identify gaps and future work"],
+                "options": [
+                    "Key findings and conclusions",
+                    "Methodology critique",
+                    "Comparison across documents",
+                    "Identify gaps and future work",
+                ],
                 "recommended": "Key findings and conclusions",
+            },
+        ],
+        "search": [
+            {
+                "key": "recency",
+                "question": "How recent should the literature be?",
+                "type": "select",
+                "options": [
+                    "Last 2 years",
+                    "Last 5 years",
+                    "Last 10 years",
+                    "No restriction",
+                ],
+                "recommended": "Last 5 years",
+            },
+            {
+                "key": "purpose",
+                "question": "What will you use these results for?",
+                "type": "select",
+                "options": [
+                    "Background review",
+                    "Gap analysis",
+                    "Citation gathering",
+                    "State-of-the-art survey",
+                ],
+                "recommended": "Background review",
+            },
+        ],
+        "hybrid": [
+            {
+                "key": "emphasis",
+                "question": (
+                    "Should the report emphasise your uploaded documents "
+                    "or the broader literature?"
+                ),
+                "type": "select",
+                "options": [
+                    "My documents primarily",
+                    "Academic literature primarily",
+                    "Equal balance",
+                ],
+                "recommended": "Equal balance",
+            },
+            {
+                "key": "audience",
+                "question": "Who is the intended reader?",
+                "type": "select",
+                "options": [
+                    "Academic peers",
+                    "Industry professionals",
+                    "Supervisors / funders",
+                    "General audience",
+                ],
+                "recommended": "Academic peers",
+            },
+        ],
+        "proposal": [
+            {
+                "key": "funder",
+                "question": "Who is the intended funder or audience?",
+                "type": "select",
+                "options": [
+                    "EU Horizon Europe",
+                    "National Science Foundation (NSF)",
+                    "UK Research and Innovation (UKRI)",
+                    "Industry / company funding",
+                ],
+                "recommended": "EU Horizon Europe",
+            },
+            {
+                "key": "length",
+                "question": "What is the target proposal format?",
+                "type": "select",
+                "options": [
+                    "Short grant (3–5 pages)",
+                    "Standard grant (10–15 pages)",
+                    "Fellowship application",
+                    "Internal research proposal",
+                ],
+                "recommended": "Standard grant (10–15 pages)",
+            },
+        ],
+        "story": [
+            {
+                "key": "level",
+                "question": "What is your background level on this topic?",
+                "type": "select",
+                "options": [
+                    "Complete beginner",
+                    "Some familiarity",
+                    "Intermediate",
+                    "Advanced — want a fresh perspective",
+                ],
+                "recommended": "Some familiarity",
+            },
+            {
+                "key": "learning_goal",
+                "question": "What do you hope to achieve after this session?",
+                "type": "select",
+                "options": [
+                    "Build conceptual understanding",
+                    "Apply in my own research",
+                    "Prepare to explain to others",
+                    "Satisfy intellectual curiosity",
+                ],
+                "recommended": "Build conceptual understanding",
+            },
+        ],
+        "wisdom": [
+            {
+                "key": "context",
+                "question": "Is this primarily a personal or professional situation?",
+                "type": "select",
+                "options": [
+                    "Personal / health",
+                    "Professional / career",
+                    "Relationships / social",
+                    "Academic / learning",
+                ],
+                "recommended": "Personal / health",
+            },
+            {
+                "key": "tried",
+                "question": "What have you already tried or considered?",
+                "type": "select",
+                "options": [
+                    "Nothing yet — seeking guidance",
+                    "Done basic online research",
+                    "Consulted colleagues or friends",
+                    "Tried multiple approaches without success",
+                ],
+                "recommended": "Nothing yet — seeking guidance",
             },
         ],
     }

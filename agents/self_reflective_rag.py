@@ -1,6 +1,22 @@
 """
 agents/self_reflective_rag.py
-Self-Reflective RAG grading and ReAct retrieval loops.
+──────────────────────────────
+Corrective/Adaptive Self-Reflective RAG for all 5 research modes.
+
+After every retrieval call, a single batched LLM call grades all retrieved
+items at once. Irrelevant items are filtered out; if too few pass, a
+reformulated query fires a second retrieval cycle (chunk-based modes only).
+
+Grading contexts
+────────────────
+  Modes 1 & 5 (document chunks)    → grade_chunks()
+  Modes 2, 3, 4 (academic papers)  → grade_papers()
+
+Guarantees
+──────────
+  - Never raises; all failures fall back to returning the original items.
+  - Max 2 reflection cycles for chunk-based retrieval.
+  - Min 3 relevant items before skipping re-query.
 """
 
 from __future__ import annotations
@@ -20,6 +36,7 @@ cfg = get_settings()
 
 
 def _reflection_llm(model_name: str, num_ctx: int, temperature: float, num_predict: int):
+    """Private LLM factory — mirrors eval_nodes._eval_llm but caps ctx at 4096."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -37,8 +54,15 @@ def grade_chunks(
     model_name: str = "",
     num_ctx: int = 4096,
 ) -> List[bool]:
+    """
+    Grade document chunks for relevance to the query in a single batched LLM call.
+
+    Returns a list of bool (one per chunk). On any failure or length mismatch,
+    returns all True (treat everything as relevant — safe fallback).
+    """
     if not chunks:
         return []
+
     try:
         llm = _reflection_llm(model_name, num_ctx, temperature=0.0, num_predict=100)
         numbered = "\n".join(
@@ -56,6 +80,7 @@ def grade_chunks(
         )
         response = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
         raw = response.content.strip()
+        # Strip markdown fences if present
         raw = re.sub(r"```[a-z]*\n?", "", raw).strip()
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if not match:
@@ -76,8 +101,16 @@ def grade_papers(
     model_name: str = "",
     num_ctx: int = 4096,
 ) -> List[bool]:
+    """
+    Grade academic paper dicts for relevance to the query in a single batched LLM call.
+    Papers must have at least 'title' and 'abstract' keys.
+
+    Returns a list of bool (one per paper). On any failure or length mismatch,
+    returns all True (treat everything as relevant — safe fallback).
+    """
     if not papers:
         return []
+
     try:
         llm = _reflection_llm(model_name, num_ctx, temperature=0.0, num_predict=100)
         numbered = "\n".join(
@@ -115,6 +148,10 @@ def rewrite_query(
     model_name: str = "",
     num_ctx: int = 4096,
 ) -> str:
+    """
+    Reformulate a query that returned too few relevant chunks.
+    Returns the first non-empty line of the LLM response, or original_query on any failure.
+    """
     try:
         llm = _reflection_llm(model_name, num_ctx, temperature=0.3, num_predict=100)
         system = (
@@ -140,6 +177,14 @@ def self_reflective_retrieve(
     max_cycles: int = 2,
     min_relevant: int = 3,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Orchestrate self-reflective retrieval for chunk-based modes (1 and 5).
+
+    Returns (filtered_chunks, metadata) where metadata contains:
+      cycles, total_retrieved, total_relevant, rewritten_queries, grading_skipped
+
+    Never raises — any failure returns the original retrieved chunks.
+    """
     metadata: Dict[str, Any] = {
         "cycles": 0,
         "total_retrieved": 0,
@@ -149,6 +194,7 @@ def self_reflective_retrieve(
     }
     cycle1_chunks: List[Dict[str, Any]] = []
 
+    # ── Cycle 1 ──────────────────────────────────────────────────────────────
     try:
         cycle1_chunks = store.search_hybrid(query, k=top_k)
     except Exception as exc:
@@ -163,6 +209,7 @@ def self_reflective_retrieve(
 
     grades = grade_chunks(cycle1_chunks, query, model_name=model_name, num_ctx=num_ctx)
 
+    # Silent LLM failure detection: all grades True on a non-trivial list
     if all(grades) and len(grades) > 1:
         logger.debug("[SelfReflect] All grades True — assuming grading skipped")
         metadata["grading_skipped"] = True
@@ -170,13 +217,18 @@ def self_reflective_retrieve(
         return cycle1_chunks, metadata
 
     relevant = [c for c, g in zip(cycle1_chunks, grades) if g]
+    logger.info(
+        "[SelfReflect] cycle=1 query=%r retrieved=%d new, %d pass grading, %d total relevant",
+        query[:60], len(cycle1_chunks), len(relevant), len(relevant),
+    )
 
     if len(relevant) >= min_relevant or max_cycles < 2:
         if not relevant:
-            relevant = cycle1_chunks
+            relevant = cycle1_chunks  # safety: never return empty
         metadata["total_relevant"] = len(relevant)
         return relevant, metadata
 
+    # ── Cycle 2 ──────────────────────────────────────────────────────────────
     metadata["cycles"] = 2
     rewritten = rewrite_query(query, model_name=model_name, num_ctx=num_ctx)
     metadata["rewritten_queries"].append(rewritten)
@@ -187,6 +239,7 @@ def self_reflective_retrieve(
     except Exception as exc:
         logger.warning("self_reflective_retrieve: cycle-2 search_hybrid failed (%s)", exc)
 
+    # Deduplicate new chunks against cycle 1 by chunk_id
     seen_ids = {c.get("chunk_id") for c in cycle1_chunks}
     new_chunks = [c for c in cycle2_chunks if c.get("chunk_id") not in seen_ids]
     metadata["total_retrieved"] += len(new_chunks)
@@ -199,11 +252,18 @@ def self_reflective_retrieve(
 
     all_relevant = (relevant + new_relevant)[:top_k]
 
+    logger.info(
+        "[SelfReflect] cycle=2 rewritten=%r new_retrieved=%d new_relevant=%d total_relevant=%d",
+        rewritten[:60], len(new_chunks), len(new_relevant), len(all_relevant),
+    )
+
     if not all_relevant:
-        all_relevant = cycle1_chunks
+        all_relevant = cycle1_chunks  # safety: never return empty
     metadata["total_relevant"] = len(all_relevant)
     return all_relevant, metadata
 
+
+# ── ReAct retrieval loop (Research Notebook) ──────────────────────────────────
 
 def _react_reason_retrieve(
     original_query: str,
@@ -213,6 +273,15 @@ def _react_reason_retrieve(
     model_name: str,
     num_ctx: int,
 ) -> Dict[str, Any]:
+    """
+    Reason step for the notebook ReAct loop.
+
+    Given the current pool of relevant chunks, the LLM decides whether the
+    context is sufficient to answer the question or whether another search
+    with a different query would add meaningful new material.
+
+    Returns {"action": "done"|"search", "query": str, "reasoning": str}.
+    """
     try:
         llm = _reflection_llm(model_name, num_ctx, temperature=0.1, num_predict=150)
         snippets = "\n".join(
@@ -240,6 +309,10 @@ def _react_reason_retrieve(
         action = data.get("action", "done")
         new_query = (data.get("query") or "").strip() or original_query
         reasoning = data.get("reasoning", "")
+        logger.info(
+            "[ReAct-Retrieve] iter=%d action=%s reasoning=%r",
+            iteration, action, reasoning[:80],
+        )
         return {"action": action, "query": new_query, "reasoning": reasoning}
     except Exception as exc:
         logger.warning("_react_reason_retrieve failed (%s) — stopping loop", exc)
@@ -255,6 +328,21 @@ def react_retrieve(
     max_iterations: int = 3,
     min_relevant: int = 3,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    ReAct retrieval loop for chunk-based stores (Research Notebook).
+
+    Replaces the fixed 2-cycle self_reflective_retrieve with a principled
+    Reason → Act → Observe loop:
+
+      Reason  — LLM evaluates current chunks and decides: "enough" or "search again"
+      Act     — hybrid store search with (possibly new) query
+      Observe — grade retrieved chunks; accumulate newly-relevant ones
+
+    Exits when min_relevant chunks are accumulated, the LLM says "done",
+    or max_iterations is reached.
+
+    Returns (relevant_chunks, metadata). Never raises.
+    """
     metadata: Dict[str, Any] = {
         "mode": "react",
         "cycles": 0,
@@ -271,6 +359,7 @@ def react_retrieve(
     current_query = query
 
     for i in range(max_iterations):
+        # ── ACT ──────────────────────────────────────────────────────────────
         try:
             chunks = store.search_hybrid(current_query, k=top_k)
         except Exception as exc:
@@ -279,8 +368,11 @@ def react_retrieve(
 
         last_chunks = chunks or last_chunks
 
+        # ── OBSERVE: grade ────────────────────────────────────────────────────
         if chunks:
             grades = grade_chunks(chunks, query, model_name=model_name, num_ctx=num_ctx)
+            # Silent-failure heuristic: if all grades are True on a non-trivial list,
+            # grading likely failed — treat as all-relevant but flag it.
             if all(grades) and len(grades) > 1:
                 metadata["grading_skipped"] = True
                 new_relevant = [c for c in chunks if c.get("chunk_id") not in seen_ids]
@@ -307,12 +399,18 @@ def react_retrieve(
         metadata["total_retrieved"] += len(chunks)
         metadata["cycles"] = i + 1
 
+        logger.info(
+            "[ReAct-Retrieve] iter=%d query=%r retrieved=%d new_rel=%d total_rel=%d",
+            i + 1, current_query[:60], len(chunks), len(new_relevant), len(all_relevant),
+        )
+
         if len(all_relevant) >= min_relevant:
             break
 
         if i == max_iterations - 1:
-            break
+            break  # no reason step on last iteration
 
+        # ── REASON ───────────────────────────────────────────────────────────
         decision = _react_reason_retrieve(
             original_query=query,
             current_query=current_query,
@@ -335,6 +433,63 @@ def react_retrieve(
     return result, metadata
 
 
+# ── ReAct paper search loop (Literature Search) ────────────────────────────────
+
+def _react_reason_search(
+    goal: str,
+    searched_queries: List[str],
+    relevant_paper_dicts: List[Dict[str, Any]],
+    iteration: int,
+    model_name: str,
+    num_ctx: int,
+) -> Dict[str, Any]:
+    """
+    Reason step for the literature search ReAct loop.
+
+    Given the research goal, which queries have been tried, and which papers
+    are relevant so far, the LLM identifies a gap in coverage and proposes a
+    targeted follow-up query — or declares coverage sufficient.
+
+    Returns {"action": "done"|"search", "query": str, "reasoning": str}.
+    """
+    try:
+        llm = _reflection_llm(model_name, num_ctx, temperature=0.2, num_predict=150)
+        paper_titles = "\n".join(
+            f"[{i+1}] {p.get('title', 'untitled')[:100]}"
+            for i, p in enumerate(relevant_paper_dicts[:8])
+        ) or "None found yet."
+        queries_str = " | ".join(q[:50] for q in searched_queries[-4:])
+        system = (
+            "You are a systematic literature search strategist. Evaluate whether the "
+            "papers found so far give adequate coverage of the research goal, or whether "
+            "there is a specific gap that a new, focused query would fill.\n"
+            'Respond ONLY with JSON: {"action": "done" | "search", '
+            '"query": "<new search query targeting the identified gap, or empty string>", '
+            '"reasoning": "<one concise sentence naming the gap>"}'
+        )
+        human = (
+            f"RESEARCH GOAL: {goal}\n\n"
+            f"QUERIES ALREADY TRIED: {queries_str}\n\n"
+            f"RELEVANT PAPERS FOUND ({len(relevant_paper_dicts)}):\n{paper_titles}\n\n"
+            "Is coverage sufficient, or is there a gap worth an additional search?"
+        )
+        resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
+        raw = re.sub(r"```[a-z]*\n?", "", resp.content.strip()).strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        data = json.loads(m.group(0)) if m else {}
+        action = data.get("action", "done")
+        new_query = (data.get("query") or "").strip()
+        reasoning = data.get("reasoning", "")
+        logger.info(
+            "[ReAct-Lit] iter=%d action=%s reasoning=%r",
+            iteration, action, reasoning[:80],
+        )
+        return {"action": action, "query": new_query, "reasoning": reasoning}
+    except Exception as exc:
+        logger.warning("_react_reason_search failed (%s) — stopping loop", exc)
+        return {"action": "done", "query": "", "reasoning": "fallback"}
+
+
 def react_paper_search(
     searcher,
     initial_queries: List[str],
@@ -345,7 +500,23 @@ def react_paper_search(
     max_iterations: int = 3,
     min_papers: int = 5,
 ) -> Tuple[List[Any], Dict[str, Any]]:
-    import re as _re
+    """
+    ReAct loop for academic paper retrieval (Literature Search, Mode 1).
+
+    Phase 1 — batch: run all initial queries from query_generation_node and
+    collect papers (same as the existing academic_search_node).
+
+    Phase 2 — ReAct gap-filling: grade collected papers for relevance to the
+    research goal; if fewer than min_papers pass, the LLM reasons about what
+    topic angle is missing and fires a targeted gap-filling search. Repeats
+    up to max_iterations times.
+
+    Only newly-found papers are graded in each gap-filling round — papers
+    already graded in a previous round are not re-evaluated.
+
+    Returns (all_papers, metadata). Never raises.
+    """
+    import re as _re  # already imported at module level; local alias for clarity
 
     metadata: Dict[str, Any] = {
         "mode": "react",
@@ -358,10 +529,13 @@ def react_paper_search(
     all_papers: List[Any] = []
     seen_titles: set = set()
     searched_queries: List[str] = list(initial_queries)
+
+    # Track grading progress so we only grade newly-added papers each round.
     graded_up_to: int = 0
     relevant_paper_dicts: List[Dict[str, Any]] = []
 
     def _add_papers(papers) -> int:
+        """Deduplicate-insert papers; return count of newly added."""
         added = 0
         for p in papers:
             key = _re.sub(r"\W+", "", (p.title or "").lower())[:60]
@@ -371,6 +545,7 @@ def react_paper_search(
                 added += 1
         return added
 
+    # ── Phase 1: run all initial queries ─────────────────────────────────────
     for q in initial_queries:
         try:
             papers = searcher.search(q, max_per_source=max_per_source)
@@ -379,8 +554,11 @@ def react_paper_search(
             logger.warning("[ReAct-Lit] initial search failed for %r: %s", q[:40], exc)
 
     metadata["total_retrieved"] = len(all_papers)
+    logger.info("[ReAct-Lit] Phase 1: %d unique papers from %d queries.", len(all_papers), len(initial_queries))
 
+    # ── Phase 2: grade + gap-fill ─────────────────────────────────────────────
     for i in range(max_iterations):
+        # Grade only papers not yet evaluated.
         ungraded = all_papers[graded_up_to:]
         if ungraded:
             ungraded_dicts = [
@@ -401,54 +579,45 @@ def react_paper_search(
         metadata["iterations"].append(iter_info)
         metadata["total_relevant"] = len(relevant_paper_dicts)
 
+        logger.info(
+            "[ReAct-Lit] iter=%d total=%d relevant=%d",
+            i + 1, len(all_papers), len(relevant_paper_dicts),
+        )
+
         if len(relevant_paper_dicts) >= min_papers:
             break
 
         if i == max_iterations - 1:
             break
 
-        try:
-            llm = _reflection_llm(model_name, num_ctx, temperature=0.2, num_predict=150)
-            paper_titles = "\n".join(
-                f"[{i+1}] {p.get('title', 'untitled')[:100]}"
-                for i, p in enumerate(relevant_paper_dicts[:8])
-            ) or "None found yet."
-            queries_str = " | ".join(q[:50] for q in searched_queries[-4:])
-            system = (
-                "You are a systematic literature search strategist. Evaluate whether the "
-                "papers found so far give adequate coverage of the research goal, or whether "
-                "there is a specific gap that a new, focused query would fill.\n"
-                'Respond ONLY with JSON: {"action": "done" | "search", '
-                '"query": "<new search query targeting the identified gap, or empty string>", '
-                '"reasoning": "<one concise sentence naming the gap>"}'
-            )
-            human = (
-                f"RESEARCH GOAL: {goal}\n\n"
-                f"QUERIES ALREADY TRIED: {queries_str}\n\n"
-                f"RELEVANT PAPERS FOUND ({len(relevant_paper_dicts)}):\n{paper_titles}\n\n"
-                "Is coverage sufficient, or is there a gap worth an additional search?"
-            )
-            resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
-            raw = re.sub(r"```[a-z]*\n?", "", resp.content.strip()).strip()
-            m = re.search(r"\{.*\}", raw, re.DOTALL)
-            data = json.loads(m.group(0)) if m else {}
-            action = data.get("action", "done")
-            gap_query = (data.get("query") or "").strip()
-        except Exception as exc:
-            logger.warning("react_paper_search reason step failed (%s)", exc)
+        # ── REASON: identify gap ──────────────────────────────────────────────
+        decision = _react_reason_search(
+            goal=goal,
+            searched_queries=searched_queries,
+            relevant_paper_dicts=relevant_paper_dicts,
+            iteration=i + 1,
+            model_name=model_name,
+            num_ctx=num_ctx,
+        )
+
+        if decision["action"] == "done" or not decision["query"]:
             break
 
-        if action == "done" or not gap_query:
-            break
-
+        gap_query = decision["query"]
         metadata["gap_queries"].append(gap_query)
         searched_queries.append(gap_query)
 
+        # ── ACT: gap-filling search ───────────────────────────────────────────
         try:
             new_papers = searcher.search(gap_query, max_per_source=max_per_source)
             added = _add_papers(new_papers)
             metadata["total_retrieved"] += added
+            logger.info(
+                "[ReAct-Lit] gap query %r → %d new papers",
+                gap_query[:60], added,
+            )
         except Exception as exc:
             logger.warning("[ReAct-Lit] gap search failed for %r: %s", gap_query[:40], exc)
 
     return all_papers, metadata
+

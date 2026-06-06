@@ -50,6 +50,70 @@ def unpack(data) -> Any:
     return _loads(data)
 
 _DDL = """
+CREATE TABLE IF NOT EXISTS grammar_sessions (
+    session_id   TEXT PRIMARY KEY,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    style_level  TEXT DEFAULT 'professional_email',
+    word_count   INTEGER DEFAULT 0,
+    issues_count INTEGER DEFAULT 0,
+    has_result   INTEGER DEFAULT 0,
+    data_json    BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_grammar_updated ON grammar_sessions(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS wisdom_sessions (
+    session_id  TEXT PRIMARY KEY,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    topic       TEXT DEFAULT '',
+    phase       TEXT DEFAULT 'clarifying',
+    has_wisdom  INTEGER DEFAULT 0,
+    data_json   BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wisdom_updated ON wisdom_sessions(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS wisdom_tags (
+    session_id TEXT NOT NULL REFERENCES wisdom_sessions(session_id) ON DELETE CASCADE,
+    word       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wisdom_tags_word ON wisdom_tags(word);
+
+CREATE TABLE IF NOT EXISTS story_sessions (
+    session_id  TEXT PRIMARY KEY,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    topic       TEXT DEFAULT '',
+    turn_count  INTEGER DEFAULT 0,
+    data_json   BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_story_updated ON story_sessions(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS style_profiles (
+    profile_id    TEXT PRIMARY KEY,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    name          TEXT DEFAULT '',
+    name_lower    TEXT DEFAULT '',
+    has_injection INTEGER DEFAULT 0,
+    data_json     BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_style_updated ON style_profiles(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_style_name ON style_profiles(name_lower);
+
+CREATE TABLE IF NOT EXISTS proposal_sessions (
+    session_id     TEXT PRIMARY KEY,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    goal           TEXT DEFAULT '',
+    title          TEXT DEFAULT '',
+    model_name     TEXT DEFAULT '',
+    revision_count INTEGER DEFAULT 0,
+    has_proposal   INTEGER DEFAULT 0,
+    data_json      BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_proposal_updated ON proposal_sessions(updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS research_sessions (
     session_id      TEXT PRIMARY KEY,
     created_at      TEXT NOT NULL,

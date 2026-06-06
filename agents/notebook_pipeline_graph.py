@@ -1,10 +1,41 @@
 """
 agents/notebook_pipeline_graph.py
-Assembles the 7-agent LangGraph pipeline for the Research Notebook.
+────────────────────────────────────
+Assembles the 7-agent LangGraph pipeline for Mode 8 Research Notebook.
 
-Graph: START → ingest → summarize → retrieve → verify_citations →
-       build_kg → generate_study_guide → generate_podcast →
-       notebook_pipeline_eval → END
+Graph structure (linear — all agents communicate through shared state)
+────────────────────────────────────────────────────────────────────────
+
+  START
+    │
+    ▼
+  [ingest]              Agent 1 — Document Ingestion
+    │
+    ▼
+  [summarize]           Agent 2 — Summarization
+    │
+    ▼
+  [retrieve]            Agent 3 — Retrieval (Hybrid RAG)
+    │
+    ▼
+  [verify_citations]    Agent 4 — Citation Verification
+    │
+    ▼
+  [build_kg]            Agent 5 — Knowledge Graph Construction
+    │
+    ▼
+  [generate_study_guide] Agent 6 — Study Guide Generation
+    │
+    ▼
+  [generate_podcast]    Agent 7 — Podcast Script Generation
+    │
+   END
+
+Invocation model
+────────────────
+One call to `run_notebook_pipeline()` runs all 7 agents in sequence
+and returns the final `NotebookPipelineState` with all outputs populated.
+Use the `stream_callback` parameter for live progress updates in the UI.
 """
 
 from __future__ import annotations
@@ -30,6 +61,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_notebook_pipeline():
+    """Construct and compile the 7-agent Research Notebook pipeline."""
     graph = StateGraph(NotebookPipelineState)
 
     graph.add_node("ingest", ingestion_node)
@@ -58,6 +90,19 @@ def run_notebook_pipeline(
     initial_state: NotebookPipelineState,
     stream_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
 ) -> NotebookPipelineState:
+    """
+    Execute the full 7-agent pipeline and return the final state.
+
+    Parameters
+    ----------
+    initial_state   : created by create_pipeline_state()
+    stream_callback : optional callable(node_name, partial_state) called after
+                      each agent completes — use for live progress updates in UI
+
+    Returns
+    -------
+    Final NotebookPipelineState with all seven agents' outputs populated.
+    """
     app = build_notebook_pipeline()
     final_state: Dict[str, Any] = dict(initial_state)
 

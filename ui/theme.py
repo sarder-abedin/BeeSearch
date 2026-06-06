@@ -1,7 +1,7 @@
 """
 ui/theme.py
 ───────────
-Global CSS theme injection for ResearchBuddy.
+Global CSS theme injection for the Agentic Research Assistant.
 
 Call apply_theme() once at app startup (top of app.py).
 """
@@ -31,6 +31,7 @@ h3 { font-size: 1.1rem;  font-weight: 600; color: #334155; }
     background-color: #F8FAFC !important;
     border-right: 1px solid #E2E8F0;
 }
+/* Force all sidebar text to be dark — prevents white-on-light issues */
 [data-testid="stSidebar"] p,
 [data-testid="stSidebar"] span:not([class*="badge"]),
 [data-testid="stSidebar"] label,
@@ -53,23 +54,28 @@ h3 { font-size: 1.1rem;  font-weight: 600; color: #334155; }
     text-transform: uppercase;
     letter-spacing: 0.07em;
 }
+/* Sidebar select/slider labels */
 [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
     color: #334155 !important;
     font-size: 0.85rem !important;
 }
+/* Sidebar expander text */
 [data-testid="stSidebar"] [data-testid="stExpander"] summary,
 [data-testid="stSidebar"] [data-testid="stExpander"] summary span {
     color: #1E293B !important;
 }
+/* Sidebar caption / helper text */
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
     color: #64748B !important;
 }
+/* Metric labels in sidebar */
 [data-testid="stSidebar"] [data-testid="stMetricLabel"] {
     color: #64748B !important;
 }
 [data-testid="stSidebar"] [data-testid="stMetricValue"] {
     color: #0F172A !important;
 }
+/* Sidebar slider value */
 [data-testid="stSidebar"] [data-testid="stSlider"] p {
     color: #334155 !important;
 }
@@ -208,6 +214,11 @@ code {
     padding: 0.75rem 1rem !important;
     margin-bottom: 0.5rem !important;
     background: #FFFFFF !important;
+}
+
+/* ── Download buttons ───────────────────────────────────────────────── */
+[data-testid="baseButton-secondary"][kind="secondary"] {
+    font-size: 0.85rem !important;
 }
 
 /* ── Quality badge helpers (used in st.markdown) ─────────────────────── */

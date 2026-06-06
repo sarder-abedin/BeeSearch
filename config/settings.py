@@ -4,6 +4,12 @@ config/settings.py
 Centralised configuration loaded from environment variables (.env).
 Using Pydantic BaseSettings so every value is typed and validated at
 startup — no silent misconfigurations at runtime.
+
+TUTORIAL NOTE
+─────────────
+All defaults here work out-of-the-box with a local Ollama installation.
+For academic APIs (Semantic Scholar, CrossRef, arXiv) no API key is
+required; optional keys only unlock higher rate limits.
 """
 
 from __future__ import annotations
@@ -57,6 +63,11 @@ class Settings(BaseSettings):
     chunk_size: int = Field(800, alias="CHUNK_SIZE")
     chunk_overlap: int = Field(150, alias="CHUNK_OVERLAP")
     docling_models_path: str = Field("models/docling", alias="DOCLING_MODELS_PATH")
+
+    # ── Google Search FastAPI Service ────────────────────────
+    google_search_service_url: str = Field(
+        "http://localhost:8000", alias="GOOGLE_SEARCH_SERVICE_URL"
+    )
 
     # ── Search ───────────────────────────────────────────────
     max_search_results: int = Field(8, alias="MAX_SEARCH_RESULTS")

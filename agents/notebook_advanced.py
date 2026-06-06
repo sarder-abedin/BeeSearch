@@ -1,7 +1,23 @@
 """
 agents/notebook_advanced.py
-Advanced features for Research Notebook: summary, FAQ, lit review,
-mindmap, audio, source compare, knowledge graph, timeline, study comparison.
+───────────────────────────
+Phase-2 advanced features for Mode 8 Research Notebook.
+
+Each public function follows the same contract:
+  feature(notebook_id, settings) -> (result, error_string)
+
+An empty error_string means success.  All functions load the notebook from
+NotebookMemory (JSON) and call the local Ollama LLM — no cloud dependencies.
+
+Features
+────────
+  generate_cross_document_summary   Unified synthesis of all sources
+  generate_faq                      Auto-generated Q&A pairs with citations
+  generate_literature_review        Academic-style structured review
+  generate_mindmap                  Concept tree → Graphviz DOT string
+  generate_audio_summary            Spoken-word script (for TTS or playback)
+  compare_sources                   Side-by-side analysis of two sources
+  extract_knowledge_graph           Entity–relationship graph → DOT string
 """
 
 from __future__ import annotations
@@ -20,9 +36,11 @@ from config.settings import get_settings
 logger = logging.getLogger(__name__)
 cfg = get_settings()
 
-_MAX_CHARS_PER_DOC = 3_500
-_MAX_TOTAL_CHARS = 14_000
+_MAX_CHARS_PER_DOC = 3_500   # chars sent to LLM per source
+_MAX_TOTAL_CHARS = 14_000    # hard ceiling for the whole context block
 
+
+# ── LLM factory ──────────────────────────────────────────────────────────────
 
 def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 4096) -> ChatOllama:
     import httpx
@@ -41,10 +59,17 @@ def _invoke(llm: ChatOllama, system: str, human: str) -> str:
     return resp.content.strip()
 
 
+# ── Source context builder ────────────────────────────────────────────────────
+
 def _sources_context(
     notebook: Dict[str, Any],
     max_chars_per_doc: int = _MAX_CHARS_PER_DOC,
 ) -> str:
+    """
+    Build a numbered source block from all stored chunks.  Each source is
+    capped at *max_chars_per_doc* and the whole block is capped at
+    *_MAX_TOTAL_CHARS* so we never blow the LLM context window.
+    """
     sources = notebook.get("sources", [])
     chunks = notebook.get("chunks", [])
 
@@ -67,12 +92,16 @@ def _sources_context(
     return "\n\n".join(parts)
 
 
+# ── DOT helpers ───────────────────────────────────────────────────────────────
+
 def _safe_dot(text: str, maxlen: int = 40) -> str:
+    """Escape / trim a string for safe use in a Graphviz DOT label."""
     cleaned = re.sub(r'["\\\n\r\t]', " ", str(text)).strip()
     return cleaned[:maxlen]
 
 
 def _mindmap_to_dot(data: Dict[str, Any]) -> str:
+    """Convert the LLM mind-map JSON to a Graphviz DOT string."""
     central = _safe_dot(data.get("central", "Main Topic"), 60)
     branches = data.get("branches", [])
 
@@ -102,6 +131,7 @@ def _mindmap_to_dot(data: Dict[str, Any]) -> str:
 
 
 def _knowledge_graph_to_dot(data: Dict[str, Any]) -> str:
+    """Convert knowledge-graph JSON to a Graphviz DOT string."""
     type_colors: Dict[str, str] = {
         "concept": "#3b82f6",
         "method": "#10b981",
@@ -133,6 +163,7 @@ def _knowledge_graph_to_dot(data: Dict[str, Any]) -> str:
 
 
 def _parse_json_from_llm(raw: str) -> Any:
+    """Extract a JSON array from an LLM response (array-first)."""
     m = re.search(r"\[.*\]", raw, re.DOTALL)
     if m:
         try:
@@ -146,6 +177,7 @@ def _parse_json_from_llm(raw: str) -> Any:
 
 
 def _parse_json_object_from_llm(raw: str) -> Any:
+    """Extract a JSON object from an LLM response (object-first, for mind map / KG)."""
     m = re.search(r"\{.*\}", raw, re.DOTALL)
     if m:
         try:
@@ -155,9 +187,21 @@ def _parse_json_object_from_llm(raw: str) -> Any:
     return json.loads(raw)
 
 
+# ── Feature 1: Cross-document summary ────────────────────────────────────────
+
 def generate_cross_document_summary(
     notebook_id: str, settings: dict
 ) -> Tuple[str, str]:
+    """
+    Synthesize all notebook sources into a unified markdown summary.
+
+    For a single source: comprehensive summary with key points, methodology,
+    and implications.
+    For multiple sources: synthesis with common themes, complementary
+    contributions, contradictions, and key takeaways.
+
+    Returns (markdown_string, error_string).
+    """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
@@ -201,11 +245,19 @@ def generate_cross_document_summary(
         return "", f"Summary generation failed: {e}"
 
 
+# ── Feature 2: FAQ generation ─────────────────────────────────────────────────
+
 def generate_faq(
     notebook_id: str,
     settings: dict,
     n_questions: int = 8,
 ) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Auto-generate FAQ items grounded in notebook sources.
+
+    Returns (list_of_faq_dicts, error_string).
+    Each dict: {"question": str, "answer": str, "sources": List[int]}.
+    """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
@@ -247,9 +299,16 @@ def generate_faq(
         return [], f"FAQ generation failed: {e}"
 
 
+# ── Feature 3: Literature review ──────────────────────────────────────────────
+
 def generate_literature_review(
     notebook_id: str, settings: dict
 ) -> Tuple[str, str]:
+    """
+    Generate a formal academic-style literature review from notebook sources.
+
+    Returns (review_markdown, error_string).
+    """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
@@ -266,11 +325,17 @@ def generate_literature_review(
         "Structure the review in markdown with these sections:\n"
         "# Literature Review\n"
         "## 1. Introduction\n"
+        "State the scope and purpose of this review.\n"
         "## 2. Background & Context\n"
+        "Key background concepts established across the sources.\n"
         "## 3. Methodological Approaches\n"
+        "Research methods and approaches described in the sources.\n"
         "## 4. Key Findings & Evidence\n"
+        "Major findings organized thematically, attributed to source filenames.\n"
         "## 5. Critical Analysis\n"
-        "## 6. Conclusion\n\n"
+        "Strengths, limitations, and gaps in the reviewed literature.\n"
+        "## 6. Conclusion\n"
+        "Synthesis of contributions and directions for future work.\n\n"
         "Use formal academic tone. Attribute claims to specific source filenames."
     )
     human = (
@@ -286,7 +351,15 @@ def generate_literature_review(
         return "", f"Literature review generation failed: {e}"
 
 
+# ── Feature 4: Mind map ───────────────────────────────────────────────────────
+
 def generate_mindmap(notebook_id: str, settings: dict) -> Tuple[str, str]:
+    """
+    Extract key concepts from notebook sources and return a Graphviz DOT string
+    suitable for ``st.graphviz_chart``.
+
+    Returns (dot_string, error_string).
+    """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
@@ -295,6 +368,7 @@ def generate_mindmap(notebook_id: str, settings: dict) -> Tuple[str, str]:
     if not notebook.get("sources"):
         return "", "No sources in this notebook."
 
+    # Use a smaller context for concept extraction — we need breadth, not depth.
     context = _sources_context(notebook, max_chars_per_doc=1_500)
 
     system = (
@@ -324,7 +398,16 @@ def generate_mindmap(notebook_id: str, settings: dict) -> Tuple[str, str]:
         return "", f"Mind map generation failed: {e}"
 
 
+# ── Feature 5: Audio summary ──────────────────────────────────────────────────
+
 def generate_audio_summary(notebook_id: str, settings: dict) -> Tuple[str, str]:
+    """
+    Generate a spoken-word summary script — natural language optimised for
+    text-to-speech playback (~300 words, ~2 minutes).
+
+    Returns (script_text, error_string).  The text contains no markdown
+    formatting so it reads cleanly when converted to audio.
+    """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
@@ -362,12 +445,19 @@ def generate_audio_summary(notebook_id: str, settings: dict) -> Tuple[str, str]:
         return "", f"Audio summary generation failed: {e}"
 
 
+# ── Feature 6: Source comparison ─────────────────────────────────────────────
+
 def compare_sources(
     notebook_id: str,
     doc_id_a: str,
     doc_id_b: str,
     settings: dict,
 ) -> Tuple[str, str]:
+    """
+    Generate a side-by-side markdown comparison of two notebook sources.
+
+    Returns (comparison_markdown, error_string).
+    """
     if doc_id_a == doc_id_b:
         return "", "Please select two different sources to compare."
 
@@ -415,7 +505,16 @@ def compare_sources(
         return "", f"Source comparison failed: {e}"
 
 
+# ── Feature 7: Knowledge graph ────────────────────────────────────────────────
+
 def extract_knowledge_graph(notebook_id: str, settings: dict) -> Tuple[str, str]:
+    """
+    Extract entities and relationships from notebook sources and return a
+    Graphviz DOT string suitable for ``st.graphviz_chart``.
+
+    Returns (dot_string, error_string).
+    Node types: concept | method | dataset | author | institution
+    """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
@@ -458,7 +557,20 @@ def extract_knowledge_graph(notebook_id: str, settings: dict) -> Tuple[str, str]
         return "", f"Knowledge graph extraction failed: {e}"
 
 
+# ── Utility: DOT → raster/vector render ─────────────────────────────────────
+
 def render_dot_bytes(dot_string: str, fmt: str = "png") -> Tuple[bytes, str]:
+    """
+    Render a Graphviz DOT string to the requested format.
+
+    Parameters
+    ----------
+    dot_string : valid Graphviz DOT source
+    fmt        : "png" | "svg" | "pdf"
+
+    Returns (image_bytes, error_string).  Requires the *graphviz* Python package
+    and the graphviz system tools (``apt install graphviz``).
+    """
     try:
         import graphviz as gv
         src = gv.Source(dot_string)
@@ -470,7 +582,15 @@ def render_dot_bytes(dot_string: str, fmt: str = "png") -> Tuple[bytes, str]:
         return b"", f"Rendering to {fmt} failed: {e}"
 
 
+# ── Utility: text → WAV audio ────────────────────────────────────────────────
+
 def synthesize_speech(text: str, rate: int = 150) -> Tuple[bytes, str]:
+    """
+    Convert *text* to a WAV audio file using pyttsx3 (offline TTS).
+
+    Returns (wav_bytes, error_string).  Requires the *pyttsx3* Python package
+    and the espeak-ng system package (``apt install espeak-ng``).
+    """
     try:
         import os
         import tempfile
@@ -493,7 +613,16 @@ def synthesize_speech(text: str, rate: int = 150) -> Tuple[bytes, str]:
         return b"", f"Speech synthesis failed: {e}"
 
 
+# ── Feature 8: Timeline extraction ───────────────────────────────────────────
+
 def extract_timeline(notebook_id: str, settings: dict) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Extract a chronological timeline of events, discoveries, and milestones
+    from notebook sources.
+
+    Returns (list_of_timeline_items, error_string).
+    Each item: {"year": str, "event": str, "significance": str, "source": int}
+    """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
@@ -535,7 +664,16 @@ def extract_timeline(notebook_id: str, settings: dict) -> Tuple[List[Dict[str, A
         return [], f"Timeline extraction failed: {e}"
 
 
+# ── Feature 9: Study comparison table ────────────────────────────────────────
+
 def generate_study_comparison(notebook_id: str, settings: dict) -> Tuple[str, str]:
+    """
+    Generate a structured comparison table across all notebook sources —
+    comparing research type, sample/data scope, methodology, key findings,
+    and limitations.
+
+    Returns (markdown_table_with_synthesis, error_string).
+    """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
@@ -545,15 +683,21 @@ def generate_study_comparison(notebook_id: str, settings: dict) -> Tuple[str, st
         return "", "No sources in this notebook."
 
     source_names = [s["filename"] for s in notebook["sources"]]
+    col_headers = " | ".join(f"**{n[:20]}**" for n in source_names)
     context = _sources_context(notebook)
 
     system = (
         "You are a systematic review analyst. Create a comparison table across all sources.\n\n"
         "Generate a markdown table with these rows and one column per source:\n"
         "| Dimension | Source 1 | Source 2 | ... |\n"
-        "|-----------|----------|----------|"
-        "Include rows for: Research/Study type, Sample size/Data scope, "
-        "Key methodology, Primary findings, Limitations, Year/Period.\n\n"
+        "|-----------|----------|----------|\n"
+        "Include rows for:\n"
+        "- Research / Study type\n"
+        "- Sample size / Data scope\n"
+        "- Key methodology\n"
+        "- Primary findings\n"
+        "- Limitations\n"
+        "- Year / Period\n\n"
         "After the table, write a **Synthesis** paragraph:\n"
         "- Strongest points of agreement\n"
         "- Most significant differences\n"

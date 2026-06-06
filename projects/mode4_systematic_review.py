@@ -1,0 +1,7 @@
+"""projects/mode4_systematic_review.py — Mode 4: Systematic Review."""
+from __future__ import annotations
+
+
+def run(settings: dict) -> None:
+    from ui.tabs.systematic_review import tab_systematic_review
+    tab_systematic_review(settings)

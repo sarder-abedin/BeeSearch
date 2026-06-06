@@ -261,6 +261,9 @@ class HybridStore:
         """
         Return embeddings for all chunks, reading from ChromaDB cache where
         available and only calling Ollama for unseen chunks.
+
+        *warning_callback* is forwarded to the embedder so low-VRAM
+        auto-batch-reduction warnings reach the caller.
         """
         chunk_ids = [c["chunk_id"] for c in chunks]
         texts = [c["text"] for c in chunks]

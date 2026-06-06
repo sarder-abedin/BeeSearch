@@ -1,6 +1,17 @@
 """
 agents/notebook_memory.py
-Persistent SQLite store for Research Notebook sessions.
+──────────────────────────
+Long-term persistence for the Research Notebook (Mode 8) — a NotebookLM-style
+mode where users build a notebook from their own sources and chat with it
+using grounded, cited retrieval.
+
+State is split into two parts in SQLite:
+  • meta_json column in notebooks table stores:
+      {name, sources, conversation, created_at, last_modified}  (NO chunks)
+  • Chunks stored separately in notebook_chunks table
+
+This allows efficient querying without loading all chunk text when only
+metadata is needed (e.g. list_notebooks).
 """
 
 from __future__ import annotations
@@ -27,17 +38,42 @@ def _short_id(length: int = 8) -> str:
 
 
 class NotebookMemory:
+    """
+    Persistent store for Research Notebook sessions.
+
+    Typical lifecycle
+    -----------------
+    mem = NotebookMemory()
+
+    # Create a notebook
+    nb_id = mem.new_notebook(name="Antibiotic Resistance")
+
+    # Add a processed source (after DocumentProcessor + HybridStore indexing)
+    mem.add_source(nb_id, processed_document, source_type="file")
+
+    # Chat: append turns with citations
+    mem.add_turn(nb_id, "user", "What datasets are used?")
+    mem.add_turn(nb_id, "assistant", "The study uses ...[1]",
+                 citations=[{"n": 1, "doc_name": "paper.pdf", "page": 4}])
+
+    # Reload later
+    notebook = mem.load(nb_id)
+    """
+
     def __init__(self, db_path: Path | None = None):
         self._db_path = db_path
         init_db(self._db_path)
 
+    # ── Notebook management ───────────────────────────────────
+
     def new_notebook(self, name: str, notebook_id: str = "") -> str:
+        """Create a new, empty notebook and return its id."""
         nb_id = notebook_id or _short_id()
         now = _now()
         meta: Dict[str, Any] = {
             "name": name.strip() or "Untitled Notebook",
-            "sources": [],
-            "conversation": [],
+            "sources": [],          # list of source metadata dicts
+            "conversation": [],     # list of {role, content, timestamp, citations, ...}
             "created_at": now,
             "last_modified": now,
         }
@@ -50,6 +86,7 @@ class NotebookMemory:
         return nb_id
 
     def load(self, notebook_id: str) -> Optional[Dict[str, Any]]:
+        """Load a notebook by id. Returns None if not found."""
         with _tx(self._db_path) as conn:
             row = conn.execute(
                 "SELECT meta_json FROM notebooks WHERE notebook_id=?",
@@ -68,6 +105,7 @@ class NotebookMemory:
         return meta
 
     def list_notebooks(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return summary info for all notebooks, newest first."""
         with _tx(self._db_path) as conn:
             rows = conn.execute(
                 """SELECT notebook_id, created_at, updated_at, name,
@@ -105,6 +143,7 @@ class NotebookMemory:
             return False
         cleaned = new_name.strip() or nb.get("name", "Untitled Notebook")
         now = _now()
+        # Rebuild meta without notebook_id/chunks keys
         meta = {k: v for k, v in nb.items() if k not in ("notebook_id", "chunks")}
         meta["name"] = cleaned
         meta["last_modified"] = now
@@ -115,6 +154,8 @@ class NotebookMemory:
             )
         return True
 
+    # ── Source management ─────────────────────────────────────
+
     def add_source(
         self,
         notebook_id: str,
@@ -122,7 +163,17 @@ class NotebookMemory:
         source_type: str = "file",
         url: str = "",
     ) -> bool:
+        """
+        Append a processed source's metadata + chunks to the notebook.
+
+        Parameters
+        ----------
+        processed_doc : a tools.document_tools.ProcessedDocument
+        source_type   : "file" or "url"
+        url           : original URL when source_type == "url"
+        """
         with _tx(self._db_path) as conn:
+            # Check notebook exists
             row = conn.execute(
                 "SELECT meta_json, source_count FROM notebooks WHERE notebook_id=?",
                 (notebook_id,),
@@ -131,6 +182,7 @@ class NotebookMemory:
                 logger.warning("add_source: notebook %s not found", notebook_id)
                 return False
 
+            # Duplicate check
             dup = conn.execute(
                 "SELECT 1 FROM notebook_chunks WHERE notebook_id=? AND doc_id=? LIMIT 1",
                 (notebook_id, processed_doc.doc_id),
@@ -163,6 +215,7 @@ class NotebookMemory:
                 (source_count, now, pack(meta), notebook_id),
             )
 
+            # Insert chunks
             conn.executemany(
                 """INSERT INTO notebook_chunks
                    (chunk_id, notebook_id, doc_id, doc_name, page_num, chunk_index, text)
@@ -181,6 +234,7 @@ class NotebookMemory:
         return True
 
     def remove_source(self, notebook_id: str, doc_id: str) -> bool:
+        """Remove a source and all of its chunks from the notebook."""
         with _tx(self._db_path) as conn:
             row = conn.execute(
                 "SELECT meta_json, source_count FROM notebooks WHERE notebook_id=?",
@@ -213,6 +267,8 @@ class NotebookMemory:
         logger.info("Removed source %s from notebook %s", doc_id, notebook_id)
         return True
 
+    # ── Conversation ──────────────────────────────────────────
+
     def add_turn(
         self,
         notebook_id: str,
@@ -221,6 +277,7 @@ class NotebookMemory:
         citations: Optional[List[Dict[str, Any]]] = None,
         suggested_questions: Optional[List[str]] = None,
     ) -> None:
+        """Append a single conversation turn."""
         with _tx(self._db_path) as conn:
             row = conn.execute(
                 "SELECT meta_json, turn_count FROM notebooks WHERE notebook_id=?",
@@ -246,6 +303,7 @@ class NotebookMemory:
             )
 
     def get_history(self, notebook_id: str, max_turns: int = 8) -> List[Dict]:
+        """Return the last `max_turns` conversation turns."""
         with _tx(self._db_path) as conn:
             row = conn.execute(
                 "SELECT meta_json FROM notebooks WHERE notebook_id=?",

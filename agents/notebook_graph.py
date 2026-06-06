@@ -1,8 +1,30 @@
 """
 agents/notebook_graph.py
-Assembles the LangGraph StateGraph for the Research Notebook.
+─────────────────────────
+Assembles the LangGraph StateGraph for the Research Notebook (Mode 8).
 
-Graph: START → retrieve → answer → save → notebook_eval → END
+Graph structure (linear — one path only)
+─────────────────────────────────────────
+
+  START
+    │
+    ▼
+  [retrieve]   ← load notebook, (re)build hybrid index, retrieve top-k chunks
+    │
+    ▼
+  [answer]     ← generate grounded answer with inline [n] citations
+    │
+    ▼
+  [save]       ← persist user + assistant turns back to the notebook JSON
+    │
+   END
+
+Single-turn invocation model
+─────────────────────────────
+One call to `run_notebook_turn()` = one question → one grounded answer.
+The graph is compiled fresh per invocation (negligible overhead). Notebook
+continuity (sources, chunks, conversation) lives in NotebookMemory, not in
+the graph state — consistent with how run_story_turn()/run_wisdom_turn() work.
 """
 
 from __future__ import annotations
@@ -19,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_notebook_graph() -> StateGraph:
+    """Construct and compile the Research Notebook graph."""
     graph = StateGraph(NotebookState)
 
     graph.add_node("retrieve", retrieve_node)
@@ -36,6 +59,19 @@ def build_notebook_graph() -> StateGraph:
 
 
 def run_notebook_turn(initial_state: NotebookState, stream_callback=None) -> NotebookState:
+    """
+    Execute one notebook Q&A turn and return the final state.
+
+    Parameters
+    ----------
+    initial_state   : created by notebook_state.create_notebook_state()
+    stream_callback : optional callable(node_name, partial_state) for progress
+
+    Returns
+    -------
+    Final NotebookState with assistant_response, citations, and
+    suggested_questions populated.
+    """
     app = build_notebook_graph()
     final_state = dict(initial_state)
 

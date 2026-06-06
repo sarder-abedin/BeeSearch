@@ -1,6 +1,25 @@
 """
 agents/notebook_nodes.py
-Three nodes for the Research Notebook: retrieve → answer → save
+─────────────────────────
+The three nodes that form the Research Notebook (Mode 8) workflow.
+
+  START → retrieve → answer → save → END
+
+Node responsibilities
+─────────────────────
+  retrieve : Load the notebook, (re)build the HybridStore, and run hybrid
+             retrieval (dense FAISS + sparse BM25 fused with RRF) for the query.
+             Also loads recent conversation history.
+  answer   : Generate an answer grounded ONLY in the retrieved chunks, with
+             inline [n] citations, plus 2–3 follow-up questions.
+  save     : Persist the user question and the cited assistant answer to memory.
+
+GROUNDING CONTRACT
+──────────────────
+The answer node is given numbered source excerpts and is instructed to answer
+strictly from them, cite every claim with [n], and explicitly say when the
+sources do not contain the answer. This is what makes the notebook a
+"closed-book over your sources" assistant rather than a general chatbot.
 """
 
 from __future__ import annotations
@@ -22,6 +41,7 @@ from tools.hybrid_store import get_or_create_store
 logger = logging.getLogger(__name__)
 cfg = get_settings()
 
+# Lazy singleton — not created at import time so tests can inject a different instance.
 _memory: NotebookMemory | None = None
 
 
@@ -31,6 +51,8 @@ def _get_memory() -> NotebookMemory:
         _memory = NotebookMemory()
     return _memory
 
+
+# ── Minimal ProcessedDocument rebuild (for re-indexing from stored chunks) ──────
 
 @dataclass
 class _RebuiltChunk:
@@ -45,6 +67,7 @@ class _RebuiltChunk:
 
 @dataclass
 class _RebuiltDoc:
+    """A lightweight stand-in for ProcessedDocument with just what HybridStore needs."""
     doc_id: str
     filename: str
     content_md5: str
@@ -52,6 +75,11 @@ class _RebuiltDoc:
 
 
 def _rebuild_docs_from_chunks(notebook: Dict[str, Any]) -> List[_RebuiltDoc]:
+    """
+    Reconstruct per-document chunk lists from the notebook's stored chunks so the
+    HybridStore can rebuild its FAISS + BM25 indexes. Embeddings are read from the
+    ChromaDB cache (keyed by stable chunk_id) — no re-embedding occurs.
+    """
     md5_by_doc = {s["doc_id"]: s.get("content_md5", "") for s in notebook.get("sources", [])}
     name_by_doc = {s["doc_id"]: s.get("filename", "source") for s in notebook.get("sources", [])}
 
@@ -79,7 +107,17 @@ def _rebuild_docs_from_chunks(notebook: Dict[str, Any]) -> List[_RebuiltDoc]:
     return docs
 
 
+# ── Node 1: Retrieve ───────────────────────────────────────────────────────────
+
 def retrieve_node(state: NotebookState) -> Dict[str, Any]:
+    """
+    Load the notebook, ensure the hybrid index is built, and retrieve the most
+    relevant chunks for the user's question.
+
+    Falls back to the first chunks of the notebook (in document order) if the
+    embedding model is unavailable, so the mode still works without a pulled
+    embedding model — just without semantic ranking.
+    """
     logger.info("[Notebook Node 1] Retrieve")
     notebook_id = state.get("notebook_id", "")
     errors = list(state.get("errors", []))
@@ -110,6 +148,7 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
     rag_meta: Dict[str, Any] = {}
 
     if not stored_chunks:
+        # No uploaded sources. If web search is also off, return early with nothing to retrieve.
         if not state.get("include_web_search", False):
             return {
                 "retrieved_chunks": [],
@@ -120,7 +159,9 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
                 "completed_steps": state.get("completed_steps", []) + ["retrieve"],
                 "progress_pct": 30,
             }
+        # Web search is enabled — skip RAG and fall through to the web search block below.
     else:
+        # There are stored chunks — run hybrid RAG retrieval.
         retrieval_mode = "fallback"
         try:
             store = get_or_create_store(
@@ -131,6 +172,7 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
             )
             if not store.is_indexed():
                 docs = _rebuild_docs_from_chunks(notebook)
+                # add_documents auto-falls-back to BM25-only if embedding is unavailable.
                 store.add_documents(docs, warning_callback=logger.warning)
             from agents.self_reflective_rag import react_retrieve
             retrieved, rag_meta = react_retrieve(
@@ -150,8 +192,10 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
                 retrieved = stored_chunks[:top_k]
                 retrieval_mode = "fallback"
         except Exception as e:
+            # Catches RuntimeError from embedder AND any import/memory error from FAISS.
             logger.warning("Retrieval error (%s) — using BM25 keyword fallback.", e)
             errors.append(f"Retrieval degraded to keyword search: {e}")
+            # Build BM25-only index as last resort (no FAISS, no Ollama)
             try:
                 store = get_or_create_store(
                     session_id=f"notebook_{notebook_id}_bm25",
@@ -167,6 +211,7 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
                 retrieved = stored_chunks[:top_k]
             retrieval_mode = "fallback"
 
+    # Optional automatic Google search — supplements notebook sources.
     if state.get("include_web_search", False):
         try:
             from tools.search_tools import WebSearcher
@@ -179,11 +224,12 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
                     "page_num": -1,
                     "chunk_index": i,
                     "text": wr.snippet or wr.title,
-                    "metadata": {"url": wr.url, "source": "web"},
+                    "metadata": {"url": wr.url, "source": "google"},
                 })
             if web_results:
                 retrieval_mode = retrieval_mode + "+web" if retrieval_mode != "empty" else "web"
             else:
+                # Web search ran but returned nothing — mark so answer_node can give a better message.
                 retrieval_mode = retrieval_mode + "+web_empty" if retrieval_mode != "empty" else "web_empty"
         except Exception as exc:
             logger.warning("Notebook auto web search failed: %s", exc)
@@ -203,6 +249,8 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
     }
 
 
+# ── Node 2: Answer ───────────────────────────────────────────────────────────
+
 def _llm(state: NotebookState, temperature: float = 0.3) -> ChatOllama:
     import httpx
     return ChatOllama(
@@ -216,6 +264,7 @@ def _llm(state: NotebookState, temperature: float = 0.3) -> ChatOllama:
 
 
 def _build_context_block(chunks: List[Dict[str, Any]]) -> str:
+    """Number each retrieved chunk as a citable source with doc name + page."""
     lines = []
     for i, ch in enumerate(chunks, 1):
         page = ch.get("page_num", 0)
@@ -238,10 +287,15 @@ def _format_history(history: List[Dict]) -> str:
 
 
 def answer_node(state: NotebookState) -> Dict[str, Any]:
+    """
+    Generate an answer grounded strictly in the retrieved chunks, with inline
+    [n] citations and a trailing suggested_questions JSON block.
+    """
     logger.info("[Notebook Node 2] Answer")
     chunks = state.get("retrieved_chunks", [])
     source_count = state.get("source_count", 0)
 
+    # No sources and no web results → ask the user to add some.
     if source_count == 0 and not chunks:
         retrieval_mode = state.get("retrieval_mode", "")
         if "web_error" in retrieval_mode:
@@ -251,6 +305,7 @@ def answer_node(state: NotebookState) -> Dict[str, Any]:
                 "(PDF, DOCX, TXT, or Markdown) to use as a source."
             )
         elif "web" in retrieval_mode:
+            # web search ran and returned empty
             msg = (
                 "Auto web search ran but found no usable results for this query. "
                 "Try rephrasing your question or upload a relevant document as a source."
@@ -259,7 +314,7 @@ def answer_node(state: NotebookState) -> Dict[str, Any]:
             msg = (
                 "This notebook has no sources yet. Upload a document (PDF, DOCX, TXT, "
                 "or Markdown), add a web page on the left, or enable **Auto web search** "
-                "to let the agent search the web automatically."
+                "to let the agent search Google automatically."
             )
         return {
             "assistant_response": msg,
@@ -270,6 +325,7 @@ def answer_node(state: NotebookState) -> Dict[str, Any]:
             "progress_pct": 80,
         }
 
+    # Sources exist but nothing relevant retrieved.
     if not chunks:
         msg = (
             "I couldn't find anything in this notebook's sources that addresses "
@@ -296,7 +352,7 @@ STRICT RULES:
    You may cite multiple sources like [1][3].
 3. If the sources do not contain enough information to answer, say so plainly:
    "The sources in this notebook don't cover that." Do not guess or invent facts.
-4. Give comprehensive, detailed answers. When the sources contain sufficient information, write 5–8 paragraphs covering all relevant aspects.
+4. Give comprehensive, detailed answers. When the sources contain sufficient information, write 5–8 paragraphs covering all relevant aspects. Do not truncate your response.
 5. Quote short phrases verbatim when precision matters.
 6. Never cite a source number that was not provided.
 7. At the very end, append EXACTLY this JSON on its own line and nothing after it:
@@ -340,6 +396,7 @@ Answer using only the sources above, with inline [n] citations. End with the sug
 
 
 def _split_suggested_questions(raw: str) -> tuple[str, List[str]]:
+    """Split the trailing {"suggested_questions": [...]} JSON from the answer body."""
     suggested: List[str] = []
     body = raw
     marker = '{"suggested_questions"'
@@ -360,6 +417,10 @@ def _split_suggested_questions(raw: str) -> tuple[str, List[str]]:
 
 
 def _extract_citations(answer: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Build a citation list for the [n] markers that actually appear in the answer.
+    Falls back to all retrieved chunks if the model cited nothing explicitly.
+    """
     cited_nums = sorted({int(n) for n in re.findall(r"\[(\d+)\]", answer)})
     citations: List[Dict[str, Any]] = []
     for n in cited_nums:
@@ -378,7 +439,10 @@ def _extract_citations(answer: str, chunks: List[Dict[str, Any]]) -> List[Dict[s
     return citations
 
 
+# ── Node 3: Save ───────────────────────────────────────────────────────────────
+
 def save_node(state: NotebookState) -> Dict[str, Any]:
+    """Persist the user question and cited assistant answer to the notebook."""
     logger.info("[Notebook Node 3] Save")
     notebook_id = state.get("notebook_id", "")
     if not notebook_id:

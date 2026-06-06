@@ -1,6 +1,39 @@
 """
 agents/notebook_pipeline_nodes.py
-Seven LangGraph nodes for the Research Notebook pipeline.
+────────────────────────────────────
+Seven LangGraph nodes for the Mode 8 Research Notebook pipeline.
+
+  START
+    │
+    ▼  Agent 1
+  [ingest]              Load sources & chunks from NotebookMemory
+    │
+    ▼  Agent 2
+  [summarize]           Per-doc summaries + cross-document synthesis
+    │
+    ▼  Agent 3
+  [retrieve]            Hybrid RAG (FAISS + BM25 + RRF) for focus query
+    │
+    ▼  Agent 4
+  [verify_citations]    Verify summary claims against source material
+    │
+    ▼  Agent 5
+  [build_kg]            Entity–relationship knowledge graph → DOT string
+    │
+    ▼  Agent 6
+  [study_guide]         Key Concepts · Glossary · Q&A · Quick Summary
+    │
+    ▼  Agent 7
+  [podcast]             Two-speaker podcast episode dialogue
+    │
+   END
+
+Reuse policy
+────────────
+• _make_llm / _invoke / _sources_context : imported from notebook_advanced.py
+• _rebuild_docs_from_chunks              : imported from notebook_nodes.py
+• _knowledge_graph_to_dot / _parse_json_object_from_llm : imported from notebook_advanced.py
+• HybridStore                            : via tools.hybrid_store.get_or_create_store
 """
 
 from __future__ import annotations
@@ -20,6 +53,8 @@ cfg = get_settings()
 
 _TOTAL_STEPS = 7
 
+# ── Lazy memory singleton — tests can monkeypatch ──────────────────────────────
+
 _memory: NotebookMemory | None = None
 
 
@@ -30,7 +65,10 @@ def _get_memory() -> NotebookMemory:
     return _memory
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 2048):
+    """ChatOllama factory — mirrors notebook_advanced._make_llm."""
     import httpx
     from langchain_ollama import ChatOllama
     return ChatOllama(
@@ -54,6 +92,8 @@ def _sources_context_from_state(
     state: NotebookPipelineState,
     max_chars_per_doc: int = 3_500,
 ) -> str:
+    """Build numbered source context block from state's chunks — delegates to
+    notebook_advanced._sources_context via a minimal notebook dict."""
     from agents.notebook_advanced import _sources_context
     return _sources_context(
         {"sources": state.get("sources", []), "chunks": state.get("chunks", [])},
@@ -62,6 +102,7 @@ def _sources_context_from_state(
 
 
 def _parse_json_array(raw: str) -> Any:
+    """Extract the first JSON array from LLM output; falls back to full parse."""
     m = re.search(r"\[.*\]", raw, re.DOTALL)
     if m:
         try:
@@ -72,10 +113,19 @@ def _parse_json_array(raw: str) -> Any:
 
 
 def _progress(step: int) -> int:
+    """Return progress % for step (1-indexed, out of _TOTAL_STEPS)."""
     return min(100, round(step / _TOTAL_STEPS * 100))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent 1 — Document Ingestion
+# ─────────────────────────────────────────────────────────────────────────────
+
 def ingestion_node(state: NotebookPipelineState) -> Dict[str, Any]:
+    """
+    Load all sources and chunks from the notebook JSON into pipeline state.
+    No LLM call — pure I/O.
+    """
     notebook_id = state.get("notebook_id", "")
     errors: List[str] = list(state.get("errors", []))
     completed: List[str] = list(state.get("completed_steps", []))
@@ -113,7 +163,19 @@ def ingestion_node(state: NotebookPipelineState) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent 2 — Summarization
+# ─────────────────────────────────────────────────────────────────────────────
+
 def summarization_node(state: NotebookPipelineState) -> Dict[str, Any]:
+    """
+    Generate per-document summaries and a unified cross-document synthesis.
+
+    Single source  → comprehensive 3-4 paragraph summary.
+    Multiple sources → short per-doc summary + structured synthesis covering
+                       Overview · Common Themes · Complementary Contributions ·
+                       Contradictions · Key Takeaways.
+    """
     _MAX_PER_DOC = 3_500
 
     errors: List[str] = list(state.get("errors", []))
@@ -155,6 +217,7 @@ def summarization_node(state: NotebookPipelineState) -> Dict[str, Any]:
             errors.append(f"Summarization of '{name}' failed: {exc}")
             per_doc_summaries[name] = ""
         cross_summary = per_doc_summaries.get(name, "")
+
     else:
         for src in sources:
             doc_id = src["doc_id"]
@@ -188,6 +251,11 @@ def summarization_node(state: NotebookPipelineState) -> Dict[str, Any]:
                 f"**{n}:** {s}" for n, s in per_doc_summaries.items()
             )
 
+    logger.info(
+        "summarization_node: %d per-doc summaries, cross_summary %d chars",
+        len(per_doc_summaries),
+        len(cross_summary),
+    )
     return {
         "per_doc_summaries": per_doc_summaries,
         "cross_summary": cross_summary,
@@ -198,7 +266,19 @@ def summarization_node(state: NotebookPipelineState) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent 3 — Retrieval
+# ─────────────────────────────────────────────────────────────────────────────
+
 def retrieval_node(state: NotebookPipelineState) -> Dict[str, Any]:
+    """
+    Build (or reuse) a HybridStore and retrieve the most relevant chunks for
+    the pipeline's focus query using dense FAISS + sparse BM25 fused with RRF.
+
+    Falls back to simple keyword matching when the embedding model is unavailable.
+    The session key `pipeline_<notebook_id>` keeps this store separate from the
+    interactive Q&A store (`notebook_<notebook_id>`).
+    """
     errors: List[str] = list(state.get("errors", []))
     completed: List[str] = list(state.get("completed_steps", []))
     settings = state.get("settings", {})
@@ -244,6 +324,8 @@ def retrieval_node(state: NotebookPipelineState) -> Dict[str, Any]:
             num_ctx=settings.get("num_ctx", cfg.num_ctx),
         )
         mode = "self_reflective" if store.embedder_available() else "fallback"
+        logger.info("retrieval_node: %d chunks via %s", len(retrieved), mode)
+
     except Exception as exc:
         errors.append(f"HybridStore retrieval failed ({exc}); using keyword fallback.")
         words = set(query.lower().split())
@@ -264,7 +346,22 @@ def retrieval_node(state: NotebookPipelineState) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent 4 — Citation Verification
+# ─────────────────────────────────────────────────────────────────────────────
+
 def citation_verification_node(state: NotebookPipelineState) -> Dict[str, Any]:
+    """
+    Identify 5–8 specific factual claims in the cross-document summary and
+    verify each against the raw source material.
+
+    Confidence ratings:
+      HIGH   — direct supporting quote found in the sources
+      MEDIUM — claim implied or clearly paraphrased by a source
+      LOW    — claim not clearly supported by any available source
+
+    Returns a structured markdown verification table.
+    """
     errors: List[str] = list(state.get("errors", []))
     completed: List[str] = list(state.get("completed_steps", []))
     settings = state.get("settings", {})
@@ -297,7 +394,10 @@ def citation_verification_node(state: NotebookPipelineState) -> Dict[str, Any]:
         '    "supporting_text": "short quote or paraphrase from the source"\n'
         "  }\n"
         "]\n\n"
-        "Confidence: HIGH = direct quote, MEDIUM = implied/paraphrased, LOW = not clearly supported"
+        "Confidence:\n"
+        "  HIGH   = direct quote present in source material\n"
+        "  MEDIUM = claim implied or paraphrased by source\n"
+        "  LOW    = claim not clearly supported by any source"
     )
     human = (
         f"SOURCE MATERIAL:\n{context}\n\n"
@@ -312,6 +412,7 @@ def citation_verification_node(state: NotebookPipelineState) -> Dict[str, Any]:
     except Exception as exc:
         errors.append(f"Citation verification LLM call failed: {exc}")
 
+    # Build markdown table report
     if data:
         _badge = {"HIGH": "✅", "MEDIUM": "🟡", "LOW": "❌"}
         high = sum(1 for c in data if c.get("confidence") == "HIGH")
@@ -337,6 +438,7 @@ def citation_verification_node(state: NotebookPipelineState) -> Dict[str, Any]:
     else:
         citation_report = "Citation verification produced no results."
 
+    logger.info("citation_verification_node: %d claims verified", len(data))
     return {
         "verified_citations": data,
         "citation_report": citation_report,
@@ -347,7 +449,20 @@ def citation_verification_node(state: NotebookPipelineState) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent 5 — Knowledge Graph Construction
+# ─────────────────────────────────────────────────────────────────────────────
+
 def knowledge_graph_node(state: NotebookPipelineState) -> Dict[str, Any]:
+    """
+    Extract entities and relationships from all sources and render them as a
+    Graphviz DOT knowledge graph.
+
+    Reuses _knowledge_graph_to_dot() and _parse_json_object_from_llm() from
+    notebook_advanced — same LLM prompt, same DOT output format.
+
+    Node types: concept · method · dataset · author · institution
+    """
     errors: List[str] = list(state.get("errors", []))
     completed: List[str] = list(state.get("completed_steps", []))
     settings = state.get("settings", {})
@@ -369,6 +484,7 @@ def knowledge_graph_node(state: NotebookPipelineState) -> Dict[str, Any]:
         _parse_json_object_from_llm,
     )
 
+    # Smaller per-doc limit — keep the context focused on entities, not prose
     context = _sources_context_from_state(state, max_chars_per_doc=1_500)
     llm = _make_llm(settings, temperature=0.2, num_predict=1024)
 
@@ -381,7 +497,9 @@ def knowledge_graph_node(state: NotebookPipelineState) -> Dict[str, Any]:
         "Rules:\n"
         "• 15–20 nodes, 15–25 edges\n"
         "• Every edge 'from'/'to' must reference a valid node 'id'\n"
-        "• Use precise domain-specific labels"
+        "• Use precise domain-specific labels\n"
+        "• 'concept' = ideas/theories, 'method' = techniques/algorithms, "
+        "'dataset' = data sources, 'author' = people, 'institution' = organisations"
     )
 
     kg_data: Dict[str, Any] = {}
@@ -390,6 +508,11 @@ def knowledge_graph_node(state: NotebookPipelineState) -> Dict[str, Any]:
         raw = _invoke(llm, system, f"Source material:\n\n{context}")
         kg_data = _parse_json_object_from_llm(raw)
         dot = _knowledge_graph_to_dot(kg_data)
+        logger.info(
+            "knowledge_graph_node: %d nodes, %d edges",
+            len(kg_data.get("nodes", [])),
+            len(kg_data.get("edges", [])),
+        )
     except Exception as exc:
         errors.append(f"Knowledge graph construction failed: {exc}")
 
@@ -403,7 +526,20 @@ def knowledge_graph_node(state: NotebookPipelineState) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent 6 — Study Guide Generation
+# ─────────────────────────────────────────────────────────────────────────────
+
 def study_guide_node(state: NotebookPipelineState) -> Dict[str, Any]:
+    """
+    Generate a structured study guide from the summaries and raw source material.
+
+    Sections:
+      ## Key Concepts     8–12 bullet-point definitions
+      ## Glossary         term | definition | source table (8–12 terms)
+      ## Review Questions 6–8 Q&A pairs grounded in the sources
+      ## Quick Summary    2–3 paragraph synthesis
+    """
     _MAX_TOTAL = 14_000
 
     errors: List[str] = list(state.get("errors", []))
@@ -423,6 +559,7 @@ def study_guide_node(state: NotebookPipelineState) -> Dict[str, Any]:
             "completed_steps": completed + ["study_guide"],
         }
 
+    # Build the best available context (summaries > raw chunks)
     context_parts: List[str] = []
     if cross_summary:
         context_parts.append(f"SYNTHESIS:\n{cross_summary}")
@@ -455,6 +592,7 @@ def study_guide_node(state: NotebookPipelineState) -> Dict[str, Any]:
     study_guide = ""
     try:
         study_guide = _invoke(llm, system, f"Research material:\n\n{combined}")
+        logger.info("study_guide_node: %d chars generated", len(study_guide))
     except Exception as exc:
         errors.append(f"Study guide generation failed: {exc}")
 
@@ -467,7 +605,22 @@ def study_guide_node(state: NotebookPipelineState) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent 7 — Podcast Script Generation
+# ─────────────────────────────────────────────────────────────────────────────
+
 def podcast_script_node(state: NotebookPipelineState) -> Dict[str, Any]:
+    """
+    Generate an engaging two-speaker podcast episode based on the research sources.
+
+    Speakers:
+      HOST (Alex)          — curious interviewer; hooks the listener, asks great
+                             questions, provides smooth transitions between topics
+      EXPERT (Dr. Jordan)  — knowledgeable researcher; explains clearly, never
+                             uses jargon without defining it first
+
+    Script length: 450–600 words.  Pure dialogue — no stage directions.
+    """
     errors: List[str] = list(state.get("errors", []))
     completed: List[str] = list(state.get("completed_steps", []))
     settings = state.get("settings", {})
@@ -489,6 +642,7 @@ def podcast_script_node(state: NotebookPipelineState) -> Dict[str, Any]:
         ", ".join(s["filename"] for s in sources) if sources else "the provided documents"
     )
 
+    # Build focused context: cross-summary + Key Concepts section from study guide
     ctx_parts = [f"KEY INSIGHTS:\n{cross_summary[:3000]}"]
     if study_guide:
         m = re.search(r"## Key Concepts\n(.*?)(?=\n##|\Z)", study_guide, re.DOTALL)
@@ -509,9 +663,9 @@ def podcast_script_node(state: NotebookPipelineState) -> Dict[str, Any]:
         "• 450–600 words total\n"
         "• Natural conversational tone throughout\n"
         "• Cover: what these sources are about, the key findings, and why it matters\n"
-        "• Open with a compelling hook from HOST\n"
+        "• Open with a compelling hook from HOST that immediately draws the listener in\n"
         "• Close with HOST naming 2–3 concrete takeaways and signing off warmly\n"
-        "• Pure dialogue only — no stage directions, no music cues"
+        "• Pure dialogue only — no stage directions, no music cues, no parentheticals"
     )
     human = (
         f"Create a podcast episode based on these research sources: {source_list}\n\n"
@@ -521,6 +675,7 @@ def podcast_script_node(state: NotebookPipelineState) -> Dict[str, Any]:
     podcast_script = ""
     try:
         podcast_script = _invoke(llm, system, human)
+        logger.info("podcast_script_node: %d chars generated", len(podcast_script))
     except Exception as exc:
         errors.append(f"Podcast script generation failed: {exc}")
 

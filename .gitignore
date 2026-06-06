@@ -4,43 +4,41 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-*.egg
-*.egg-info/
-dist/
-build/
-.eggs/
 
 # Virtual environments
-venv/
 .venv/
+venv/
 env/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Environment files
 .env
+.env.*
 
-# Outputs and runtime data
+# Outputs (generated at runtime)
 outputs/
-models/
-*.db
-*.sqlite
 
-# ChromaDB
+# Docling / HuggingFace model cache (large binary files)
+models/
+
+# ChromaDB persistent store
 chroma_db/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# Streamlit
+.streamlit/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Streamlit
-.streamlit/secrets.toml
+# Editor
+.vscode/
+.idea/
+*.swp
 
-# Logs
-*.log
-
-# Temporary files
-*.tmp
-*.temp
+# Claude Code worktrees (temporary agent workspaces)
+.claude/worktrees/

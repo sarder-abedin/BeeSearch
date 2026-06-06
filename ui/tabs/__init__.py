@@ -1,1 +1,1 @@
-# ResearchBuddy UI tabs
+# ui.tabs package

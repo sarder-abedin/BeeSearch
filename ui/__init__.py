@@ -1,1 +1,1 @@
-# ResearchBuddy UI
+# ui package

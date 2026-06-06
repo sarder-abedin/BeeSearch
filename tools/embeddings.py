@@ -1,6 +1,6 @@
 """
 tools/embeddings.py
-───────────────────
+────────────────────
 Ollama-backed embedding client for hybrid RAG.
 
 Uses Ollama's /api/embed endpoint to generate dense vector representations
@@ -68,6 +68,7 @@ class OllamaEmbedder:
                 i += batch_size  # advance only on success
             except RuntimeError as exc:
                 msg = str(exc)
+                # 5xx from Ollama usually means OOM / model not loaded yet.
                 is_server_error = (
                     "500" in msg or "502" in msg or "503" in msg or "504" in msg
                     or "out of memory" in msg.lower()
@@ -83,6 +84,7 @@ class OllamaEmbedder:
                     logger.warning(warn)
                     if warning_callback:
                         warning_callback(warn)
+                    # Do NOT advance i — retry the same slice
                 else:
                     raise
 
@@ -111,7 +113,7 @@ class OllamaEmbedder:
         except Exception:
             return False
 
-    # ── Private ────────────────────────────────────────────────────────────────
+    # ── Private ───────────────────────────────────────────────────────────────
 
     def _call_api(self, texts: List[str]) -> List[List[float]]:
         """POST to /api/embed and parse the response."""

@@ -1,11 +1,19 @@
 """
 agents/systematic_review_nodes.py
 ───────────────────────────────────
-Nodes for the PRISMA Systematic Review pipeline.
+Nodes for Mode 7 — Simplified PRISMA Systematic Review.
 
 Graph structure:
   START → query_generation → literature_search → screening →
-          evidence_extraction → synthesis → sr_eval → END
+          evidence_extraction → synthesis → evaluation → END
+
+Node roles:
+  query_generation   — Generate 3–5 academic search queries from the research question
+  literature_search  — Run AcademicSearcher across all queries, deduplicate
+  screening          — Screen papers by title/abstract against inclusion/exclusion criteria
+  evidence_extraction— For each included paper extract study design, key finding, quality score
+  synthesis          — PRISMA flow table, narrative synthesis, themes, gaps, conclusion
+  evaluation         — Quality self-evaluation via eval_nodes pattern
 """
 
 from __future__ import annotations
@@ -51,7 +59,7 @@ def _call(llm: ChatOllama, system: str, human: str) -> str:
     return llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
 
 
-# ── Node 1: Query Generation ───────────────────────────────────────────────
+# ── Node 1: Query Generation ───────────────────────────────────────────────────
 
 def query_generation_node(state: SystematicReviewState) -> Dict[str, Any]:
     logger.info("[SR Node 1] Query Generation")
@@ -97,7 +105,7 @@ Return ONLY a valid JSON array of strings. No explanation.""",
     }
 
 
-# ── Node 2: Literature Search ─────────────────────────────────────────────
+# ── Node 2: Literature Search ──────────────────────────────────────────────────
 
 def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
     logger.info("[SR Node 2] Literature Search")
@@ -131,6 +139,7 @@ def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
 
     all_papers.sort(key=lambda p: -(p.get("citation_count") or 0))
 
+    # Pre-screening relevance filter — reduces screening_node workload
     papers_before_grading = len(all_papers)
     if all_papers:
         from agents.self_reflective_rag import grade_papers
@@ -142,8 +151,9 @@ def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
             num_ctx=state.get("num_ctx", 4096),
         )
         filtered = [p for p, g in zip(all_papers, grades) if g]
-        all_papers = filtered or all_papers
+        all_papers = filtered or all_papers  # fallback: keep all if none pass
 
+    # Deduplicate citation keys — two "Smith et al., 2022" → "Smith et al., 2022a", "...2022b"
     seen_ckeys: dict[str, int] = {}
     for paper in all_papers:
         base_ck = paper["citation_key"]
@@ -154,8 +164,28 @@ def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
 
     logger.info("[SR] Found %d unique papers across %d queries", len(all_papers), len(queries))
 
+    # Abstract screening — score all papers before LLM criteria screening
+    screener_scores: List[Dict] = []
+    try:
+        from tools.abstract_screener import screen_abstracts
+        rq = state.get("research_question", "")
+        screener_scores = screen_abstracts(
+            papers=all_papers,
+            research_question=rq,
+            inclusion_criteria=state.get("inclusion_criteria", []),
+            exclusion_criteria=state.get("exclusion_criteria", []),
+            model_name=state.get("model_name", cfg.ollama_model),
+            num_ctx=state.get("num_ctx", 4096),
+        )
+        # Re-order all_papers to match screener ranking (highest score first)
+        score_map = {r["paper"].get("title", ""): r["score"] for r in screener_scores}
+        all_papers.sort(key=lambda p: -score_map.get(p.get("title", ""), 50))
+    except Exception as e:
+        logger.warning("Abstract screener failed (continuing without scores): %s", e)
+
     return {
         "raw_papers": all_papers,
+        "screener_scores": screener_scores,
         "rag_reflection_info": {
             "papers_retrieved": papers_before_grading,
             "papers_after_grading": len(all_papers),
@@ -163,13 +193,16 @@ def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
         "current_step": "literature_search",
         "completed_steps": state.get("completed_steps", []) + ["literature_search"],
         "progress_pct": 30,
-        "status_detail": f"Found {len(all_papers)} papers via arXiv · Semantic Scholar · CrossRef",
+        "status_detail": (
+            f"Found {len(all_papers)} papers via Google Scholar · arXiv · Semantic Scholar · CrossRef"
+        ),
     }
 
 
-# ── Node 3: Screening ───────────────────────────────────────────────────
+# ── Node 3: Screening ──────────────────────────────────────────────────────────
 
 def screening_node(state: SystematicReviewState) -> Dict[str, Any]:
+    """Screen papers by title/abstract against inclusion and exclusion criteria."""
     logger.info("[SR Node 3] Screening")
     llm = _llm(state, temperature=0.1, num_predict=128)
 
@@ -190,6 +223,7 @@ def screening_node(state: SystematicReviewState) -> Dict[str, Any]:
     inc_block = "; ".join(inclusion) if inclusion else "Relevant to the research question"
     exc_block = "; ".join(exclusion) if exclusion else "Clearly off-topic papers"
 
+    # Screen in batches of 10
     screened: List[Dict] = []
     excluded: List[Dict] = []
 
@@ -219,34 +253,31 @@ Return ONLY valid JSON.""",
         else:
             excluded.append({**paper, "exclusion_reason": result.get("reason", "")})
 
-    logger.info("[SR] Screened: %d included, %d excluded", len(screened), len(excluded))
+    logger.info("[SR] Screened: %d included, %d excluded from %d total", len(screened), len(excluded), len(raw_papers))
 
     return {
         "screened_papers": screened,
-        "included_papers": screened,
+        "included_papers": screened,  # same set after this phase; evidence_extraction may further filter
         "excluded_papers": excluded,
         "current_step": "screening",
         "completed_steps": state.get("completed_steps", []) + ["screening"],
         "progress_pct": 55,
-        "status_detail": (
-            f"Screened {len(raw_papers)} → {len(screened)} included · {len(excluded)} excluded"
-        ),
+        "status_detail": f"Screened {len(raw_papers)} → {len(screened)} included · {len(excluded)} excluded",
     }
 
 
-# ── Node 4: Evidence Extraction (+ RoB, GRADE, Contradictions) ─────────────────
+# ── Node 4: Evidence Extraction ────────────────────────────────────────────────
 
 def evidence_extraction_node(state: SystematicReviewState) -> Dict[str, Any]:
+    """Extract structured evidence from each included paper."""
     logger.info("[SR Node 4] Evidence Extraction")
     llm = _llm(state, temperature=0.1, num_predict=256)
 
     included = state.get("included_papers", [])
     rq = state.get("research_question", "")
-    model_name = state.get("model_name", cfg.ollama_model)
-    num_ctx = state.get("num_ctx", cfg.num_ctx)
     evidence_table: List[Dict] = []
 
-    for paper in included[:20]:
+    for paper in included[:20]:  # cap at 20 papers
         raw = _call(
             llm,
             f"""Extract evidence from this paper for a systematic review on: {rq}
@@ -259,7 +290,7 @@ Return ONLY valid JSON.""",
             match = re.search(r"\{.*\}", raw, re.DOTALL)
             evidence = json.loads(match.group(0)) if match else {}
         except Exception as e:
-            logger.warning("Evidence extraction failed for '%s': %s", paper.get("title", "")[:50], e)
+            logger.warning("Evidence extraction failed for '%s': %s", paper.get("title","")[:50], e)
             evidence = {}
 
         evidence_table.append({
@@ -270,7 +301,6 @@ Return ONLY valid JSON.""",
             "url": paper.get("url", ""),
             "doi": paper.get("doi"),
             "journal": paper.get("journal"),
-            "abstract": paper.get("abstract", "")[:300],
             "study_design": evidence.get("study_design", "Unknown"),
             "sample_size": evidence.get("sample_size", "Unknown"),
             "key_finding": evidence.get("key_finding", ""),
@@ -278,57 +308,23 @@ Return ONLY valid JSON.""",
             "relevance_score": evidence.get("relevance_score", 3),
         })
 
+    # Sort by quality and relevance
     quality_rank = {"High": 0, "Medium": 1, "Low": 2}
-    evidence_table.sort(
-        key=lambda x: (quality_rank.get(x.get("quality", "Medium"), 1), -x.get("relevance_score", 3))
-    )
-
-    # ── Risk of Bias assessment ───────────────────────────────────────
-    rob_table: List[Dict] = []
-    try:
-        from agents.risk_of_bias import assess_rob_batch
-        rob_table = assess_rob_batch(evidence_table, model_name, num_ctx)
-        logger.info("[SR] RoB assessed for %d papers", len(rob_table))
-    except Exception as e:
-        logger.warning("RoB assessment skipped: %s", e)
-
-    # ── GRADE evidence grading ────────────────────────────────────────
-    grade_results: Dict[str, Any] = {}
-    try:
-        from agents.grade_assessment import grade_evidence_body
-        grade_results = grade_evidence_body(evidence_table, rq, rob_table, model_name, num_ctx)
-        logger.info("[SR] GRADE overall: %s", grade_results.get("overall_grade", "?"))
-    except Exception as e:
-        logger.warning("GRADE assessment skipped: %s", e)
-
-    # ── Contradiction detection ────────────────────────────────────────
-    contradictions: List[Dict] = []
-    try:
-        from agents.contradiction_detector import detect_contradictions
-        contradictions = detect_contradictions(evidence_table, rq, model_name, num_ctx)
-        logger.info("[SR] Contradictions detected: %d", len(contradictions))
-    except Exception as e:
-        logger.warning("Contradiction detection skipped: %s", e)
+    evidence_table.sort(key=lambda x: (quality_rank.get(x.get("quality","Medium"), 1), -x.get("relevance_score", 3)))
 
     return {
         "evidence_table": evidence_table,
-        "rob_table": rob_table,
-        "grade_results": grade_results,
-        "contradictions": contradictions,
         "current_step": "evidence_extraction",
         "completed_steps": state.get("completed_steps", []) + ["evidence_extraction"],
         "progress_pct": 70,
-        "status_detail": (
-            f"Extracted evidence from {len(evidence_table)} papers · "
-            f"RoB assessed · GRADE: {grade_results.get('overall_grade', 'n/a')} · "
-            f"{len(contradictions)} contradiction(s) detected"
-        ),
+        "status_detail": f"Extracted evidence from {len(evidence_table)} papers",
     }
 
 
-# ── Node 5: Synthesis ────────────────────────────────────────────────────────
+# ── Node 5: Synthesis ──────────────────────────────────────────────────────────
 
 def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
+    """Generate PRISMA flow, narrative synthesis, themes, gaps, and conclusion."""
     logger.info("[SR Node 5] Synthesis")
     llm = _llm(state, temperature=0.3, num_predict=6000)
 
@@ -348,13 +344,12 @@ def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
     }
 
     if not evidence_table:
+        # Build a diagnostic summary of why papers were excluded
         exclusion_reasons: dict = {}
         for p in excluded_papers[:10]:
             reason = p.get("exclusion_reason", "no reason recorded")
             exclusion_reasons[reason] = exclusion_reasons.get(reason, 0) + 1
-        reason_summary = "; ".join(
-            f"{r} (×{n})" for r, n in sorted(exclusion_reasons.items(), key=lambda x: -x[1])[:5]
-        )
+        reason_summary = "; ".join(f"{r} (×{n})" for r, n in sorted(exclusion_reasons.items(), key=lambda x: -x[1])[:5])
 
         return {
             "prisma_flow": prisma_flow,
@@ -362,7 +357,9 @@ def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
                 f"No papers met the inclusion criteria after screening "
                 f"({len(raw_papers)} identified, {len(excluded_papers)} excluded). "
                 f"Top exclusion reasons: {reason_summary or 'none recorded'}. "
-                "Consider broadening the research question or relaxing inclusion criteria."
+                f"Consider: (1) broadening the research question, "
+                f"(2) relaxing inclusion criteria (e.g. publication date range or study type), "
+                f"or (3) adding alternative search terms."
             ),
             "key_themes": [],
             "research_gaps": [
@@ -370,17 +367,19 @@ def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
                 "Consider alternative databases (PubMed, Cochrane) for clinical topics.",
             ],
             "limitations": (
-                f"This review identified {len(raw_papers)} papers but none passed screening."
+                f"This review identified {len(raw_papers)} papers but none passed screening. "
+                "Results should be interpreted as a search scope problem, not evidence of absence."
             ),
             "conclusion": (
                 "The systematic review could not synthesise findings because no studies "
-                "passed inclusion/exclusion screening. "
-                f"Top exclusion reasons: {reason_summary or 'not recorded'}."
+                "passed the inclusion/exclusion screening. "
+                f"Top exclusion reasons were: {reason_summary or 'not recorded'}. "
+                "Revise the search terms or criteria and retry."
             ),
             "current_step": "synthesis",
             "completed_steps": state.get("completed_steps", []) + ["synthesis"],
             "progress_pct": 90,
-            "status_detail": "Synthesis complete (no papers included)",
+            "status_detail": f"Synthesised {len(state.get('included_papers', []))} papers into narrative review",
         }
 
     evidence_text = "\n".join(
@@ -389,6 +388,9 @@ def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
         for e in evidence_table[:15]
     )
 
+    # ── Call 1: narrative synthesis as plain text (avoids JSON-in-JSON issues) ──
+    # Small LLMs consistently fail when asked to embed 600-word essays inside JSON.
+    # Generating plain text first, then structured fields separately, is far more robust.
     narrative_synthesis = _call(
         llm,
         f"""You are writing the narrative synthesis section of a systematic review.
@@ -402,11 +404,12 @@ Write 6-8 paragraphs (700-1100 words) synthesising the findings across the inclu
         f"EVIDENCE SUMMARY:\n{evidence_text}",
     )
 
+    # ── Call 2: structured fields as compact JSON ──────────────────────────────
     llm_structured = _llm(state, temperature=0.1, num_predict=1024)
     raw_structured = _call(
         llm_structured,
         """Return a JSON object with EXACTLY these keys (no other text):
-{"key_themes":["theme1"],"research_gaps":["gap1"],"limitations":"3-4 sentences","conclusion":"4-6 sentences"}""",
+{"key_themes":["theme1","theme2"],"research_gaps":["gap1","gap2"],"limitations":"3-4 sentences","conclusion":"4-6 sentences"}""",
         f"Research question: {rq}\n\nEvidence summary:\n{evidence_text[:1800]}",
     )
 
@@ -427,13 +430,14 @@ Write 6-8 paragraphs (700-1100 words) synthesising the findings across the inclu
         "current_step": "synthesis",
         "completed_steps": state.get("completed_steps", []) + ["synthesis"],
         "progress_pct": 90,
-        "status_detail": f"Synthesised {len(included_papers)} papers into narrative review",
+        "status_detail": f"Synthesised {len(state.get('included_papers', []))} papers into narrative review",
     }
 
 
-# ── Node 6: Evaluation ────────────────────────────────────────────────────
+# ── Node 6: Evaluation ─────────────────────────────────────────────────────────
 
 def sr_eval_node(state: SystematicReviewState) -> Dict[str, Any]:
+    """Quality self-evaluation for the systematic review."""
     logger.info("[SR Node 6] Evaluation")
     llm = _llm(state, temperature=0.1, num_predict=512)
 
@@ -446,6 +450,7 @@ def sr_eval_node(state: SystematicReviewState) -> Dict[str, Any]:
     key_themes = state.get("key_themes", [])
     research_gaps = state.get("research_gaps", [])
 
+    # Summarise evidence quality distribution for the evaluator
     quality_dist: Dict[str, int] = {}
     for e in evidence_table:
         q = e.get("quality", "Unknown")
@@ -457,15 +462,16 @@ def sr_eval_node(state: SystematicReviewState) -> Dict[str, Any]:
         f"Research question: {rq}\n"
         f"PRISMA flow: {n_raw} identified → {n_included} included, {n_excluded} excluded\n"
         f"Evidence quality distribution: {quality_dist}\n"
-        f"Study designs: {', '.join(study_designs[:8]) or 'none'}\n"
+        f"Study designs represented: {', '.join(study_designs[:8]) or 'none'}\n"
         f"Key themes identified: {len(key_themes)}\n"
         f"Research gaps identified: {len(research_gaps)}\n"
-        f"Synthesis excerpt:\n{synthesis[:2000]}"
+        f"Synthesis excerpt (first 2000 chars):\n{synthesis[:2000]}"
     )
 
     raw = _call(
         llm,
         """Rate this systematic review on 5 dimensions (1–5 integer scale).
+Score honestly based on the evidence provided — do not default to mid-range scores.
 Return ONLY valid JSON:
 {"search_comprehensiveness": <1-5>, "screening_rigor": <1-5>, "evidence_quality": <1-5>, "synthesis_depth": <1-5>, "gap_identification": <1-5>, "summary": "one sentence overall assessment"}""",
         eval_context,
@@ -482,8 +488,5 @@ Return ONLY valid JSON:
         "current_step": "sr_eval",
         "completed_steps": state.get("completed_steps", []) + ["sr_eval"],
         "progress_pct": 100,
-        "status_detail": (
-            f"Review complete · {n_included} papers included · "
-            f"GRADE: {state.get('grade_results', {}).get('overall_grade', 'n/a')}"
-        ),
+        "status_detail": f"Review quality scored · {len(state.get('included_papers', []))} papers included",
     }

@@ -2,6 +2,10 @@
 agents/feedback_agent.py
 ─────────────────────────
 Lightweight feedback refinement for all research modes.
+
+One call to `refine_with_feedback()` takes the current output + user feedback
+and returns an improved version. Stateless — callers track round history.
+Max 3 refinement rounds per session (enforced by callers).
 """
 
 from __future__ import annotations
@@ -32,6 +36,22 @@ def refine_with_feedback(
     model_name: str = "llama3.1:8b",
     num_ctx: int = 8192,
 ) -> str:
+    """
+    Refine a research output based on user feedback.
+
+    Parameters
+    ----------
+    original_output : Current output text to refine
+    feedback        : User's refinement instruction
+    context         : Supporting context (references, summaries — injected but not modified)
+    mode            : Mode identifier used to customise the system prompt
+    model_name      : Ollama model to use
+    num_ctx         : LLM context window size
+
+    Returns
+    -------
+    Refined output string.  Returns original unchanged if the LLM call fails.
+    """
     from langchain_ollama import ChatOllama
     from langchain_core.messages import HumanMessage, SystemMessage
 

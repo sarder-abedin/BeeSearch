@@ -1,7 +1,8 @@
 """
 ui/sidebar.py
 ─────────────
-Sidebar: hardware detection, model/context/RAG settings for ResearchBuddy.
+Sidebar: hardware detection, model/context/RAG settings,
+writing style profile picker, recent research sessions.
 """
 
 from __future__ import annotations
@@ -10,8 +11,9 @@ import logging
 
 import streamlit as st
 
+from agents.style_memory import StyleMemory
 from config.hardware import (
-    KNOWN_EMBED_MODELS, detect_hardware, get_available_embed_models,
+    KNOWN_EMBED_MODELS, TIER_CONFIGS, detect_hardware, get_available_embed_models,
     get_available_models, get_recommended_tier, recommend_config,
 )
 from config.settings import get_settings
@@ -50,6 +52,7 @@ def render_sidebar() -> dict:
             st.session_state["sidebar_chunk_size_applied"] = _all["chunk_size"]
             st.session_state["sidebar_chunk_overlap_applied"] = _all["chunk_overlap"]
 
+        # ── Apply RAM override to recommendation ──────────────
         _ram_override = st.session_state.get("hw_ram_override_gb", 0.0)
         if _ram_override and _ram_override != hw["ram_gb"]:
             hw_effective = dict(hw)
@@ -85,6 +88,7 @@ def render_sidebar() -> dict:
                 unsafe_allow_html=True,
             )
 
+            # Docker RAM override — shown when running inside a container
             if hw.get("in_docker"):
                 st.info(
                     f"Running in **Docker** — detected {hw['ram_gb']:.0f} GB "
@@ -118,7 +122,7 @@ def render_sidebar() -> dict:
                         st.cache_data.clear()
                         st.rerun()
 
-        # ── Model recommendation ──────────────────────────────
+        # ── Recommendation banner ─────────────────────────────
         st.markdown("#### Model Recommendation")
         if rec["can_run"]:
             tight = rec.get("tight_fit", False)
@@ -177,12 +181,12 @@ def render_sidebar() -> dict:
                 st.cache_data.clear()
                 st.rerun()
 
-        # ── Recommended configuration ─────────────────────────
+        # ── Recommended configuration (all settings) ─────────
         st.divider()
         st.markdown("#### Recommended Configuration")
         st.caption(
             f"Tier **{tier['label']}** — {tier['description']}.  \n"
-            "These settings are tuned for your hardware."
+            "These settings are tuned for your hardware across all modes."
         )
         _rec_model = rec.get("model") or "—"
         _rec_ctx = tier["num_ctx"]
@@ -203,6 +207,11 @@ def render_sidebar() -> dict:
                 key="apply_all_hw",
                 use_container_width=True,
                 type="primary",
+                help=(
+                    f"Sets model={_rec_model}, context={_rec_ctx:,} tokens, "
+                    f"chunks/query={_rec_top_k}, chunk size={_rec_chunk}, "
+                    f"max papers={_rec_max}"
+                ),
             ):
                 st.session_state["hw_apply_all"] = {
                     "model": _rec_model,
@@ -214,7 +223,7 @@ def render_sidebar() -> dict:
                 }
                 st.rerun()
 
-        # ── LLM Model selector ────────────────────────────────
+        # ── Model selector ────────────────────────────────────
         st.divider()
         st.markdown("#### LLM Model")
 
@@ -243,6 +252,7 @@ def render_sidebar() -> dict:
                 "Model name (manual entry)",
                 value=rec.get("model") or "llama3.2:3b",
                 key="sidebar_model_manual",
+                help="Ollama is unreachable — enter the model name manually.",
             )
 
         # ── Context window ────────────────────────────────────
@@ -261,7 +271,7 @@ def render_sidebar() -> dict:
             key="sidebar_num_ctx",
             help=(
                 "Controls how many retrieved chunks fit into the LLM context. "
-                "Match to your model's maximum."
+                "Match to your model's maximum. Reduce if you hit out-of-memory errors."
             ),
         )
 
@@ -270,9 +280,11 @@ def render_sidebar() -> dict:
         st.markdown("#### Hybrid RAG")
         st.caption(
             "Combines **dense search** (FAISS vector index) with **keyword search** (BM25), "
-            "merged via Reciprocal Rank Fusion. Used when you upload documents."
+            "then merges results via Reciprocal Rank Fusion. "
+            "Used automatically when you upload documents."
         )
 
+        # Build selector: available models first, then unavailable
         _embed_options = []
         _embed_help_lines = []
         for m in KNOWN_EMBED_MODELS:
@@ -284,6 +296,7 @@ def render_sidebar() -> dict:
                 f"{m['name']} — {m['dim']}d, {m['size_gb']} GB  [{status}]  {m['note']}"
             )
 
+        # Default to first available model; fall back to first option
         _default_idx = 0
         for i, m in enumerate(KNOWN_EMBED_MODELS):
             if m["name"] in available_embed:
@@ -297,22 +310,38 @@ def render_sidebar() -> dict:
             help="\n".join(_embed_help_lines),
             key="sidebar_embed_model",
         )
+        # Strip the "(not pulled)" suffix to get the actual model name
         embed_model = _embed_label.replace(" (not pulled)", "")
 
-        if embed_model in available_embed:
-            st.success(f"Hybrid RAG ready — FAISS + BM25 + ChromaDB  (`{embed_model}`)")
+        # Status badge: is the chosen model ready?
+        _chosen_available = embed_model in available_embed
+        if _chosen_available:
+            st.success(
+                f"Hybrid RAG ready — FAISS + BM25 + ChromaDB  "
+                f"(`{embed_model}`)"
+            )
         else:
             st.warning(
                 f"Embedding model not pulled — documents will use vectorless fallback.  \n"
                 f"Run: `ollama pull {embed_model}`"
             )
+            if st.button(
+                "Copy pull command",
+                key="copy_pull_cmd",
+                help=f"ollama pull {embed_model}",
+                use_container_width=True,
+            ):
+                st.code(f"ollama pull {embed_model}", language="bash")
 
         _top_k_default = st.session_state.pop("sidebar_top_k_applied", 8)
         hybrid_top_k = st.slider(
             "Chunks per query",
             min_value=3, max_value=20, value=_top_k_default,
             key="sidebar_hybrid_top_k",
-            help="How many document chunks are retrieved per query and passed to the LLM.",
+            help=(
+                "How many document chunks are retrieved per search query "
+                "and passed to the LLM. Higher = more context, slower."
+            ),
         )
 
         # ── Search settings ───────────────────────────────────
@@ -344,8 +373,9 @@ def render_sidebar() -> dict:
             value=True,
             key="sidebar_use_docling",
             help=(
-                "Docling provides layout-aware PDF parsing, table extraction, "
-                "and support for PPTX, XLSX, HTML, and image files."
+                "Docling provides layout-aware PDF parsing, table extraction as "
+                "Markdown, and support for PPTX, XLSX, HTML, and image files. "
+                "Models are cached in `models/docling/` after first download."
             ),
         )
 
@@ -354,9 +384,18 @@ def render_sidebar() -> dict:
                 "Enable OCR (slower)",
                 value=False,
                 key="sidebar_use_ocr",
-                help="Extracts text from scanned PDFs and image files using EasyOCR.",
+                help=(
+                    "Extracts text from scanned PDFs and image files using EasyOCR. "
+                    "Requires an additional ~200 MB model download on first use."
+                ),
             )
-            st.caption("Docling models cached in `models/docling/`. First run may download models.")
+            st.caption(
+                "Docling models cached in `models/docling/`.  \n"
+                "First run may take a few minutes while models download."
+            )
+            # Chunk size/overlap are not used by Docling's HybridChunker, but we
+            # store the tier-recommended value so it takes effect if Docling is
+            # disabled later.
             chunk_size = st.session_state.pop("sidebar_chunk_size_applied", 800)
             chunk_overlap = st.session_state.pop("sidebar_chunk_overlap_applied", 150)
         else:
@@ -368,11 +407,96 @@ def render_sidebar() -> dict:
             chunk_overlap = st.slider("Chunk overlap (chars)", 50, 300, _chunk_overlap_default,
                                       step=25, key="sidebar_chunk_overlap")
 
-        # ── About ─────────────────────────────────────────────
+        # ── Writing Style Profile ─────────────────────────────
+        st.divider()
+        st.markdown("#### Writing Style Profile")
+        _style_mem = StyleMemory()
+        _all_profiles = _style_mem.list_profiles()
+        _profile_options = ["None (default style)"] + [p["name"] for p in _all_profiles]
+        _selected_profile_name = st.selectbox(
+            "Active profile",
+            options=_profile_options,
+            key="sidebar_style_profile",
+            help=(
+                "Select a writing style profile to make all AI-generated prose match "
+                "your writing style. Create profiles via 'Manage Writing Style Profiles' on the home page."
+            ),
+        )
+        _active_profile: dict | None = None
+        if _selected_profile_name != "None (default style)":
+            _active_profile = _style_mem.load_by_name(_selected_profile_name)
+            if _active_profile:
+                st.caption(
+                    f"Active: {_selected_profile_name} "
+                    f"({len(_active_profile.get('sample_documents', []))} document(s) analysed)"
+                )
+            else:
+                st.caption("Profile not found — please re-create it.")
+                _active_profile = None
+
+        # ── Safe Shutdown ─────────────────────────────────────
+        st.divider()
+        st.markdown("#### Safe Shutdown")
+        st.caption(
+            "Flushes ChromaDB, releases ports 8501, 8000, and 11434, "
+            "then stops the server cleanly."
+        )
+        if not st.session_state.get("_shutdown_confirm"):
+            if st.button(
+                "Shut Down Safely",
+                key="sidebar_shutdown_btn",
+                use_container_width=True,
+                help="Click once to arm, then confirm.",
+            ):
+                st.session_state["_shutdown_confirm"] = True
+                st.rerun()
+        else:
+            st.warning("This will stop the server. Sessions are saved to disk.")
+            col_yes, col_no = st.columns(2)
+            with col_yes:
+                if st.button("Confirm Shutdown", key="shutdown_yes", type="primary", use_container_width=True):
+                    import os
+                    import signal as _signal
+                    from tools.shutdown import safe_shutdown
+                    st.info("Shutting down — you can close this tab.")
+                    safe_shutdown(ports=[8000, 11434], flush_db=True)
+                    os.kill(os.getpid(), _signal.SIGTERM)
+            with col_no:
+                if st.button("Cancel", key="shutdown_no", use_container_width=True):
+                    st.session_state.pop("_shutdown_confirm", None)
+                    st.rerun()
+
+        # ── Recent Research Sessions ──────────────────────────
+        st.divider()
+        st.markdown("#### Recent Sessions")
+        try:
+            from agents.memory import ResearchMemory
+            recent_sessions = ResearchMemory().list_sessions(limit=5)
+            if recent_sessions:
+                for sess in recent_sessions:
+                    mode_label = {"document": "Doc", "search": "Search", "hybrid": "Hybrid"}.get(
+                        sess.get("mode", ""), "Research"
+                    )
+                    goal_text = sess["goal"][:42] + ("…" if len(sess["goal"]) > 42 else "")
+                    date_str = sess.get("created_at", "")[:10]
+                    ref_count = sess.get("reference_count", 0)
+                    if st.button(
+                        f"[{mode_label}] {goal_text}\n{date_str} · {ref_count} refs",
+                        key=f"load_rsess_{sess['session_id']}",
+                        use_container_width=True,
+                        help=f"Reload session from {date_str}",
+                    ):
+                        st.session_state["load_research_session_id"] = sess["session_id"]
+                        st.rerun()
+            else:
+                st.caption("No saved sessions yet. Run a research workflow to save one.")
+        except Exception as e:
+            logger.debug("Could not load recent sessions: %s", e)
+
         st.divider()
         st.markdown("#### About")
         st.markdown(
-            "**ResearchBuddy**  \n"
+            "**Agentic Research Assistant**  \n"
             "Local AI · Ollama · LangGraph · Hybrid RAG  \n"
             "arXiv · Semantic Scholar · CrossRef"
         )
@@ -389,4 +513,5 @@ def render_sidebar() -> dict:
         "chunk_overlap": chunk_overlap,
         "use_docling": use_docling,
         "use_ocr": use_ocr,
+        "style_profile": _active_profile,
     }

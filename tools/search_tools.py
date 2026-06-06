@@ -6,7 +6,7 @@ Two search back-ends that power the agent's external knowledge:
   1. AcademicSearcher  — queries arXiv + Semantic Scholar + CrossRef
                          → returns peer-reviewed, citable papers
 
-  2. WebSearcher       — queries the web via DuckDuckGo (ddgs)
+  2. WebSearcher       — queries Google via FastAPI Google Search Service
                          → useful when academic coverage is thin
 
 TUTORIAL NOTE
@@ -90,7 +90,7 @@ class WebResult:
     title: str
     url: str
     snippet: str
-    source: str = "duckduckgo"
+    source: str = "google"
 
 
 # ── arXiv Searcher ────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ class SemanticScholarSearcher:
     @retry(retry=retry_if_exception(_is_retryable), stop=stop_after_attempt(4), wait=wait_exponential(min=2, max=30))
     def search(self, query: str, limit: int = 8) -> List[Paper]:
         """Search Semantic Scholar and return structured Paper objects."""
-        headers = {"User-Agent": "ResearchBuddy/1.0"}
+        headers = {"User-Agent": "AgenticResearchAssistant/1.0"}
         if cfg.semantic_scholar_api_key:
             headers["x-api-key"] = cfg.semantic_scholar_api_key
 
@@ -290,15 +290,81 @@ class CrossRefResolver:
 
 # ── Aggregated Academic Searcher ──────────────────────────────────────────────
 
+# ── Google Scholar Searcher ───────────────────────────────────────────────────
+
+class GoogleScholarSearcher:
+    """
+    Searches Google Scholar via the `scholarly` library (no API key required).
+
+    scholarly scrapes Google Scholar HTML — it may be rate-limited or blocked
+    by Google after many requests. Handled gracefully with a silent fallback.
+    """
+
+    def search(self, query: str, max_results: int = 6) -> List[Paper]:
+        try:
+            from scholarly import scholarly as _sch
+        except ImportError:
+            logger.debug("scholarly not installed — Google Scholar skipped")
+            return []
+
+        papers: List[Paper] = []
+        try:
+            search_gen = _sch.search_pubs(query)
+            for i, result in enumerate(search_gen):
+                if i >= max_results:
+                    break
+                try:
+                    bib = result.get("bib", {})
+                    title = bib.get("title", "")
+                    if not title:
+                        continue
+
+                    authors_raw = bib.get("author", "")
+                    if isinstance(authors_raw, list):
+                        authors = authors_raw
+                    else:
+                        authors = [a.strip() for a in re.split(r" and |,", str(authors_raw)) if a.strip()]
+
+                    year_raw = bib.get("pub_year") or bib.get("year")
+                    year = int(year_raw) if year_raw else None
+                    abstract = (bib.get("abstract") or "")[:800]
+                    venue = bib.get("venue") or bib.get("journal") or bib.get("booktitle") or ""
+                    url = result.get("pub_url") or result.get("eprint_url") or ""
+                    citation_count = result.get("num_citations")
+
+                    papers.append(Paper(
+                        title=title,
+                        authors=authors or ["Unknown"],
+                        year=year,
+                        abstract=abstract,
+                        url=url,
+                        doi=None,
+                        journal=venue,
+                        venue=venue,
+                        citation_count=citation_count,
+                        source="google_scholar",
+                    ))
+                except Exception as inner_e:
+                    logger.debug("Parsing Google Scholar result failed: %s", inner_e)
+        except Exception as e:
+            logger.warning("Google Scholar search failed (rate-limited or blocked): %s", e)
+
+        logger.info("Google Scholar: found %d papers for query '%s'", len(papers), query[:60])
+        return papers
+
+
+# ── Aggregated Academic Searcher ──────────────────────────────────────────────
+
 class AcademicSearcher:
     """
-    Orchestrates arXiv + Semantic Scholar searches and deduplicates results.
+    Orchestrates Google Scholar + arXiv + Semantic Scholar searches.
 
-    This is the primary search tool used by the agent's Research node.
-    Results are ranked by relevance and citation count.
+    Google Scholar is searched first (primary per configuration).
+    Results are deduplicated and ranked by citation count.
     """
 
     def __init__(self):
+        self.google_scholar = GoogleScholarSearcher()
         self.arxiv = ArxivSearcher()
         self.semantic = SemanticScholarSearcher()
         self.crossref = CrossRefResolver()
@@ -315,6 +381,12 @@ class AcademicSearcher:
         Returns a combined, deduplicated list ranked by citation count.
         """
         papers: List[Paper] = []
+
+        # Google Scholar (primary — searched first)
+        try:
+            papers.extend(self.google_scholar.search(query, max_results=max_per_source))
+        except Exception as e:
+            logger.warning("Google Scholar search failed: %s", e)
 
         # arXiv
         try:
@@ -345,9 +417,12 @@ class AcademicSearcher:
                 unique.append(p)
 
         # Sort: peer-reviewed first, then by citation count descending.
+        # Google Scholar and Semantic Scholar results are preferred over arXiv
+        # preprints. Papers with citation_count=None are ranked by year
+        # (newest first) rather than treated as 0 — they may be cutting-edge.
         unique.sort(
             key=lambda p: (
-                0 if p.source == "semantic_scholar" else 1,
+                0 if p.source in ("semantic_scholar", "google_scholar") else 1,
                 0 if p.citation_count is not None else 1,
                 -(p.citation_count or 0),
                 -(p.year or 0),

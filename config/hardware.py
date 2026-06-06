@@ -6,6 +6,13 @@ Hardware detection and model recommendation.
 Detects: OS, CPU, RAM, GPU type (Apple Silicon / NVIDIA / CPU-only).
 Queries Ollama for pulled models and recommends the best model + num_ctx
 that fits the available memory.
+
+Docker note
+───────────
+When running inside Docker on macOS the container sees the Docker VM's
+memory allocation (often 6–8 GB), not the host's full unified memory.
+`detect_hardware()` sets `in_docker=True` and `is_docker_on_apple_silicon`
+so the UI can prompt the user to supply their actual RAM.
 """
 from __future__ import annotations
 
@@ -16,6 +23,9 @@ from typing import Dict, List, Optional
 
 import requests
 
+# Known models ordered best → smallest. Used for recommendations.
+# Performance tiers keyed by RAM range.  Ordered from highest to lowest so
+# get_recommended_tier() can do a first-match scan.
 TIER_CONFIGS: List[Dict] = [
     {
         "tier": "maximum",
@@ -67,19 +77,61 @@ TIER_CONFIGS: List[Dict] = [
 def get_recommended_tier(hw: Dict) -> Dict:
     """Return the TIER_CONFIGS entry that matches the detected (or overridden) RAM."""
     usable = _usable_ram(hw)
-    for tier in TIER_CONFIGS:
+    for tier in TIER_CONFIGS:  # ordered highest → lowest
         if usable >= tier["ram_min_gb"]:
             return tier
-    return TIER_CONFIGS[-1]
+    return TIER_CONFIGS[-1]  # always return low as fallback
 
 
 KNOWN_MODELS: List[Dict] = [
-    {"name": "phi4:14b", "ram_gb": 14, "num_ctx": 16384, "quality": 5, "label": "Microsoft Phi-4 14B", "note": "Highest reasoning quality"},
-    {"name": "mistral-nemo:12b", "ram_gb": 12, "num_ctx": 131072, "quality": 4, "label": "Mistral NeMo 12B", "note": "Best context window (128k tokens)"},
-    {"name": "gemma2:9b", "ram_gb": 9, "num_ctx": 32768, "quality": 3, "label": "Google Gemma 2 9B", "note": "Strong general reasoning"},
-    {"name": "llama3.1:8b", "ram_gb": 8, "num_ctx": 32768, "quality": 3, "label": "Meta Llama 3.1 8B", "note": "Reliable all-rounder"},
-    {"name": "qwen2.5:7b", "ram_gb": 7, "num_ctx": 32768, "quality": 2, "label": "Alibaba Qwen 2.5 7B", "note": "Efficient, good multilingual support"},
-    {"name": "llama3.2:3b", "ram_gb": 3, "num_ctx": 32768, "quality": 1, "label": "Meta Llama 3.2 3B", "note": "Fastest, lowest memory use"},
+    {
+        "name": "phi4:14b",
+        "ram_gb": 14,
+        "num_ctx": 16384,
+        "quality": 5,
+        "label": "Microsoft Phi-4 14B",
+        "note": "Highest reasoning quality",
+    },
+    {
+        "name": "mistral-nemo:12b",
+        "ram_gb": 12,
+        "num_ctx": 131072,
+        "quality": 4,
+        "label": "Mistral NeMo 12B",
+        "note": "Best context window (128k tokens)",
+    },
+    {
+        "name": "gemma2:9b",
+        "ram_gb": 9,
+        "num_ctx": 32768,
+        "quality": 3,
+        "label": "Google Gemma 2 9B",
+        "note": "Strong general reasoning",
+    },
+    {
+        "name": "llama3.1:8b",
+        "ram_gb": 8,
+        "num_ctx": 32768,
+        "quality": 3,
+        "label": "Meta Llama 3.1 8B",
+        "note": "Reliable all-rounder",
+    },
+    {
+        "name": "qwen2.5:7b",
+        "ram_gb": 7,
+        "num_ctx": 32768,
+        "quality": 2,
+        "label": "Alibaba Qwen 2.5 7B",
+        "note": "Efficient, good multilingual support",
+    },
+    {
+        "name": "llama3.2:3b",
+        "ram_gb": 3,
+        "num_ctx": 32768,
+        "quality": 1,
+        "label": "Meta Llama 3.2 3B",
+        "note": "Fastest, lowest memory use",
+    },
 ]
 
 
@@ -100,7 +152,11 @@ def detect_hardware() -> Dict:
         "is_docker_on_apple_silicon": False,
     }
 
+    # Native macOS on Apple Silicon
     native_apple = os_name == "Darwin" and arch == "arm64"
+    # Docker container on Apple Silicon Mac: Linux + arm64/aarch64 + in Docker.
+    # (Could also be a cloud ARM VM, but those expose their full RAM correctly
+    # so the override prompt is harmless there.)
     docker_apple = in_docker and os_name == "Linux" and arch in ("arm64", "aarch64")
 
     hw["is_apple_silicon"] = native_apple or docker_apple
@@ -130,11 +186,33 @@ def get_available_models(ollama_base_url: str) -> List[str]:
     return []
 
 
+# Canonical embedding models supported by the Hybrid RAG stack.
+# Listed in recommended order (quality / popularity).
 KNOWN_EMBED_MODELS: List[Dict] = [
-    {"name": "nomic-embed-text", "dim": 768, "size_gb": 0.27, "note": "Recommended — fast, high quality (MIT licence)"},
-    {"name": "mxbai-embed-large", "dim": 1024, "size_gb": 0.67, "note": "Highest accuracy, larger footprint"},
-    {"name": "bge-m3", "dim": 1024, "size_gb": 1.2, "note": "Multilingual, best for non-English documents"},
-    {"name": "all-minilm", "dim": 384, "size_gb": 0.046, "note": "Smallest and fastest — lower quality"},
+    {
+        "name": "nomic-embed-text",
+        "dim": 768,
+        "size_gb": 0.27,
+        "note": "Recommended — fast, high quality (MIT licence)",
+    },
+    {
+        "name": "mxbai-embed-large",
+        "dim": 1024,
+        "size_gb": 0.67,
+        "note": "Highest accuracy, larger footprint",
+    },
+    {
+        "name": "bge-m3",
+        "dim": 1024,
+        "size_gb": 1.2,
+        "note": "Multilingual, best for non-English documents",
+    },
+    {
+        "name": "all-minilm",
+        "dim": 384,
+        "size_gb": 0.046,
+        "note": "Smallest and fastest — lower quality",
+    },
 ]
 
 
@@ -152,7 +230,17 @@ def get_available_embed_models(ollama_base_url: str) -> List[str]:
 
 
 def recommend_config(hw: Dict, available_models: List[str]) -> Dict:
-    """Return the best model + num_ctx for this hardware."""
+    """
+    Return the best model + num_ctx for this hardware.
+
+    Keys returned:
+        model (str|None)  — recommended model name, None if nothing is pulled
+        num_ctx (int)     — recommended context window
+        reasoning (str)   — human-readable explanation
+        hardware_note (str)
+        pull_command (str|None)  — set when no compatible model is pulled
+        can_run (bool)
+    """
     usable = _usable_ram(hw)
 
     if hw["is_apple_silicon"]:
@@ -171,8 +259,8 @@ def recommend_config(hw: Dict, available_models: List[str]) -> Dict:
     avail_set = set(available_models)
 
     best_available: Optional[Dict] = None
-    safe_available: Optional[Dict] = None
-    best_pullable: Optional[Dict] = None
+    safe_available: Optional[Dict] = None   # best pulled model with < 85% RAM usage
+    best_pullable: Optional[Dict] = None    # fits RAM but not yet pulled
 
     for m in KNOWN_MODELS:
         fits = m["ram_gb"] <= usable
@@ -190,6 +278,8 @@ def recommend_config(hw: Dict, available_models: List[str]) -> Dict:
 
     if best_available:
         tight = usable > 0 and (best_available["ram_gb"] / usable) >= 0.85
+        # safe_alternative is only meaningful when best model is tight and a safer
+        # pulled model exists that is different from best_available
         safe_alt = (
             safe_available
             if tight and safe_available and safe_available["name"] != best_available["name"]
@@ -235,6 +325,7 @@ def recommend_config(hw: Dict, available_models: List[str]) -> Dict:
 # ── Private helpers ────────────────────────────────────────────────────────────
 
 def _get_cpu_name(in_docker: bool = False, arch: str = "") -> str:
+    # Native macOS: sysctl gives the exact chip name (e.g. "Apple M3 Max")
     try:
         if platform.system() == "Darwin":
             r = subprocess.run(
@@ -247,6 +338,7 @@ def _get_cpu_name(in_docker: bool = False, arch: str = "") -> str:
     except Exception:
         pass
 
+    # Linux (including Docker): /proc/cpuinfo carries the actual model name
     try:
         if platform.system() == "Linux":
             with open("/proc/cpuinfo") as f:
@@ -254,6 +346,8 @@ def _get_cpu_name(in_docker: bool = False, arch: str = "") -> str:
                     if line.startswith("model name"):
                         name = line.split(":", 1)[1].strip()
                         if name:
+                            # Docker on Apple Silicon reports a generic ARM name;
+                            # replace it with a more informative label.
                             _generic_arm = {"armv8", "arm", "cortex"}
                             if in_docker and arch in ("arm64", "aarch64") and any(
                                 g in name.lower() for g in _generic_arm
@@ -263,6 +357,7 @@ def _get_cpu_name(in_docker: bool = False, arch: str = "") -> str:
     except Exception:
         pass
 
+    # If in Docker on aarch64 and nothing better was found, label it meaningfully
     if in_docker and arch in ("arm64", "aarch64"):
         return "Apple Silicon (Docker)"
 
@@ -275,11 +370,13 @@ def _get_cpu_name(in_docker: bool = False, arch: str = "") -> str:
 
 def _is_docker() -> bool:
     """Return True when the process is running inside a Docker container."""
+    # Docker creates this sentinel file in every container
     try:
         if Path("/.dockerenv").exists():
             return True
     except Exception:
         pass
+    # Fallback: cgroup membership (cgroup v1)
     try:
         with open("/proc/1/cgroup") as f:
             content = f.read()
@@ -291,11 +388,13 @@ def _is_docker() -> bool:
 
 
 def _get_ram_gb() -> float:
+    # psutil (cross-platform, most accurate)
     try:
         import psutil
         return round(psutil.virtual_memory().total / (1024 ** 3), 1)
     except ImportError:
         pass
+    # macOS fallback
     try:
         if platform.system() == "Darwin":
             r = subprocess.run(
@@ -305,6 +404,7 @@ def _get_ram_gb() -> float:
             return round(int(r.stdout.strip()) / (1024 ** 3), 1)
     except Exception:
         pass
+    # Linux fallback
     try:
         with open("/proc/meminfo") as f:
             for line in f:
@@ -334,7 +434,7 @@ def _usable_ram(hw: Dict) -> float:
     """Estimate RAM budget available for a model."""
     ram = hw["ram_gb"]
     if hw["is_apple_silicon"]:
-        return ram * 0.75
+        return ram * 0.75   # leave 25% for macOS + active apps
     if hw["gpu_type"] == "nvidia":
         return ram * 0.80
-    return max(0.0, ram - 4.0)
+    return max(0.0, ram - 4.0)  # CPU-only: reserve ~4 GB for OS

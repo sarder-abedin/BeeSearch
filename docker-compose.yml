@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# ResearchBuddy — Docker Compose (CPU)
+# Agentic Research Assistant — Docker Compose (CPU)
 #
 # Starts two services:
 #   ollama  — Ollama LLM server (model storage persisted in a volume)
@@ -13,26 +13,27 @@
 # Pull a different model:
 #   docker compose exec ollama ollama pull mistral-nemo:12b
 #
-# ⚠️  Apple Silicon Mac (M1/M2/M3): install native Ollama from
-#     https://ollama.com/download, pull your model, then set:
-#     OLLAMA_BASE_URL=http://host.docker.internal:11434
-#     and run only the app service:
-#       docker compose up app
+# ⚠️  Apple Silicon Mac (M1/M2/M3): the ollama/ollama image runs under
+#     x86 emulation and will fail its healthcheck. Install native Ollama
+#     (https://ollama.com/download), pull your model, then use the
+#     standalone Mac file instead (do NOT combine with this file):
+#   docker compose -f docker-compose.mac.yml up --build
 #
-# For GPU support:
+# For GPU support use:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 # ─────────────────────────────────────────────────────────────
 
 services:
 
-  # ── Ollama LLM server ──────────────────────────────────────────────────
+  # ── Ollama LLM server ───────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
-    container_name: researchbuddy-ollama
+    container_name: research-ollama
     volumes:
-      # Model weights persist across restarts
+      # Model weights persist across restarts — avoids re-downloading
       - ollama_models:/root/.ollama
     ports:
+      # Expose so you can also run `ollama` CLI from the host
       - "11434:11434"
     restart: unless-stopped
     healthcheck:
@@ -42,10 +43,12 @@ services:
       retries: 15
       start_period: 60s
 
-  # ── Pull the default model on first start ──────────────────────────────
+  # ── Pull the default model on first start ───────────────────
+  # This service runs once, pulls the model, then exits.
+  # If the model is already downloaded, the pull is a no-op.
   model-init:
     image: ollama/ollama:latest
-    container_name: researchbuddy-model-init
+    container_name: research-model-init
     depends_on:
       ollama:
         condition: service_healthy
@@ -57,22 +60,24 @@ services:
     command: "${OLLAMA_MODEL:-llama3.2:3b}"
     restart: "no"
 
-  # ── Streamlit web application ────────────────────────────────────────
+  # ── Streamlit web application ───────────────────────────────
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: researchbuddy-app
+    container_name: research-app
     ports:
       - "${APP_PORT:-8501}:8501"
     environment:
+      # Point to the Ollama service by its compose service name
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
       - NUM_CTX=${NUM_CTX:-32768}
+      # Optional: Semantic Scholar API key for higher rate limits
       - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
       - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
     volumes:
-      # Generated outputs and session memory persist on the host
+      # Generated reports and session memory persist on the host
       - ./outputs:/app/outputs
     depends_on:
       ollama:
@@ -85,6 +90,8 @@ services:
       retries: 3
       start_period: 20s
 
-# ── Named volumes ────────────────────────────────────────────────────
+# ── Named volumes ───────────────────────────────────────────
 volumes:
+  # Ollama model weights — stored in Docker-managed volume so they
+  # survive `docker compose down` (only removed with --volumes flag)
   ollama_models:

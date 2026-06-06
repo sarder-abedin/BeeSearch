@@ -1,4 +1,4 @@
-"""ui/tabs/notebook.py — Research Notebook (NotebookLM-style grounded Q&A)"""
+"""ui/tabs/notebook.py — Mode 8: Research Notebook (NotebookLM-style grounded Q&A)"""
 
 from __future__ import annotations
 
@@ -17,24 +17,37 @@ logger = logging.getLogger(__name__)
 cfg = get_settings()
 
 
-# ── Ingestion helpers ─────────────────────────────────────────────────────
+# ── Ingestion helpers ───────────────────────────────────────────────────────────
 
 def _index_and_store(notebook_id: str, processed_docs: list, settings: dict,
-                    source_type: str = "file", url: str = "") -> int:
+                     source_type: str = "file", url: str = "") -> int:
+    """
+    Persist processed docs to NotebookMemory (JSON) and evict the cached
+    in-memory store so it is rebuilt fresh at the next query.
+
+    Embedding and FAISS indexing are deferred to query time (retrieve_node)
+    to avoid OOM during file addition in memory-constrained environments.
+    Returns the number of new sources actually added.
+    """
     if not processed_docs:
         return 0
+
     mem = NotebookMemory()
     added = 0
     for doc in processed_docs:
         if mem.add_source(notebook_id, doc, source_type=source_type, url=url):
             added += 1
+
     if added:
+        # Evict the stale in-memory store so retrieve_node rebuilds with new chunks.
         _hybrid_stores.pop(f"notebook_{notebook_id}", None)
         _hybrid_stores.pop(f"notebook_{notebook_id}_bm25", None)
+
     return added
 
 
 def _render_citations(citations: list) -> None:
+    """Render a compact citation list under an assistant answer."""
     if not citations:
         return
     with st.expander(f"Sources ({len(citations)})", expanded=False):
@@ -52,10 +65,15 @@ def _render_citations(citations: list) -> None:
                 st.caption(snippet)
 
 
-# ── Advanced-feature tab helpers ─────────────────────────────────────────
+# ── Advanced-feature tab helpers ────────────────────────────────────────────────
 
 def _gen_button(label: str, key: str, cache_key: str, settings: dict,
-               notebook_id: str, fn, *fn_args):
+                notebook_id: str, fn, *fn_args):
+    """
+    Render a Generate / Regenerate button pair.  Calls `fn(notebook_id,
+    *fn_args, settings)` and stores the result under `cache_key` in
+    session_state.  Returns (result_or_None, error_str).
+    """
     col_gen, col_clr = st.columns([4, 1])
     btn_label = "Regenerate" if cache_key in st.session_state else label
     if col_gen.button(btn_label, key=key, type="primary", use_container_width=True):
@@ -72,13 +90,15 @@ def _gen_button(label: str, key: str, cache_key: str, settings: dict,
 
 
 def _docx_pdf_buttons(markdown_text: str, base_name: str, key_prefix: str) -> None:
+    """Render DOCX and PDF download buttons for a markdown text block."""
     try:
         from tools.export_tools import build_docx, build_pdf
         cols = st.columns(2)
         try:
             docx_bytes = build_docx(markdown_text, [])
             cols[0].download_button(
-                "Download .docx", data=docx_bytes,
+                "Download .docx",
+                data=docx_bytes,
                 file_name=f"{base_name}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 key=f"{key_prefix}_docx",
@@ -88,7 +108,8 @@ def _docx_pdf_buttons(markdown_text: str, base_name: str, key_prefix: str) -> No
         try:
             pdf_bytes = build_pdf(markdown_text, [])
             cols[1].download_button(
-                "Download .pdf", data=pdf_bytes,
+                "Download .pdf",
+                data=pdf_bytes,
                 file_name=f"{base_name}.pdf",
                 mime="application/pdf",
                 key=f"{key_prefix}_pdf",
@@ -100,49 +121,75 @@ def _docx_pdf_buttons(markdown_text: str, base_name: str, key_prefix: str) -> No
 
 
 def _dot_export_buttons(dot_string: str, base_name: str, key_prefix: str) -> None:
+    """Render DOT, PNG, SVG download buttons for a graphviz DOT string."""
     from agents.notebook_advanced import render_dot_bytes
     c1, c2, c3 = st.columns(3)
-    c1.download_button("Download .dot", data=dot_string,
-                       file_name=f"{base_name}.dot", mime="text/plain",
-                       key=f"{key_prefix}_dot")
+    c1.download_button(
+        "Download .dot",
+        data=dot_string,
+        file_name=f"{base_name}.dot",
+        mime="text/plain",
+        key=f"{key_prefix}_dot",
+    )
     png, png_err = render_dot_bytes(dot_string, "png")
     if not png_err:
-        c2.download_button("Download .png", data=png,
-                           file_name=f"{base_name}.png", mime="image/png",
-                           key=f"{key_prefix}_png")
+        c2.download_button(
+            "Download .png",
+            data=png,
+            file_name=f"{base_name}.png",
+            mime="image/png",
+            key=f"{key_prefix}_png",
+        )
     else:
         c2.caption("PNG unavailable")
     svg, svg_err = render_dot_bytes(dot_string, "svg")
     if not svg_err:
-        c3.download_button("Download .svg", data=svg,
-                           file_name=f"{base_name}.svg", mime="image/svg+xml",
-                           key=f"{key_prefix}_svg")
+        c3.download_button(
+            "Download .svg",
+            data=svg,
+            file_name=f"{base_name}.svg",
+            mime="image/svg+xml",
+            key=f"{key_prefix}_svg",
+        )
     else:
         c3.caption("SVG unavailable")
 
 
-# ── Existing tab implementations ─────────────────────────────────────────
-
 def _tab_cross_summary(active_id: str, notebook: dict, settings: dict) -> None:
     from agents.notebook_advanced import generate_cross_document_summary
-    st.markdown("Synthesises **all** notebook sources into a unified summary.")
+    st.markdown(
+        "Synthesizes **all** notebook sources into a unified markdown summary "
+        "covering common themes, complementary contributions, contradictions, "
+        "and key takeaways."
+    )
     cache_key = f"nb_summary_{active_id}"
-    result, _ = _gen_button("Generate Summary", f"nb_gen_summary_{active_id}",
-                            cache_key, settings, active_id, generate_cross_document_summary)
+    result, _ = _gen_button(
+        "Generate Summary", f"nb_gen_summary_{active_id}", cache_key,
+        settings, active_id, generate_cross_document_summary,
+    )
     if result:
         st.markdown(result)
         nb_name = notebook.get("name", "notebook")
-        st.download_button("Download (.md)", data=result,
-                           file_name=f"summary_{nb_name}.md", mime="text/markdown",
-                           key=f"nb_dl_summary_{active_id}")
+        st.download_button(
+            "Download (.md)",
+            data=result,
+            file_name=f"summary_{nb_name}.md",
+            mime="text/markdown",
+            key=f"nb_dl_summary_{active_id}",
+        )
         _docx_pdf_buttons(result, f"summary_{nb_name}", f"nb_summary_{active_id}")
 
 
 def _tab_faq(active_id: str, notebook: dict, settings: dict) -> None:
-    st.markdown("Auto-generates FAQ with grounded answers from your notebook sources.")
+    st.markdown(
+        "Auto-generates frequently asked questions with grounded answers "
+        "drawn from your notebook sources."
+    )
     cache_key = f"nb_faq_{active_id}"
     from agents.notebook_advanced import generate_faq
+
     n_q = st.slider("Number of questions", 4, 16, 8, key=f"nb_faq_n_{active_id}")
+
     col_gen, col_clr = st.columns([4, 1])
     btn_label = "Regenerate FAQ" if cache_key in st.session_state else "Generate FAQ"
     if col_gen.button(btn_label, key=f"nb_gen_faq_{active_id}", type="primary",
@@ -156,6 +203,7 @@ def _tab_faq(active_id: str, notebook: dict, settings: dict) -> None:
     if col_clr.button("Clear", key=f"nb_clr_faq_{active_id}"):
         st.session_state.pop(cache_key, None)
         st.rerun()
+
     items = st.session_state.get(cache_key)
     if items:
         src_names = [s["filename"] for s in notebook.get("sources", [])]
@@ -163,41 +211,65 @@ def _tab_faq(active_id: str, notebook: dict, settings: dict) -> None:
             with st.expander(f"**{faq_item.get('question', '')}**"):
                 st.markdown(faq_item.get("answer", ""))
                 cited = faq_item.get("sources", [])
-                labels = [
-                    src_names[n - 1] for n in cited
-                    if isinstance(n, int) and 1 <= n <= len(src_names)
-                ]
-                if labels:
-                    st.caption("Sources: " + ", ".join(labels))
+                if cited:
+                    labels = [
+                        src_names[n - 1] for n in cited
+                        if isinstance(n, int) and 1 <= n <= len(src_names)
+                    ]
+                    if labels:
+                        st.caption("Sources: " + ", ".join(labels))
+
+        # Export as markdown
         faq_md = "\n\n".join(
             f"### {it.get('question','')}\n{it.get('answer','')}" for it in items
         )
-        st.download_button("Download FAQ (.md)", data=faq_md,
-                           file_name=f"faq_{notebook.get('name','notebook')}.md",
-                           mime="text/markdown", key=f"nb_dl_faq_{active_id}")
+        st.download_button(
+            "Download FAQ (.md)",
+            data=faq_md,
+            file_name=f"faq_{notebook.get('name','notebook')}.md",
+            mime="text/markdown",
+            key=f"nb_dl_faq_{active_id}",
+        )
 
 
 def _tab_literature_review(active_id: str, notebook: dict, settings: dict) -> None:
-    st.markdown("Generates a formal academic-style literature review.")
+    st.markdown(
+        "Generates a formal academic-style literature review with structured "
+        "sections: introduction, background, methodology, key findings, "
+        "critical analysis, and conclusion."
+    )
     cache_key = f"nb_litreview_{active_id}"
     from agents.notebook_advanced import generate_literature_review
-    result, _ = _gen_button("Generate Literature Review", f"nb_gen_lr_{active_id}",
-                            cache_key, settings, active_id, generate_literature_review)
+
+    result, _ = _gen_button(
+        "Generate Literature Review", f"nb_gen_lr_{active_id}", cache_key,
+        settings, active_id, generate_literature_review,
+    )
     if result:
         st.markdown(result)
         nb_name = notebook.get("name", "notebook")
-        st.download_button("Download (.md)", data=result,
-                           file_name=f"literature_review_{nb_name}.md", mime="text/markdown",
-                           key=f"nb_dl_lr_{active_id}")
+        st.download_button(
+            "Download (.md)",
+            data=result,
+            file_name=f"literature_review_{nb_name}.md",
+            mime="text/markdown",
+            key=f"nb_dl_lr_{active_id}",
+        )
         _docx_pdf_buttons(result, f"literature_review_{nb_name}", f"nb_lr_{active_id}")
 
 
 def _tab_mindmap(active_id: str, notebook: dict, settings: dict) -> None:
-    st.markdown("Extracts key concepts and renders them as an interactive mind map.")
+    st.markdown(
+        "Extracts key concepts and their relationships from your sources and "
+        "renders them as an interactive mind map."
+    )
     cache_key = f"nb_mindmap_{active_id}"
     from agents.notebook_advanced import generate_mindmap
-    result, _ = _gen_button("Generate Mind Map", f"nb_gen_mm_{active_id}",
-                            cache_key, settings, active_id, generate_mindmap)
+
+    result, _ = _gen_button(
+        "Generate Mind Map", f"nb_gen_mm_{active_id}", cache_key,
+        settings, active_id, generate_mindmap,
+    )
     if result:
         try:
             st.graphviz_chart(result)
@@ -211,20 +283,37 @@ def _tab_mindmap(active_id: str, notebook: dict, settings: dict) -> None:
 
 
 def _tab_audio(active_id: str, notebook: dict, settings: dict) -> None:
-    st.markdown("Generates a spoken-word summary script and synthesises it to .wav audio.")
+    st.markdown(
+        "Generates a spoken-word summary script (~300 words, ~2 min) "
+        "and synthesizes it to a downloadable **.wav** audio file."
+    )
     cache_key = f"nb_audio_{active_id}"
     wav_key = f"nb_audio_wav_{active_id}"
     nb_name = notebook.get("name", "notebook")
     from agents.notebook_advanced import generate_audio_summary, synthesize_speech
-    result, _ = _gen_button("Generate Audio Script", f"nb_gen_audio_{active_id}",
-                            cache_key, settings, active_id, generate_audio_summary)
+
+    result, _ = _gen_button(
+        "Generate Audio Script", f"nb_gen_audio_{active_id}", cache_key,
+        settings, active_id, generate_audio_summary,
+    )
     if result:
         st.markdown(f"**Word count:** {len(result.split())}")
-        st.text_area("Audio script", value=result, height=240, key=f"nb_audio_ta_{active_id}")
+        st.text_area(
+            "Audio script",
+            value=result,
+            height=240,
+            key=f"nb_audio_ta_{active_id}",
+        )
         dl_col, play_col, wav_col = st.columns(3)
-        dl_col.download_button("Download script (.txt)", data=result,
-                               file_name=f"audio_summary_{nb_name}.txt", mime="text/plain",
-                               key=f"nb_dl_audio_{active_id}")
+        dl_col.download_button(
+            "Download script (.txt)",
+            data=result,
+            file_name=f"audio_summary_{nb_name}.txt",
+            mime="text/plain",
+            key=f"nb_dl_audio_{active_id}",
+        )
+
+        # Browser TTS via Web Speech API
         if play_col.button("▶ Play in browser", key=f"nb_play_{active_id}"):
             import json as _json
             st.components.v1.html(
@@ -235,21 +324,31 @@ if (window.speechSynthesis) {{
     var u = new SpeechSynthesisUtterance(text);
     u.rate = 0.9;
     window.speechSynthesis.speak(u);
+}} else {{
+    alert("Your browser does not support speech synthesis.");
 }}
-</script>""", height=0,
+</script>""",
+                height=0,
             )
+
+        # pyttsx3 WAV synthesis
         if wav_col.button("Synthesize .wav", key=f"nb_synth_{active_id}"):
-            with st.spinner("Synthesizing audio…"):
+            with st.spinner("Synthesizing audio (~30 s)…"):
                 wav_bytes, wav_err = synthesize_speech(result)
             if wav_err:
                 st.error(wav_err)
             else:
                 st.session_state[wav_key] = wav_bytes
+
         if wav_key in st.session_state:
             st.audio(st.session_state[wav_key], format="audio/wav")
-            st.download_button("Download .wav", data=st.session_state[wav_key],
-                               file_name=f"audio_summary_{nb_name}.wav", mime="audio/wav",
-                               key=f"nb_dl_wav_{active_id}")
+            st.download_button(
+                "Download .wav",
+                data=st.session_state[wav_key],
+                file_name=f"audio_summary_{nb_name}.wav",
+                mime="audio/wav",
+                key=f"nb_dl_wav_{active_id}",
+            )
 
 
 def _tab_compare(active_id: str, notebook: dict, settings: dict) -> None:
@@ -257,39 +356,62 @@ def _tab_compare(active_id: str, notebook: dict, settings: dict) -> None:
     if len(sources) < 2:
         st.info("Add at least two sources to use source comparison.")
         return
+
     st.markdown("Select two sources to compare side-by-side.")
     options = {s["filename"]: s["doc_id"] for s in sources}
     names = list(options.keys())
+
     col_a, col_b = st.columns(2)
     sel_a = col_a.selectbox("Source A", names, index=0, key=f"nb_cmp_a_{active_id}")
-    sel_b = col_b.selectbox("Source B", names, index=min(1, len(names) - 1),
-                            key=f"nb_cmp_b_{active_id}")
-    doc_a, doc_b = options[sel_a], options[sel_b]
+    sel_b = col_b.selectbox(
+        "Source B", names,
+        index=min(1, len(names) - 1),
+        key=f"nb_cmp_b_{active_id}",
+    )
+
+    doc_a = options[sel_a]
+    doc_b = options[sel_b]
     cache_key = f"nb_compare_{active_id}_{doc_a}_{doc_b}"
+
     from agents.notebook_advanced import compare_sources
-    result, _ = _gen_button("Compare Sources", f"nb_gen_cmp_{active_id}",
-                            cache_key, settings, active_id, compare_sources, doc_a, doc_b)
+
+    result, _ = _gen_button(
+        "Compare Sources", f"nb_gen_cmp_{active_id}", cache_key,
+        settings, active_id, compare_sources, doc_a, doc_b,
+    )
     if result:
         st.markdown(result)
-        st.download_button("Download comparison (.md)", data=result,
-                           file_name=f"comparison_{notebook.get('name','notebook')}.md",
-                           mime="text/markdown", key=f"nb_dl_cmp_{active_id}")
+        nb_name = notebook.get("name", "notebook")
+        st.download_button(
+            "Download comparison (.md)",
+            data=result,
+            file_name=f"comparison_{nb_name}.md",
+            mime="text/markdown",
+            key=f"nb_dl_cmp_{active_id}",
+        )
 
 
 def _tab_knowledge_graph(active_id: str, notebook: dict, settings: dict) -> None:
-    st.markdown("Extracts entities and their relationships as a knowledge graph.")
+    st.markdown(
+        "Extracts entities (concepts, methods, datasets, authors) and their "
+        "relationships from your sources and visualises them as a knowledge graph."
+    )
     st.markdown(
         "**Legend:** "
-        "<span style='color:#3b82f6'>&#9632; Concept</span> "
-        "<span style='color:#10b981'>&#9632; Method</span> "
-        "<span style='color:#f59e0b'>&#9632; Dataset</span> "
-        "<span style='color:#8b5cf6'>&#9632; Author</span>",
+        "<span style='color:#3b82f6'>■ Concept</span> "
+        "<span style='color:#10b981'>■ Method</span> "
+        "<span style='color:#f59e0b'>■ Dataset</span> "
+        "<span style='color:#8b5cf6'>■ Author</span> "
+        "<span style='color:#ef4444'>■ Institution</span>",
         unsafe_allow_html=True,
     )
     cache_key = f"nb_kgraph_{active_id}"
     from agents.notebook_advanced import extract_knowledge_graph
-    result, _ = _gen_button("Extract Knowledge Graph", f"nb_gen_kg_{active_id}",
-                            cache_key, settings, active_id, extract_knowledge_graph)
+
+    result, _ = _gen_button(
+        "Extract Knowledge Graph", f"nb_gen_kg_{active_id}", cache_key,
+        settings, active_id, extract_knowledge_graph,
+    )
     if result:
         try:
             st.graphviz_chart(result)
@@ -303,11 +425,17 @@ def _tab_knowledge_graph(active_id: str, notebook: dict, settings: dict) -> None
 
 
 def _tab_timeline(active_id: str, notebook: dict, settings: dict) -> None:
-    st.markdown("Extracts a chronological timeline of events and milestones from your sources.")
+    st.markdown(
+        "Extracts a **chronological timeline** of events, discoveries, and milestones "
+        "from your notebook sources."
+    )
     cache_key = f"nb_timeline_{active_id}"
     from agents.notebook_advanced import extract_timeline
-    items, _ = _gen_button("Extract Timeline", f"nb_gen_tl_{active_id}",
-                           cache_key, settings, active_id, extract_timeline)
+
+    items, _ = _gen_button(
+        "Extract Timeline", f"nb_gen_tl_{active_id}", cache_key,
+        settings, active_id, extract_timeline,
+    )
     if items:
         src_names = [s["filename"] for s in notebook.get("sources", [])]
         md_lines = ["| Year | Event | Significance | Source |",
@@ -318,46 +446,80 @@ def _tab_timeline(active_id: str, notebook: dict, settings: dict) -> None:
             sig = item.get("significance", "").replace("|", "\\|")
             src_n = item.get("source", 0)
             src_label = (
-                src_names[src_n - 1][:20]
-                if isinstance(src_n, int) and 1 <= src_n <= len(src_names) else "—"
+                src_names[src_n - 1][:20] if isinstance(src_n, int) and 1 <= src_n <= len(src_names)
+                else "—"
             )
             md_lines.append(f"| {year} | {event} | {sig} | {src_label} |")
         table_md = "\n".join(md_lines)
         st.markdown(table_md)
-        st.download_button("Download (.md)", data=table_md,
-                           file_name=f"timeline_{notebook.get('name','notebook')}.md",
-                           mime="text/markdown", key=f"nb_dl_tl_{active_id}")
+        st.download_button(
+            "Download (.md)",
+            data=table_md,
+            file_name=f"timeline_{notebook.get('name','notebook')}.md",
+            mime="text/markdown",
+            key=f"nb_dl_tl_{active_id}",
+        )
 
 
 def _tab_study_comparison(active_id: str, notebook: dict, settings: dict) -> None:
-    st.markdown("Structured comparison table across all sources: design, findings, limitations.")
+    st.markdown(
+        "Generates a **structured comparison table** across all sources: "
+        "research type, sample/data scope, methodology, key findings, and limitations."
+    )
     cache_key = f"nb_studytable_{active_id}"
     from agents.notebook_advanced import generate_study_comparison
-    result, _ = _gen_button("Generate Study Comparison", f"nb_gen_st_{active_id}",
-                            cache_key, settings, active_id, generate_study_comparison)
+
+    result, _ = _gen_button(
+        "Generate Study Comparison", f"nb_gen_st_{active_id}", cache_key,
+        settings, active_id, generate_study_comparison,
+    )
     if result:
         st.markdown(result)
         nb_name = notebook.get("name", "notebook")
-        st.download_button("Download (.md)", data=result,
-                           file_name=f"study_comparison_{nb_name}.md", mime="text/markdown",
-                           key=f"nb_dl_st_{active_id}")
+        st.download_button(
+            "Download (.md)",
+            data=result,
+            file_name=f"study_comparison_{nb_name}.md",
+            mime="text/markdown",
+            key=f"nb_dl_st_{active_id}",
+        )
         _docx_pdf_buttons(result, f"study_comparison_{nb_name}", f"nb_st_{active_id}")
 
 
 def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
+    """
+    Run the full 7-agent LangGraph pipeline and display all outputs.
+
+    Agents and their outputs:
+      1 Document Ingestion   → source/chunk inventory
+      2 Summarization        → per-doc + cross-document summary
+      3 Retrieval            → top-k relevant chunks
+      4 Citation Verification → claim verification report
+      5 Knowledge Graph      → rendered DOT graph
+      6 Study Guide          → key concepts / glossary / Q&A
+      7 Podcast Script       → two-speaker dialogue
+    """
     from agents.notebook_pipeline_graph import run_notebook_pipeline
     from agents.notebook_pipeline_state import create_pipeline_state
 
     st.markdown(
-        "Runs all **7 analysis agents** in sequence via LangGraph state. "
-        "Produces summary, citation report, knowledge graph, study guide, and podcast script."
+        "Runs all **7 analysis agents** in sequence, each passing its results to the "
+        "next via LangGraph state. Produces a summary, citation verification report, "
+        "knowledge graph, study guide, and podcast script in one click."
     )
+
     if not notebook.get("sources"):
-        st.info("Add at least one source before running the pipeline.")
+        st.info("Add at least one source to this notebook before running the pipeline.")
         return
 
-    query = st.text_input("Focus query (optional)", key=f"nb_pipeline_query_{active_id}",
-                          placeholder="e.g. 'key findings on attention mechanisms'")
+    query = st.text_input(
+        "Focus query (optional)",
+        key=f"nb_pipeline_query_{active_id}",
+        placeholder="e.g. 'key findings on attention mechanisms'",
+        help="Agent 3 (Retrieval) uses this query to surface the most relevant chunks. "
+             "Leave blank for a broad overview.",
+    )
+
     cache_key = f"nb_pipeline_{active_id}"
     col_run, col_clr = st.columns([4, 1])
     btn_label = "Run Pipeline Again" if cache_key in st.session_state else "Run Full Pipeline"
@@ -365,10 +527,15 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
     if col_run.button(btn_label, key=f"nb_run_pipeline_{active_id}",
                       type="primary", use_container_width=True):
         st.session_state.pop(cache_key, None)
-        initial = create_pipeline_state(notebook_id=active_id, settings=settings,
-                                        query=query.strip())
+        initial = create_pipeline_state(
+            notebook_id=active_id,
+            settings=settings,
+            query=query.strip(),
+        )
+
         progress_bar = st.progress(0)
         status_text = st.empty()
+
         _AGENT_LABELS = {
             "ingest": "Agent 1 — Document Ingestion",
             "summarize": "Agent 2 — Summarization",
@@ -381,8 +548,9 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
 
         def _cb(node_name: str, partial_state: dict) -> None:
             pct = partial_state.get("progress_pct", 0)
+            label = _AGENT_LABELS.get(node_name, node_name)
             progress_bar.progress(pct / 100)
-            status_text.caption(f"{_AGENT_LABELS.get(node_name, node_name)} ({pct}%)")
+            status_text.caption(f"{label} ({pct}%)")
 
         try:
             with st.spinner("Running pipeline…"):
@@ -404,6 +572,8 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
 
     render_eval_result(state.get("eval_result", {}), key_suffix=f"_nb_pipeline_{active_id}")
     render_rag_reflection(state.get("rag_reflection_info"), key_suffix=f"_nb_pipeline_{active_id}")
+
+    # Show any errors at the top
     errors = state.get("errors", [])
     if errors:
         with st.expander(f"{len(errors)} warning(s)", expanded=False):
@@ -411,23 +581,41 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
                 st.caption(e)
 
     nb_name = notebook.get("name", "notebook")
-    ptab_ingest, ptab_summary, ptab_retrieve, ptab_citations, ptab_kg, ptab_study, ptab_podcast = st.tabs([
-        "Ingestion", "Summary", "Retrieval", "Citations", "Knowledge Graph", "Study Guide", "Podcast",
+
+    (
+        ptab_ingest, ptab_summary, ptab_retrieve,
+        ptab_citations, ptab_kg, ptab_study, ptab_podcast,
+    ) = st.tabs([
+        "Ingestion",
+        "Summary",
+        "Retrieval",
+        "Citations",
+        "Knowledge Graph",
+        "Study Guide",
+        "Podcast",
     ])
 
     with ptab_ingest:
         st.markdown(f"**{state.get('ingestion_summary', 'No summary.')}**")
-        for src in state.get("sources", []):
-            st.caption(f"**{src['filename']}** · {src.get('total_chunks', 0)} chunks · {src.get('file_type', '')}")
+        sources = state.get("sources", [])
+        if sources:
+            for src in sources:
+                st.caption(
+                    f"**{src['filename']}** · "
+                    f"{src.get('total_chunks', 0)} chunks · "
+                    f"{src.get('file_type', '')} · added {src.get('added_at', '')[:10]}"
+                )
 
     with ptab_summary:
         cross = state.get("cross_summary", "")
         per_doc = state.get("per_doc_summaries", {})
         if cross:
             st.markdown(cross)
-            st.download_button("Download (.md)", data=cross,
-                               file_name=f"pipeline_summary_{nb_name}.md",
-                               mime="text/markdown", key=f"nb_pl_sum_dl_{active_id}")
+            st.download_button(
+                "Download (.md)", data=cross,
+                file_name=f"pipeline_summary_{nb_name}.md",
+                mime="text/markdown", key=f"nb_pl_sum_dl_{active_id}",
+            )
             _docx_pdf_buttons(cross, f"pipeline_summary_{nb_name}", f"nb_pl_sum_{active_id}")
         if per_doc:
             st.divider()
@@ -438,18 +626,23 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
 
     with ptab_retrieve:
         chunks = state.get("retrieved_chunks", [])
-        st.caption(f"Retrieval mode: **{state.get('retrieval_mode', 'empty')}** · {len(chunks)} chunk(s)")
+        mode = state.get("retrieval_mode", "empty")
+        st.caption(f"Retrieval mode: **{mode}** · {len(chunks)} chunk(s) retrieved")
         for i, chunk in enumerate(chunks, 1):
-            with st.expander(f"[{i}] {chunk.get('doc_name', '')} — p.{chunk.get('page_num', '?')}"):
+            with st.expander(
+                f"[{i}] {chunk.get('doc_name', '')} — p.{chunk.get('page_num', '?')}"
+            ):
                 st.markdown(chunk.get("text", ""))
 
     with ptab_citations:
         report = state.get("citation_report", "")
         if report:
             st.markdown(report)
-            st.download_button("Download (.md)", data=report,
-                               file_name=f"citation_report_{nb_name}.md",
-                               mime="text/markdown", key=f"nb_pl_cit_dl_{active_id}")
+            st.download_button(
+                "Download (.md)", data=report,
+                file_name=f"citation_report_{nb_name}.md",
+                mime="text/markdown", key=f"nb_pl_cit_dl_{active_id}",
+            )
 
     with ptab_kg:
         dot = state.get("knowledge_graph_dot", "")
@@ -463,13 +656,17 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
         guide = state.get("study_guide", "")
         if guide:
             st.markdown(guide)
-            st.download_button("Download (.md)", data=guide,
-                               file_name=f"study_guide_{nb_name}.md",
-                               mime="text/markdown", key=f"nb_pl_sg_dl_{active_id}")
+            st.download_button(
+                "Download (.md)", data=guide,
+                file_name=f"study_guide_{nb_name}.md",
+                mime="text/markdown", key=f"nb_pl_sg_dl_{active_id}",
+            )
             _docx_pdf_buttons(guide, f"study_guide_{nb_name}", f"nb_pl_sg_{active_id}")
+            # Feedback refinement for study guide
             from ui.helpers import render_feedback_section
             render_feedback_section(
-                current_output=guide, session_key=f"nb_pipeline_{active_id}",
+                current_output=state.get("study_guide", ""),
+                session_key=f"nb_pipeline_{active_id}",
                 mode="notebook_pipeline",
                 model_name=settings.get("model", "llama3.1:8b"),
                 num_ctx=settings.get("num_ctx", 32768),
@@ -483,275 +680,352 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
         script = state.get("podcast_script", "")
         if script:
             st.markdown(f"```\n{script}\n```")
-            st.download_button("Download (.txt)", data=script,
-                               file_name=f"podcast_script_{nb_name}.txt",
-                               mime="text/plain", key=f"nb_pl_pod_dl_{active_id}")
-            if st.button("Read aloud (browser TTS)", key=f"nb_pl_pod_tts_{active_id}"):
-                safe = script.replace('`', '').replace('\\', '\\\\').replace('"', '\\"')
-                st.components.v1.html(
+            st.download_button(
+                "Download (.txt)", data=script,
+                file_name=f"podcast_script_{nb_name}.txt",
+                mime="text/plain", key=f"nb_pl_pod_dl_{active_id}",
+            )
+            # TTS playback via browser Web Speech API
+            if st.button("Read aloud (browser TTS)",
+                         key=f"nb_pl_pod_tts_{active_id}"):
+                import streamlit.components.v1 as components
+                safe = script.replace("`", "").replace("\\", "\\\\").replace('"', '\\"')
+                components.html(
                     f"""<script>
                     var u=new SpeechSynthesisUtterance("{safe[:3000]}");
                     u.rate=0.9; window.speechSynthesis.speak(u);
-                    </script>""", height=0,
+                    </script>""",
+                    height=0,
                 )
         else:
             st.info("Podcast script not available.")
 
 
-# ── New tab implementations ──────────────────────────────────────────
-
-def _tab_extraction_table(active_id: str, notebook: dict, settings: dict) -> None:
-    from tools.extraction_table import build_extraction_table, extraction_table_to_csv, extraction_table_to_markdown
-
-    sources = notebook.get("sources", [])
-    if not sources:
-        st.info("Add sources first, then generate the extraction table.")
-        return
-
-    st.markdown(
-        "Generate a structured **PICO extraction table** from your notebook sources. "
-        "Each source is analysed for population, intervention, outcome, and key finding."
-    )
-
-    rq = st.text_input(
-        "Research question context", key=f"nb_et_rq_{active_id}",
-        placeholder="e.g. Effects of sleep deprivation on working memory",
-    )
-
-    cache_key = f"nb_et_{active_id}"
-    col_gen, col_clr = st.columns([4, 1])
-    if col_gen.button("Generate Extraction Table", key=f"nb_gen_et_{active_id}",
-                      type="primary", use_container_width=True):
-        from tools.hybrid_store import get_or_create_store
-        embed_model = settings.get("embed_model", cfg.embedding_model)
-
-        content_by_doc: dict = {}
-        try:
-            store = get_or_create_store(active_id, embed_model, settings.get("chunk_size", cfg.chunk_size))
-            all_chunks = store.retrieve(rq or "research methodology findings results", k=60)
-            for chunk in all_chunks:
-                did = chunk.get("doc_id", "")
-                content_by_doc.setdefault(did, []).append(chunk.get("text", ""))
-        except Exception as e:
-            logger.warning("Chunk retrieval for extraction table failed: %s", e)
-
-        papers = []
-        for src in sources:
-            doc_id = src.get("doc_id", "")
-            chunks = content_by_doc.get(doc_id, [])
-            abstract = " ".join(chunks[:3])[:800] if chunks else ""
-            papers.append({
-                "title": src.get("filename", ""),
-                "abstract": abstract,
-                "study_design": "Unknown",
-                "sample_size": "Unknown",
-                "key_finding": "",
-                "quality": "Medium",
-                "authors": [],
-                "year": "",
-                "citation_key": doc_id[:8],
-            })
-
-        with st.spinner("Extracting structured data…"):
-            rows = build_extraction_table(papers, rq or "document analysis",
-                                         settings["model"], settings["num_ctx"])
-        st.session_state[cache_key] = rows
-
-    if col_clr.button("Clear", key=f"nb_et_clr_{active_id}"):
-        st.session_state.pop(cache_key, None)
-        st.rerun()
-
-    rows = st.session_state.get(cache_key, [])
-    if rows:
-        st.markdown(extraction_table_to_markdown(rows))
-        c1, c2 = st.columns(2)
-        c1.download_button("Download CSV", data=extraction_table_to_csv(rows),
-                           file_name="extraction_table.csv", mime="text/csv",
-                           key=f"nb_et_csv_{active_id}")
-        c2.download_button("Download Markdown", data=extraction_table_to_markdown(rows),
-                           file_name="extraction_table.md", mime="text/markdown",
-                           key=f"nb_et_md_{active_id}")
-
-
-def _tab_research_gaps(active_id: str, notebook: dict, settings: dict) -> None:
-    from tools.research_gaps import map_research_gaps
-
-    sources = notebook.get("sources", [])
-    if not sources:
-        st.info("Add sources to identify research gaps.")
-        return
-
-    st.markdown(
-        "Identifies and categorises **research gaps** across five dimensions: "
-        "population, methodology, outcomes, context, and temporal."
-    )
-
-    rq = st.text_input(
-        "Research question", key=f"nb_rg_rq_{active_id}",
-        placeholder="What aspects of this topic are under-researched?",
-    )
-
-    cache_key = f"nb_rg_{active_id}"
-    col_gen, col_clr = st.columns([4, 1])
-    if col_gen.button("Map Research Gaps", key=f"nb_gen_rg_{active_id}",
-                      type="primary", use_container_width=True):
-        embed_model = settings.get("embed_model", cfg.embedding_model)
-        evidence_table = []
-        try:
-            from tools.hybrid_store import get_or_create_store
-            store = get_or_create_store(active_id, embed_model, settings.get("chunk_size", cfg.chunk_size))
-            all_chunks = store.retrieve(rq or "research gap limitation future work", k=20)
-            for chunk in all_chunks:
-                evidence_table.append({
-                    "citation_key": chunk.get("doc_id", "")[:8],
-                    "study_design": "Unknown",
-                    "key_finding": chunk.get("text", "")[:200],
-                })
-        except Exception as e:
-            logger.warning("Retrieval for gap mapping failed: %s", e)
-
-        with st.spinner("Mapping research gaps…"):
-            gap_map = map_research_gaps(
-                evidence_table, rq or "research gaps analysis",
-                [], settings["model"], settings["num_ctx"],
+def _rebuild_processed_docs(notebook: dict) -> list:
+    """Reconstruct ProcessedDocument objects from stored notebook chunks."""
+    from tools.document_tools import DocumentChunk, ProcessedDocument
+    chunks_by_doc: dict = {}
+    for c in notebook.get("chunks", []):
+        chunks_by_doc.setdefault(c["doc_id"], []).append(c)
+    src_by_id = {s["doc_id"]: s for s in notebook.get("sources", [])}
+    docs = []
+    for doc_id, raw_chunks in chunks_by_doc.items():
+        src = src_by_id.get(doc_id, {})
+        filename = src.get("filename", doc_id)
+        sorted_chunks = sorted(raw_chunks, key=lambda c: (c.get("page_num", 0), c.get("chunk_index", 0)))
+        doc_chunks = [
+            DocumentChunk(
+                chunk_id=c["chunk_id"],
+                doc_id=doc_id,
+                doc_name=filename,
+                page_num=c.get("page_num", 0),
+                chunk_index=c.get("chunk_index", 0),
+                text=c.get("text", ""),
+                metadata=c.get("metadata", {}),
             )
-        st.session_state[cache_key] = gap_map
-
-    if col_clr.button("Clear", key=f"nb_rg_clr_{active_id}"):
-        st.session_state.pop(cache_key, None)
-        st.rerun()
-
-    gap_map = st.session_state.get(cache_key, {})
-    if gap_map:
-        summary = gap_map.get("gap_map_summary", "")
-        if summary:
-            st.info(summary)
-        priority_gaps = gap_map.get("priority_gaps", [])
-        if priority_gaps:
-            st.markdown("### Priority Gaps")
-            for g in priority_gaps:
-                st.markdown(f"- {g}")
-        categories = [
-            ("Population Gaps", "population_gaps"),
-            ("Methodology Gaps", "methodology_gaps"),
-            ("Outcome Gaps", "outcome_gaps"),
-            ("Context Gaps", "context_gaps"),
-            ("Temporal Gaps", "temporal_gaps"),
+            for c in sorted_chunks
         ]
-        for label, key in categories:
-            items = gap_map.get(key, [])
-            if items:
-                with st.expander(f"{label} ({len(items)})"):
-                    for item in items:
-                        priority = item.get("priority", "Medium")
-                        icon = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}.get(priority, "⚪")
-                        st.markdown(f"{icon} **{item.get('gap', '')}**")
-                        st.caption(item.get("rationale", ""))
+        raw_text = "\n\n".join(c.get("text", "") for c in sorted_chunks)
+        docs.append(ProcessedDocument(
+            doc_id=doc_id,
+            filename=filename,
+            total_chunks=len(doc_chunks),
+            chunks=doc_chunks,
+            raw_text=raw_text,
+            content_md5=src.get("content_md5", ""),
+        ))
+    return docs
 
 
-def _tab_hypotheses(active_id: str, notebook: dict, settings: dict) -> None:
-    from tools.hypothesis_generator import generate_hypotheses
+def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None:
+    """Generate a structured research report grounded in notebook sources."""
+    st.markdown(
+        "Generate a full research report grounded in your notebook sources "
+        "and optionally augmented with peer-reviewed papers from arXiv and Semantic Scholar."
+    )
+
+    goal = st.text_input(
+        "Research goal or question",
+        key=f"nb_rpt_goal_{active_id}",
+        placeholder="e.g. 'Summarise key findings on transformer attention mechanisms'",
+    )
+    col1, col2 = st.columns(2)
+    include_academic = col1.toggle(
+        "Search academic sources",
+        value=True,
+        key=f"nb_rpt_academic_{active_id}",
+        help="Search arXiv + Semantic Scholar for peer-reviewed papers",
+    )
+    include_web = col2.toggle(
+        "Include web search",
+        value=False,
+        key=f"nb_rpt_web_{active_id}",
+        help="Also search the web via Google",
+    )
 
     sources = notebook.get("sources", [])
     if not sources:
-        st.info("Add sources to generate hypotheses.")
-        return
+        mode = "search"
+        st.info("No sources in this notebook — will search academic literature only.")
+    elif include_academic:
+        mode = "hybrid"
+    else:
+        mode = "document"
 
-    st.markdown(
-        "Generate testable, PICO-structured **research hypotheses** from gaps identified "
-        "in your notebook sources. Go to the **Gaps** tab first to identify gaps."
-    )
+    cache_key = f"nb_rpt_{active_id}"
 
-    rq = st.text_input(
-        "Research question context", key=f"nb_hyp_rq_{active_id}",
-        placeholder="What is the phenomenon being studied?",
-    )
-    n_hyp = st.slider("Number of hypotheses", 3, 10, 5, key=f"nb_hyp_n_{active_id}")
+    col_run, col_clr = st.columns([4, 1])
+    btn_label = "Regenerate Report" if cache_key in st.session_state else "Generate Research Report"
+    if col_run.button(btn_label, key=f"nb_rpt_run_{active_id}", type="primary", use_container_width=True):
+        if not goal.strip():
+            st.warning("Please enter a research goal.")
+        else:
+            from agents.graph import run_research
+            from agents.state import create_initial_state
 
-    rg_cache_key = f"nb_rg_{active_id}"
-    gap_map = st.session_state.get(rg_cache_key, {})
-    gaps = gap_map.get("priority_gaps", [])
-
-    if not gaps:
-        st.info("→ Go to the **Gaps** tab first to identify research gaps, then return here.")
-
-    cache_key = f"nb_hyp_{active_id}"
-    col_gen, col_clr = st.columns([4, 1])
-    btn_label = "Regenerate Hypotheses" if cache_key in st.session_state else "Generate Hypotheses"
-
-    if col_gen.button(btn_label, key=f"nb_gen_hyp_{active_id}",
-                      type="primary", use_container_width=True):
-        active_gaps = gaps or [
-            "Longitudinal studies are lacking",
-            "Under-studied populations",
-            "Limited methodological diversity",
-        ]
-        with st.spinner("Generating hypotheses…"):
-            hypotheses = generate_hypotheses(
-                active_gaps, rq or "research hypothesis generation",
-                evidence_summary="",
+            processed_docs = _rebuild_processed_docs(notebook)
+            initial_state = create_initial_state(
+                goal=goal.strip(),
+                uploaded_docs=processed_docs,
+                mode=mode,
+                include_web_search=include_web,
                 model_name=settings["model"],
                 num_ctx=settings["num_ctx"],
-                n_hypotheses=n_hyp,
+                embed_model=settings.get("embed_model", cfg.embedding_model),
             )
-        st.session_state[cache_key] = hypotheses
 
-    if col_clr.button("Clear", key=f"nb_hyp_clr_{active_id}"):
+            prog = st.progress(0)
+            status = st.empty()
+
+            _step_labels = {
+                "document_ingestion":    "Indexing notebook sources",
+                "query_generation":      "Generating search queries",
+                "academic_search":       "Searching arXiv + Semantic Scholar",
+                "web_search":            "Searching the web",
+                "document_analysis":     "Analysing sources",
+                "reference_compilation": "Compiling references",
+                "report_generation":     "Generating report",
+                "research_eval":         "Evaluating quality",
+            }
+
+            def _cb(node_name: str, state: dict) -> None:
+                pct = state.get("progress_pct", 0)
+                prog.progress(pct / 100)
+                status.caption(_step_labels.get(node_name, node_name.replace("_", " ").title()) + f" ({pct}%)")
+
+            with st.spinner("Running research workflow…"):
+                try:
+                    final_state = run_research(initial_state, stream_callback=_cb)
+                except Exception as exc:
+                    st.error(f"Research workflow failed: {exc}")
+                    logger.exception("Notebook research report failed")
+                    return
+
+            prog.progress(1.0)
+            status.empty()
+            st.session_state[cache_key] = dict(final_state)
+
+    if col_clr.button("Clear", key=f"nb_rpt_clr_{active_id}"):
         st.session_state.pop(cache_key, None)
         st.rerun()
 
-    hypotheses = st.session_state.get(cache_key, [])
-    if hypotheses:
-        for i, h in enumerate(hypotheses, 1):
-            feasibility = h.get("feasibility", "Medium")
-            icon = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}.get(feasibility, "⚪")
-            with st.expander(f"H{i}: {h.get('hypothesis', '')[:80]}…"):
-                st.markdown(f"**Hypothesis:** {h.get('hypothesis', '')}")
-                st.markdown(f"**Gap addressed:** {h.get('gap_addressed', '')}")
-                st.markdown(f"**Rationale:** {h.get('rationale', '')}")
-                c1, c2, c3 = st.columns(3)
-                c1.markdown(f"**Design:** {h.get('suggested_design', '')}")
-                c2.markdown(f"**IV:** {h.get('independent_variable', '')}")
-                c3.markdown(f"**DV:** {h.get('dependent_variable', '')}")
-                st.caption(
-                    f"{icon} Feasibility: {feasibility} — {h.get('feasibility_note', '')}"
-                )
-        hyp_text = "\n\n".join(
-            f"## Hypothesis {i + 1}\n{h.get('hypothesis', '')}\n\n"
-            f"**Suggested Design:** {h.get('suggested_design', '')}  \n"
-            f"**Rationale:** {h.get('rationale', '')}"
-            for i, h in enumerate(hypotheses)
+    result = st.session_state.get(cache_key)
+    if not result:
+        return
+
+    from ui.helpers import render_key_findings, render_references, render_report
+    render_key_findings(result.get("key_findings", []))
+    st.divider()
+    rt_report, rt_refs = st.tabs(["Report", "References"])
+    with rt_report:
+        render_report(result.get("report", ""), f"nb_rpt_{active_id}")
+    with rt_refs:
+        render_references(result.get("references", []), key_suffix=f"_nb_rpt_{active_id}")
+
+
+def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
+    """Conversational science communicator grounded in the notebook's sources."""
+    from agents.story_graph import run_story_turn
+    from agents.story_memory import StorytellerMemory
+    from agents.story_state import create_story_state
+
+    st.markdown(
+        "Ask questions about your notebook sources in plain language. "
+        "Choose an explanation style — simple language, an extended analogy, "
+        "a step-by-step walkthrough, or a structured debate."
+    )
+
+    memory = StorytellerMemory()
+    nb_name = notebook.get("name", "Notebook")
+
+    explanation_style = st.radio(
+        "Explanation style",
+        options=["simple", "analogy", "walkthrough", "debate"],
+        format_func=lambda x: {
+            "simple":      "Simple Language",
+            "analogy":     "Extended Analogy",
+            "walkthrough": "Step-by-Step",
+            "debate":      "For vs. Against",
+        }[x],
+        horizontal=True,
+        key=f"nb_explain_style_{active_id}",
+    )
+
+    # Resolve or auto-create a story session linked to this notebook
+    session_key = f"nb_explain_sid_{active_id}"
+    effective_sid = st.session_state.get(session_key)
+
+    if effective_sid:
+        session_data = memory.load(effective_sid)
+        if not session_data:
+            # Session was deleted — clear reference
+            st.session_state.pop(session_key, None)
+            effective_sid = None
+            session_data = None
+    else:
+        session_data = None
+
+    # Show existing conversation
+    if session_data:
+        st.caption(f"Session: {session_data.get('topic', nb_name)[:50]}")
+        concepts = session_data.get("concepts_covered", [])
+        if concepts:
+            st.caption("Concepts covered: " + ", ".join(concepts[:8]))
+        st.divider()
+        for turn in session_data.get("conversation", []):
+            role = turn.get("role", "user")
+            with st.chat_message(role):
+                st.markdown(turn.get("content", ""))
+                if role == "assistant":
+                    qs = turn.get("suggested_questions") or []
+                    if qs:
+                        st.markdown("**Follow-up questions:**")
+                        for q in qs:
+                            if st.button(q, key=f"nb_exp_sq_{hash(q + turn.get('content', '')[:20])}_{active_id}"):
+                                st.session_state[f"nb_explain_pending_{active_id}"] = q
+                                st.rerun()
+    else:
+        st.info("Type your first question below to start an explanation session grounded in this notebook.")
+
+    # Chat input
+    pending = st.session_state.pop(f"nb_explain_pending_{active_id}", None)
+    user_input = st.chat_input(
+        placeholder=f"Ask anything about {nb_name}…",
+        key=f"nb_explain_chat_{active_id}",
+    )
+    message = pending or user_input
+    if not message:
+        return
+
+    # Auto-create session if none exists
+    if not effective_sid:
+        # Build doc context from notebook chunks (first 500 chars per chunk, max 2000 total)
+        doc_context_parts = []
+        total_chars = 0
+        for c in notebook.get("chunks", []):
+            snippet = c.get("text", "")[:500]
+            if total_chars + len(snippet) > 2000:
+                break
+            doc_context_parts.append(snippet)
+            total_chars += len(snippet)
+        doc_context = "\n\n---\n".join(doc_context_parts)[:2000]
+        doc_names = [s["filename"] for s in notebook.get("sources", [])]
+
+        effective_sid = memory.new_session(
+            topic=nb_name,
+            document_context=doc_context,
+            document_names=doc_names,
         )
-        st.download_button("Download Hypotheses (.md)", data=hyp_text,
-                           file_name="hypotheses.md", mime="text/markdown",
-                           key=f"nb_hyp_dl_{active_id}")
+        st.session_state[session_key] = effective_sid
+        session_data = memory.load(effective_sid)
+
+    with st.chat_message("user"):
+        st.markdown(message)
+
+    state = create_story_state(
+        user_message=message,
+        session_id=effective_sid,
+        topic=nb_name,
+        model_name=settings["model"],
+        num_ctx=settings["num_ctx"],
+        explanation_style=explanation_style,
+    )
+
+    step_log = st.empty()
+    done_steps: list = []
+
+    def _cb(node_name: str, _state: dict) -> None:
+        done_steps.append(node_name.replace("_", " ").title())
+        step_log.caption(" → ".join(done_steps))
+
+    with st.spinner("Explaining…"):
+        try:
+            final = run_story_turn(state, stream_callback=_cb)
+        except Exception as exc:
+            st.error(f"Error: {exc}")
+            logger.exception("Notebook explain failed")
+            return
+
+    step_log.empty()
+
+    with st.chat_message("assistant"):
+        st.markdown(final.get("assistant_response", ""))
+        for q in final.get("suggested_questions", []):
+            if st.button(q, key=f"nb_exp_newsq_{hash(q + message[:20])}_{active_id}"):
+                st.session_state[f"nb_explain_pending_{active_id}"] = q
+                st.rerun()
+
+    st.rerun()
 
 
-# ── Main tab ──────────────────────────────────────────────────────────
+# ── Main tab ─────────────────────────────────────────────────────────────────────
 
 def tab_notebook(settings: dict) -> None:
+    """
+    Research Notebook.
+
+    Layout: 2-column (1/3 sources | 2/3 chat + advanced tabs).
+    Advanced tabs: Summary, FAQ, Literature Review, Mind Map,
+                   Audio Script, Source Comparison, Knowledge Graph,
+                   Research Report, Explain.
+    """
     st.header("Research Notebook")
     st.markdown(
         """
-Build a notebook from PDFs, Word docs, text, Markdown, or web pages, then ask questions.
-Every answer is grounded **only** in your sources with exact citations.
+Build a notebook from your own sources — PDFs, Word docs, text, Markdown, or
+web pages — then ask questions. Every answer is grounded **only** in your
+sources and cites the exact document and page. Conversations are saved per
+notebook, so you can return any time.
 
-New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Research Gaps**, **Hypotheses** tabs.
+Use the **advanced tabs** on the right for summaries, FAQs, literature reviews,
+mind maps, audio scripts, source comparisons, knowledge graphs, full **Research Reports**
+(grounded in your sources and augmented with academic literature), and an **Explain** tab
+for conversational science communication with multiple explanation styles.
 """
     )
 
     memory = NotebookMemory()
     src_col, chat_col = st.columns([1, 2])
 
-    # ── Left: notebook selector + source management ────────────────────────
+    # ── Left: notebook selector + source management ──────────────────────────
     with src_col:
         st.markdown("#### Notebook")
+
         notebooks = memory.list_notebooks()
         options = {"+ New notebook": None}
         for nb in notebooks:
             label = f"{nb['name'][:30]} ({nb['source_count']} src, {nb['turn_count']} turns)"
             options[label] = nb["notebook_id"]
 
+        # The selectbox key caches the display label. Labels change on every rerun
+        # after a file upload or question (source_count / turn_count increments).
+        # When the cached label is no longer in options Streamlit silently resets
+        # to index 0 ("+ New notebook"), losing the active notebook context.
+        #
+        # Fix: only update the cached label when it is STALE (not present in the
+        # current options dict). When the user has just changed their selection,
+        # Streamlit has already written the new label into session state — we must
+        # not overwrite it, or the selectbox will snap back to the old notebook.
         _active_id_hint = st.session_state.get("nb_active_id")
         if _active_id_hint and st.session_state.get("nb_selector") not in options:
             for _label, _nb_id in options.items():
@@ -759,16 +1033,20 @@ New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Resear
                     st.session_state["nb_selector"] = _label
                     break
 
-        chosen_label = st.selectbox("Select notebook", list(options.keys()), key="nb_selector")
+        chosen_label = st.selectbox(
+            "Select notebook", list(options.keys()), key="nb_selector",
+        )
         selected_id = options[chosen_label]
+
+        # Keep nb_active_id in sync with whatever the user selects
         if selected_id:
             st.session_state["nb_active_id"] = selected_id
 
         if selected_id is None:
-            new_name = st.text_input("Notebook name", key="nb_new_name",
-                                    placeholder="e.g. Antibiotic Resistance")
-            if st.button("Create notebook", key="nb_create", type="primary",
-                         use_container_width=True):
+            new_name = st.text_input(
+                "Notebook name", key="nb_new_name", placeholder="e.g. Antibiotic Resistance",
+            )
+            if st.button("Create notebook", key="nb_create", type="primary", use_container_width=True):
                 nb_id = memory.new_notebook(new_name or "Untitled Notebook")
                 st.session_state["nb_active_id"] = nb_id
                 st.rerun()
@@ -785,29 +1063,36 @@ New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Resear
             st.divider()
             st.markdown("#### Sources")
 
+            # ── Upload files ──────────────────────────────────
             files = st.file_uploader(
                 "Add files",
                 type=get_supported_file_types(settings.get("use_docling", True)),
                 accept_multiple_files=True,
                 key=f"nb_files_{active_id}",
+                help="Files are indexed automatically when you ask your first question, or click the button below to add them now.",
             )
+            # Filter out Streamlit DeletedFile sentinels before counting/processing
             valid_files = [f for f in (files or []) if hasattr(f, "name") and hasattr(f, "getbuffer")]
             if valid_files:
-                st.caption(f"📎 {len(valid_files)} file(s) ready")
+                st.caption(
+                    f"📎 {len(valid_files)} file(s) ready — will be indexed automatically when "
+                    f"you ask a question, or click below to add now."
+                )
                 if st.button("Add files now", key=f"nb_add_files_{active_id}",
-                             use_container_width=True):
-                    with st.spinner("Processing and indexing…"):
+                            use_container_width=True):
+                    with st.spinner("Processing and indexing documents…"):
                         processed = process_uploads(valid_files, settings)
                         added = _index_and_store(active_id, processed, settings, source_type="file")
                     if added > 0:
                         st.success(f"Added {added} source(s).")
                         st.rerun()
                     else:
-                        st.warning("No new sources added (may be duplicates).")
+                        st.warning("No new sources were added (may be duplicates).")
 
-            with st.expander("Add a web page"):
+            # ── Add a web page (optional) ─────────────────────
+            with st.expander("Add a specific web page (optional)"):
                 url = st.text_input("Page URL", key=f"nb_url_{active_id}",
-                                   placeholder="https://…")
+                                    placeholder="https://…")
                 if st.button("Fetch and add", key=f"nb_add_url_{active_id}",
                              use_container_width=True):
                     if not url.strip():
@@ -825,57 +1110,23 @@ New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Resear
                             st.error(err)
                         else:
                             added = _index_and_store(active_id, [doc], settings,
-                                                    source_type="url", url=url.strip())
+                                                     source_type="url", url=url.strip())
                             st.success(f"Added: {doc.filename}")
                             st.rerun()
 
-            # ─ BibTeX / Zotero import ─────────────────────────────────
-            with st.expander("📚 Import BibTeX / Zotero (.bib)"):
-                bib_file = st.file_uploader(
-                    "Upload .bib file", type=["bib"],
-                    key=f"nb_bib_{active_id}",
-                )
-                if bib_file:
-                    st.caption(f"📎 {bib_file.name}")
-                    if st.button("Import references", key=f"nb_import_bib_{active_id}",
-                                 use_container_width=True, type="primary"):
-                        from tools.zotero_importer import import_bibtex_to_notebook
-                        content = bib_file.read().decode("utf-8", errors="ignore")
-                        with st.spinner("Importing BibTeX entries…"):
-                            added, errors = import_bibtex_to_notebook(
-                                content, active_id, settings
-                            )
-                        if added:
-                            st.success(f"Imported {added} references.")
-                            st.rerun()
-                        for err in errors[:5]:
-                            st.warning(err)
-
-            # ─ SR → Notebook bridge ────────────────────────────────
-            sr_state = st.session_state.get("sr_last_result")
-            if sr_state and sr_state.get("narrative_synthesis"):
-                with st.expander("🔗 Import from Systematic Review"):
-                    rq_preview = sr_state.get("research_question", "")[:60]
-                    st.caption(f"Available SR: _{rq_preview}_")
-                    if st.button("Import SR synthesis into this notebook",
-                                 key=f"nb_import_sr_{active_id}",
-                                 use_container_width=True, type="primary"):
-                        from tools.bridge import sr_to_notebook
-                        with st.spinner("Importing SR synthesis…"):
-                            _, err = sr_to_notebook(sr_state, active_id, None, settings)
-                        if err:
-                            st.error(err)
-                        else:
-                            st.success("SR synthesis imported as a notebook source!")
-                            st.rerun()
-
+            # ── Auto web search toggle ────────────────────────
             auto_web_key = f"nb_auto_web_{active_id}"
             auto_web_search = st.toggle(
                 "Auto web search",
                 value=st.session_state.get(auto_web_key, False),
                 key=auto_web_key,
+                help=(
+                    "When enabled, the agent automatically searches the web (DuckDuckGo) "
+                    "for relevant pages to supplement your notebook sources on each question."
+                ),
             )
 
+            # ── Source list ───────────────────────────────────
             sources = notebook.get("sources", [])
             if sources:
                 st.caption(f"{len(sources)} source(s) in this notebook:")
@@ -887,21 +1138,25 @@ New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Resear
                         f"{s.get('file_type','')} · {s.get('total_chunks',0)} chunks</span>",
                         unsafe_allow_html=True,
                     )
-                    if cols[1].button("Remove", key=f"nb_rm_{s['doc_id']}"):
+                    if cols[1].button("Remove", key=f"nb_rm_{s['doc_id']}", help="Remove source"):
                         memory.remove_source(active_id, s["doc_id"])
                         _hybrid_stores.pop(f"notebook_{active_id}", None)
                         _hybrid_stores.pop(f"notebook_{active_id}_bm25", None)
                         st.rerun()
             else:
                 if auto_web_search:
-                    st.info("No sources — **Auto web search** is on.")
+                    st.info(
+                        "No uploaded sources — that's fine. "
+                        "**Auto web search** is on: the agent will search Google for each question."
+                    )
                 else:
-                    st.info("No sources yet. Add files, a web page, or a BibTeX file above.")
+                    st.info("No sources yet. Add files or a web page above, "
+                            "or enable **Auto web search** to let the agent search Google.")
 
+            # ── Notebook actions ──────────────────────────────
             st.divider()
             with st.expander("Rename / Delete"):
-                rename = st.text_input("Rename notebook",
-                                       value=notebook.get("name", ""),
+                rename = st.text_input("Rename notebook", value=notebook.get("name", ""),
                                        key=f"nb_rename_{active_id}")
                 if st.button("Save name", key=f"nb_save_name_{active_id}"):
                     memory.rename(active_id, rename)
@@ -913,7 +1168,7 @@ New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Resear
                     _stores.pop(f"notebook_{active_id}", None)
                     st.rerun()
 
-    # ── Right: chat + advanced tabs ────────────────────────────────────
+    # ── Right: chat + advanced tabs ───────────────────────────────────────────
     with chat_col:
         if not active_id:
             st.info("Create or select a notebook on the left to begin.")
@@ -935,15 +1190,24 @@ New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Resear
             tab_chat, tab_summary, tab_faq, tab_litreview,
             tab_mindmap, tab_audio, tab_compare, tab_kgraph,
             tab_timeline, tab_study_table, tab_pipeline,
-            tab_extraction, tab_gaps, tab_hypotheses,
+            tab_research_report, tab_explain,
         ) = st.tabs([
-            "Chat", "Summary", "FAQ", "Lit Review",
-            "Mind Map", "Audio", "Compare", "Graph",
-            "Timeline", "Study Table", "Pipeline",
-            "Extraction", "Gaps", "Hypotheses",
+            "Chat",
+            "Summary",
+            "FAQ",
+            "Lit Review",
+            "Mind Map",
+            "Audio",
+            "Compare",
+            "Graph",
+            "Timeline",
+            "Study Table",
+            "Pipeline",
+            "Research Report",
+            "Explain",
         ])
 
-        # ─ Tab 1: Chat ──────────────────────────────────────────────
+        # ── Tab 1: Chat ───────────────────────────────────────
         with tab_chat:
             for turn in notebook.get("conversation", []):
                 role = turn.get("role", "user")
@@ -958,29 +1222,35 @@ New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Resear
                                 st.rerun()
 
             pending = st.session_state.pop("nb_pending_q", None)
-            typed = st.chat_input(placeholder="Ask a question about your sources…",
-                                  key="nb_chat_input")
+            typed = st.chat_input(
+                placeholder="Ask a question about your sources…", key="nb_chat_input",
+            )
             message = pending or typed
-            if message:
+            if not message:
+                pass  # fall through to other tabs rendering
+            else:
                 auto_web = st.session_state.get(f"nb_auto_web_{active_id}", False)
 
+                # Auto-ingest any files waiting in the uploader before answering.
+                # Filter out Streamlit DeletedFile sentinels (no .name / .getbuffer).
                 _raw_pending = st.session_state.get(f"nb_files_{active_id}") or []
-                pending_files = [f for f in _raw_pending
-                                 if hasattr(f, "name") and hasattr(f, "getbuffer")]
+                pending_files = [f for f in _raw_pending if hasattr(f, "name") and hasattr(f, "getbuffer")]
                 if pending_files:
-                    with st.spinner(f"Indexing {len(pending_files)} uploaded file(s)…"):
+                    with st.spinner(
+                        f"Indexing {len(pending_files)} uploaded file(s) before answering…"
+                    ):
                         processed = process_uploads(pending_files, settings)
                         added = _index_and_store(active_id, processed, settings, source_type="file")
                     if added > 0:
-                        st.toast(f"✅ Indexed {added} new source(s).")
-                        notebook = memory.load(active_id)
+                        st.toast(f"✅ Indexed {added} new source(s) from upload.")
+                        notebook = memory.load(active_id)  # reload with updated sources
                     elif processed:
-                        st.toast("ℹ️ Uploaded files already in notebook.")
+                        st.toast("ℹ️ Uploaded files already in notebook (skipping duplicates).")
 
                 if not notebook.get("sources") and not auto_web:
                     st.warning(
                         "Add at least one source before asking questions, "
-                        "or enable **Auto web search** above."
+                        "or enable **Auto web search** above to let the agent search Google."
                     )
                 else:
                     with st.chat_message("user"):
@@ -1025,35 +1295,60 @@ New: **BibTeX import**, **SR→Notebook bridge**, **Extraction Table**, **Resear
                                 st.session_state["nb_pending_q"] = q
                                 st.rerun()
 
-                    render_eval_result(dict(final).get("eval_result", {}),
-                                       key_suffix=f"_nb_chat_{active_id}")
-                    render_rag_reflection(dict(final).get("rag_reflection_info"),
-                                         key_suffix=f"_nb_chat_{active_id}")
+                    render_eval_result(
+                        dict(final).get("eval_result", {}),
+                        key_suffix=f"_nb_chat_{active_id}",
+                    )
+                    render_rag_reflection(
+                        dict(final).get("rag_reflection_info"),
+                        key_suffix=f"_nb_chat_{active_id}",
+                    )
                     st.rerun()
 
+        # ── Tab 2: Cross-document summary ─────────────────────
         with tab_summary:
             _tab_cross_summary(active_id, notebook, settings)
+
+        # ── Tab 3: FAQ ────────────────────────────────────────
         with tab_faq:
             _tab_faq(active_id, notebook, settings)
+
+        # ── Tab 4: Literature review ──────────────────────────
         with tab_litreview:
             _tab_literature_review(active_id, notebook, settings)
+
+        # ── Tab 5: Mind map ───────────────────────────────────
         with tab_mindmap:
             _tab_mindmap(active_id, notebook, settings)
+
+        # ── Tab 6: Audio summary ──────────────────────────────
         with tab_audio:
             _tab_audio(active_id, notebook, settings)
+
+        # ── Tab 7: Source comparison ──────────────────────────
         with tab_compare:
             _tab_compare(active_id, notebook, settings)
+
+        # ── Tab 8: Knowledge graph ────────────────────────────
         with tab_kgraph:
             _tab_knowledge_graph(active_id, notebook, settings)
+
+        # ── Tab 9: Timeline ───────────────────────────────────
         with tab_timeline:
             _tab_timeline(active_id, notebook, settings)
+
+        # ── Tab 10: Study comparison table ────────────────────
         with tab_study_table:
             _tab_study_comparison(active_id, notebook, settings)
+
+        # ── Tab 11: Full 7-agent pipeline ─────────────────────
         with tab_pipeline:
             _tab_pipeline(active_id, notebook, settings)
-        with tab_extraction:
-            _tab_extraction_table(active_id, notebook, settings)
-        with tab_gaps:
-            _tab_research_gaps(active_id, notebook, settings)
-        with tab_hypotheses:
-            _tab_hypotheses(active_id, notebook, settings)
+
+        # ── Tab 12: Research report (absorbs Modes 1 & 3) ────────────────────
+        with tab_research_report:
+            _tab_research_report(active_id, notebook, settings)
+
+        # ── Tab 13: Explain (absorbs Mode 5 storytelling) ─────────────────────
+        with tab_explain:
+            _tab_explain(active_id, notebook, settings)

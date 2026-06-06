@@ -9,8 +9,22 @@ Usage
 ─────
 from tools.citation_tools import refs_to_bibtex, refs_to_ris
 
+# refs is a list of dicts like the ones built by reference_compilation_node:
+# {title, authors, year, journal, doi, url, citation_key, source, ...}
+
 bib_text = refs_to_bibtex(references)   # → .bib file content
 ris_text = refs_to_ris(references)       # → .ris file content
+
+TUTORIAL NOTE
+─────────────
+BibTeX and RIS are the two universal reference formats understood by every
+reference manager (Zotero, Mendeley, EndNote, JabRef, etc.). Providing these
+lets researchers integrate AI-generated references into their existing workflow
+without manual re-entry.
+
+BibTeX key format: <first-author-last-name><year>[a/b/c…]
+  • smith2023       — single paper by Smith in 2023
+  • smith2023a/b    — two papers by Smith in 2023 (collision handling)
 """
 
 from __future__ import annotations
@@ -19,12 +33,22 @@ import re
 from typing import Dict, List
 
 
+# ── Key generation ─────────────────────────────────────────────────────────────
+
 def _make_bibtex_key(ref: Dict, existing_keys: set | None = None) -> str:
+    """
+    Generate a BibTeX key from the reference dict.
+
+    Pattern: <lastname><year>[suffix]
+    The suffix (a, b, c…) is added only when a collision is detected.
+    `existing_keys` is updated in-place when provided.
+    """
     authors = ref.get("authors") or []
     year    = str(ref.get("year") or "nd")
 
     if authors:
         first_author = authors[0]
+        # Take the first token (last name in "Last First" or "Last, F." format)
         last_name = re.sub(r"[^a-zA-Z]", "", first_author.split()[0]).lower()
         if not last_name:
             last_name = "anon"
@@ -36,6 +60,7 @@ def _make_bibtex_key(ref: Dict, existing_keys: set | None = None) -> str:
     if existing_keys is None:
         return base_key
 
+    # Collision handling: append a, b, c…
     if base_key not in existing_keys:
         existing_keys.add(base_key)
         return base_key
@@ -46,12 +71,16 @@ def _make_bibtex_key(ref: Dict, existing_keys: set | None = None) -> str:
             existing_keys.add(candidate)
             return candidate
 
+    # Extreme edge case: all 26 suffixes used — fall back to title hash
     fallback = f"{base_key}_{abs(hash(ref.get('title',''))):04x}"
     existing_keys.add(fallback)
     return fallback
 
 
+# ── BibTeX ─────────────────────────────────────────────────────────────────────
+
 def _escape_bibtex(text: str) -> str:
+    """Escape characters that break BibTeX parsers."""
     return (
         str(text)
         .replace("&", r"\&")
@@ -65,12 +94,23 @@ def _escape_bibtex(text: str) -> str:
 
 
 def ref_to_bibtex(ref: Dict, key: str | None = None) -> str:
+    """
+    Convert a single reference dict to a BibTeX @article{} entry.
+
+    Uses @article for peer-reviewed/CrossRef sources and @misc for
+    arXiv preprints (since they may not have a journal name).
+    """
     if key is None:
         key = _make_bibtex_key(ref)
 
+    # Entry type
     source = ref.get("source", "")
-    entry_type = "misc" if source == "arxiv" else "article"
+    if source == "arxiv":
+        entry_type = "misc"
+    else:
+        entry_type = "article"
 
+    # Authors: BibTeX uses "Last, First and Last, First" format
     authors = ref.get("authors") or []
     bibtex_authors = " and ".join(_escape_bibtex(a) for a in authors)
 
@@ -108,6 +148,11 @@ def ref_to_bibtex(ref: Dict, key: str | None = None) -> str:
 
 
 def refs_to_bibtex(references: List[Dict]) -> str:
+    """
+    Convert a list of reference dicts to a complete .bib file string.
+
+    Deduplicates BibTeX keys using the a/b/c suffix scheme.
+    """
     if not references:
         return "% No references\n"
 
@@ -119,13 +164,28 @@ def refs_to_bibtex(references: List[Dict]) -> str:
         entries.append(ref_to_bibtex(ref, key=key))
 
     header = (
-        "% BibTeX references exported by ResearchBuddy\n"
+        "% BibTeX references exported by Agentic Research Assistant\n"
         f"% {len(entries)} reference(s)\n\n"
     )
     return header + "\n\n".join(entries) + "\n"
 
 
+# ── RIS ────────────────────────────────────────────────────────────────────────
+
 def ref_to_ris(ref: Dict) -> str:
+    """
+    Convert a single reference dict to a RIS format block.
+
+    RIS is a tagged text format:
+      TY  - <type>      (JOUR = journal, RPRT = report/preprint)
+      AU  - <author>    (one line per author)
+      TI  - <title>
+      PY  - <year>
+      JO  - <journal>
+      DO  - <DOI>
+      UR  - <URL>
+      ER  -              (end of record — mandatory)
+    """
     source = ref.get("source", "")
     ris_type = "RPRT" if source == "arxiv" else "JOUR"
 
@@ -162,7 +222,11 @@ def ref_to_ris(ref: Dict) -> str:
 
 
 def refs_to_ris(references: List[Dict]) -> str:
+    """
+    Convert a list of reference dicts to a complete .ris file string.
+    """
     if not references:
         return ""
+
     blocks = [ref_to_ris(r) for r in references]
     return "\n\n".join(blocks) + "\n"
