@@ -405,19 +405,26 @@ def _print_rag_reflection_cli(rag_reflection_info) -> None:
 # ─── File processing ──────────────────────────────────────────────────────────
 
 def _process_files(files, chunk_size=800, overlap=150, max_raw_chars=0,
-                   use_docling=True, use_ocr=False):
+                   use_docling=True, use_ocr=False, large_doc_page_threshold=50):
     from tools.document_tools import get_processor
-    processor = get_processor(use_docling=use_docling, use_ocr=use_ocr,
-                               chunk_size=chunk_size, overlap=overlap,
-                               max_raw_chars=max_raw_chars)
     if use_docling:
-        console.print(f"[dim]Using Docling{'+ OCR' if use_ocr else ''} for advanced parsing[/dim]")
+        console.print(
+            f"[dim]Using Docling{'+ OCR' if use_ocr else ''} for advanced parsing "
+            f"(pdfplumber fallback for PDFs > {large_doc_page_threshold} pages)[/dim]"
+        )
     docs = []
     for fp in files:
         if not fp.exists():
             console.print(f"[red]✗ File not found: {fp}[/red]")
             continue
         try:
+            processor = get_processor(
+                use_docling=use_docling, use_ocr=use_ocr,
+                chunk_size=chunk_size, overlap=overlap,
+                max_raw_chars=max_raw_chars,
+                file_path=fp,
+                large_doc_page_threshold=large_doc_page_threshold,
+            )
             doc = processor.process_file(fp)
             chars = len(doc.raw_text)
             console.print(

@@ -77,6 +77,16 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
+def _peek_pdf_pages(source) -> int:
+    """Count PDF pages without extracting text — cheap single-pass."""
+    try:
+        import pdfplumber
+        with pdfplumber.open(source) as pdf:
+            return len(pdf.pages)
+    except Exception:
+        return 0
+
+
 def _chunk_text(
     text: str,
     chunk_size: int = 800,
@@ -370,14 +380,36 @@ def get_processor(
     overlap: int = 150,
     max_raw_chars: int = 0,
     max_pages: int = 300,
+    file_path: Optional[Union[str, Path]] = None,
+    large_doc_page_threshold: int = 50,
 ):
     """
-    Return a DocumentProcessor or DoclingProcessor based on settings.
+    Return a DoclingProcessor (default) or DocumentProcessor (fallback).
 
-    DoclingProcessor is returned when use_docling=True and provides advanced
-    PDF parsing, table extraction, OCR, and support for PPTX/XLSX/HTML/images.
-    Falls back to DocumentProcessor when use_docling=False (fast, no ML models).
+    Docling is always preferred — it gives layout-aware parsing, table
+    extraction, and semantic chunking. When use_docling=True and a PDF
+    file_path is supplied, the page count is peeked cheaply. If the PDF
+    exceeds large_doc_page_threshold pages, DocumentProcessor (pdfplumber,
+    page-streaming) is used instead so Docling's ML models (≈500 MB RAM)
+    are not loaded for large files on resource-constrained machines.
+
+    Falls back to DocumentProcessor when use_docling=False.
     """
+    if use_docling and file_path is not None:
+        path = Path(file_path)
+        if path.suffix.lower() == ".pdf" and path.exists():
+            page_count = _peek_pdf_pages(path)
+            if page_count > large_doc_page_threshold:
+                logger.info(
+                    "Large PDF (%d pages > threshold %d) — "
+                    "using pdfplumber instead of Docling to avoid RAM spike",
+                    page_count, large_doc_page_threshold,
+                )
+                return DocumentProcessor(
+                    chunk_size=chunk_size, overlap=overlap,
+                    max_raw_chars=max_raw_chars, max_pages=max_pages,
+                )
+
     if use_docling:
         from tools.docling_processor import DoclingProcessor
         return DoclingProcessor(use_ocr=use_ocr, max_raw_chars=max_raw_chars)

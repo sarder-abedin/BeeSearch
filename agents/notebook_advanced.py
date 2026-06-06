@@ -36,8 +36,8 @@ from config.settings import get_settings
 logger = logging.getLogger(__name__)
 cfg = get_settings()
 
-_MAX_CHARS_PER_DOC = 3_500   # chars sent to LLM per source
-_MAX_TOTAL_CHARS = 14_000    # hard ceiling for the whole context block
+_MAX_CHARS_PER_DOC = 6_000   # chars sent to LLM per source
+_MAX_TOTAL_CHARS = 20_000    # hard ceiling for the whole context block
 
 
 # ── LLM factory ──────────────────────────────────────────────────────────────

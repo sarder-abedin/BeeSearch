@@ -20,7 +20,7 @@ import streamlit as st
 from config.settings import get_settings
 from tools.citation_tools import refs_to_bibtex, refs_to_ris
 from tools.clarifier import generate_clarifying_questions
-from tools.document_tools import DocumentProcessor, get_processor
+from tools.document_tools import DocumentProcessor, get_processor, _peek_pdf_pages
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -60,19 +60,11 @@ def process_uploads(uploaded_files, settings: dict) -> list:
     """
     use_docling = settings.get("use_docling", True)
     use_ocr = settings.get("use_ocr", False)
-
-    processor = get_processor(
-        use_docling=use_docling,
-        use_ocr=use_ocr,
-        chunk_size=settings.get("chunk_size", 800),
-        overlap=settings.get("chunk_overlap", 150),
-        max_raw_chars=200_000,
-        max_pages=300,
-    )
+    large_doc_threshold = settings.get("large_doc_page_threshold", cfg.large_doc_page_threshold)
 
     if use_docling:
         ocr_label = " + OCR" if use_ocr else ""
-        st.caption(f"Using Docling{ocr_label} for advanced parsing…")
+        st.caption(f"Using Docling{ocr_label} for advanced parsing (pdfplumber fallback for PDFs > {large_doc_threshold} pages)…")
 
     processed = []
     for f in uploaded_files:
@@ -80,6 +72,28 @@ def process_uploads(uploaded_files, settings: dict) -> list:
             continue
         try:
             file_obj = io.BytesIO(f.getbuffer())
+
+            # For large PDFs, auto-fall back to pdfplumber to avoid loading
+            # Docling's ML models (~500 MB) into RAM for long documents.
+            effective_docling = use_docling
+            if use_docling and Path(f.name).suffix.lower() == ".pdf":
+                page_count = _peek_pdf_pages(file_obj)
+                file_obj.seek(0)
+                if page_count > large_doc_threshold:
+                    effective_docling = False
+                    st.info(
+                        f"{f.name}: {page_count} pages — switching to lightweight parser "
+                        f"(threshold: {large_doc_threshold} pages)"
+                    )
+
+            processor = get_processor(
+                use_docling=effective_docling,
+                use_ocr=use_ocr,
+                chunk_size=settings.get("chunk_size", 800),
+                overlap=settings.get("chunk_overlap", 150),
+                max_raw_chars=200_000,
+                max_pages=300,
+            )
             doc = processor.process_file(Path(f.name), file_obj=file_obj)
             processed.append(doc)
             st.success(f"{f.name} — {doc.total_chunks} chunks extracted")

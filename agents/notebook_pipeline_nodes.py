@@ -176,7 +176,7 @@ def summarization_node(state: NotebookPipelineState) -> Dict[str, Any]:
                        Overview · Common Themes · Complementary Contributions ·
                        Contradictions · Key Takeaways.
     """
-    _MAX_PER_DOC = 3_500
+    _MAX_PER_DOC = 6_000
 
     errors: List[str] = list(state.get("errors", []))
     completed: List[str] = list(state.get("completed_steps", []))
@@ -193,7 +193,7 @@ def summarization_node(state: NotebookPipelineState) -> Dict[str, Any]:
             "completed_steps": completed + ["summarize"],
         }
 
-    llm = _make_llm(settings, temperature=0.3, num_predict=1024)
+    llm = _make_llm(settings, temperature=0.3, num_predict=2048)
 
     by_doc: Dict[str, List[str]] = defaultdict(list)
     for chunk in chunks:
@@ -379,8 +379,8 @@ def citation_verification_node(state: NotebookPipelineState) -> Dict[str, Any]:
             "completed_steps": completed + ["verify_citations"],
         }
 
-    context = _sources_context_from_state(state, max_chars_per_doc=3_500)
-    llm = _make_llm(settings, temperature=0.1, num_predict=1024)
+    context = _sources_context_from_state(state, max_chars_per_doc=5_000)
+    llm = _make_llm(settings, temperature=0.1, num_predict=1_500)
 
     system = (
         "You are a research fact-checker. Identify 5–8 specific verifiable factual claims "
@@ -484,9 +484,8 @@ def knowledge_graph_node(state: NotebookPipelineState) -> Dict[str, Any]:
         _parse_json_object_from_llm,
     )
 
-    # Smaller per-doc limit — keep the context focused on entities, not prose
-    context = _sources_context_from_state(state, max_chars_per_doc=1_500)
-    llm = _make_llm(settings, temperature=0.2, num_predict=1024)
+    context = _sources_context_from_state(state, max_chars_per_doc=3_000)
+    llm = _make_llm(settings, temperature=0.2, num_predict=1_500)
 
     system = (
         "Extract a knowledge graph from the provided research sources.\n"
@@ -540,7 +539,7 @@ def study_guide_node(state: NotebookPipelineState) -> Dict[str, Any]:
       ## Review Questions 6–8 Q&A pairs grounded in the sources
       ## Quick Summary    2–3 paragraph synthesis
     """
-    _MAX_TOTAL = 14_000
+    _MAX_TOTAL = 20_000
 
     errors: List[str] = list(state.get("errors", []))
     completed: List[str] = list(state.get("completed_steps", []))
@@ -643,11 +642,11 @@ def podcast_script_node(state: NotebookPipelineState) -> Dict[str, Any]:
     )
 
     # Build focused context: cross-summary + Key Concepts section from study guide
-    ctx_parts = [f"KEY INSIGHTS:\n{cross_summary[:3000]}"]
+    ctx_parts = [f"KEY INSIGHTS:\n{cross_summary[:5000]}"]
     if study_guide:
         m = re.search(r"## Key Concepts\n(.*?)(?=\n##|\Z)", study_guide, re.DOTALL)
         if m:
-            ctx_parts.append(f"KEY CONCEPTS:\n{m.group(1)[:1500]}")
+            ctx_parts.append(f"KEY CONCEPTS:\n{m.group(1)[:2500]}")
     context = "\n\n".join(ctx_parts)
 
     llm = _make_llm(settings, temperature=0.7, num_predict=2048)

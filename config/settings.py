@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     chunk_size: int = Field(800, alias="CHUNK_SIZE")
     chunk_overlap: int = Field(150, alias="CHUNK_OVERLAP")
     docling_models_path: str = Field("models/docling", alias="DOCLING_MODELS_PATH")
+    # PDFs larger than this page count auto-switch from Docling to pdfplumber
+    # to avoid loading Docling's ML models (~500 MB) on resource-constrained machines.
+    large_doc_page_threshold: int = Field(50, alias="LARGE_DOC_PAGE_THRESHOLD")
 
     # ── Google Search FastAPI Service ────────────────────────
     google_search_service_url: str = Field(
