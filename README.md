@@ -32,6 +32,7 @@ Local AI tools for systematic literature review and source-grounded research not
 - **Hybrid RAG** — FAISS dense + BM25 sparse, fused with Reciprocal Rank Fusion
 - **Self-Reflective RAG** — post-retrieval LLM grader removes irrelevant papers/chunks
 - **7-agent Notebook Pipeline** — ingest → summarize → retrieve → verify_citations → build_kg → study_guide → podcast
+- **Adaptive PDF parsing** — Docling (layout-aware, table extraction) for normal documents; pdfplumber streaming fallback for large PDFs to avoid RAM spikes on constrained machines
 - **Long-term memory** — all notebooks and SR sessions persist across restarts
 - **Quality scores** — every output self-evaluated with per-dimension scores (1–5)
 - **Both UI and CLI** — Streamlit web app (`streamlit run app.py`) and `main.py` CLI
@@ -116,6 +117,12 @@ python main.py --notebook --notebook-id <id>
 # Add files when opening
 python main.py --notebook --notebook-id <id> --files paper.pdf notes.txt
 
+# Document parsing options
+python main.py --notebook --files paper.pdf          # default: Docling (layout-aware)
+python main.py --notebook --files paper.pdf --ocr    # Docling + OCR (scanned PDFs)
+python main.py --notebook --files paper.pdf --no-docling  # always use pdfplumber
+python main.py --notebook --files big.pdf --large-doc-threshold 30  # custom page threshold
+
 # List all notebooks
 python main.py --list-notebooks
 
@@ -166,6 +173,10 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.1:8b
 EMBEDDING_MODEL=nomic-embed-text
 NUM_CTX=8192
+
+# PDFs with more pages than this switch from Docling to pdfplumber
+# Lower on machines with < 8 GB RAM (e.g. 20 or 30). Set to 0 to always use Docling.
+LARGE_DOC_PAGE_THRESHOLD=50
 ```
 
 ---

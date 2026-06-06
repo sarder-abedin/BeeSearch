@@ -35,8 +35,13 @@ A: Docling is included in `requirements.txt` and enabled by default. On first us
 
 ---
 
+**Q: Uploading a large PDF crashes or freezes my machine — what can I do?**
+A: Docling loads ~500 MB of ML models into RAM, which can exhaust memory on resource-constrained machines. ResearchBuddy automatically switches to the lightweight pdfplumber parser for PDFs that exceed the `LARGE_DOC_PAGE_THRESHOLD` (default: 50 pages). pdfplumber streams pages one at a time and uses a fraction of the RAM — Docling is never loaded for those files. To lower the threshold (e.g. on an 8 GB machine), set `LARGE_DOC_PAGE_THRESHOLD=20` in your `.env`, pass `--large-doc-threshold 20` on the CLI, or toggle "Advanced Parsing (Docling)" off in the sidebar to disable Docling entirely.
+
+---
+
 **Q: How do I handle very long documents in the Notebook?**
-A: Increase the "Context window (tokens)" slider in the sidebar and use a model with a larger context (e.g. `mistral-nemo:12b` supports 128k tokens). Set `NUM_CTX=131072` in your `.env` to make 128k the default. Pass `--num-ctx 32768` on the CLI for a one-off increase.
+A: Two levers: (1) **Parser RAM** — large PDFs auto-switch to pdfplumber (page-by-page streaming) to stay within available RAM; lower `LARGE_DOC_PAGE_THRESHOLD` in `.env` if needed. (2) **LLM context** — increase the "Context window (tokens)" slider in the sidebar and use a model with a larger context (e.g. `mistral-nemo:12b` supports 128k tokens). Set `NUM_CTX=131072` in your `.env` to make 128k the default. Pass `--num-ctx 32768` on the CLI for a one-off increase.
 
 ---
 

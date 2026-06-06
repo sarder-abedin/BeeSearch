@@ -189,6 +189,12 @@ python main.py --notebook --notebook-id <id>
 python main.py --notebook --notebook-id <id> \
   --files paper1.pdf paper2.pdf notes.txt
 
+# Document parsing options
+python main.py --notebook --files paper.pdf              # default: Docling (layout-aware)
+python main.py --notebook --files scanned.pdf --ocr     # Docling + OCR (scanned PDFs)
+python main.py --notebook --files paper.pdf --no-docling  # always use pdfplumber
+python main.py --notebook --files big.pdf --large-doc-threshold 20  # custom RAM threshold
+
 # Advanced one-shot analysis
 python main.py --notebook-summary <id>
 python main.py --notebook-faq <id>
@@ -257,6 +263,21 @@ This prints hardware specs, pulled models, and the recommended model for your ma
 ```bash
 python main.py --notebook --notebook-id <id> --num-ctx 32768
 # Or in .env: NUM_CTX=32768
+```
+
+### Handle large PDFs on low-RAM machines
+
+PDFs larger than `LARGE_DOC_PAGE_THRESHOLD` pages (default: 50) automatically switch from Docling to pdfplumber to avoid loading ~500 MB of ML models into RAM. Lower the threshold if you are on a machine with < 8 GB RAM:
+
+```bash
+# One-off: process a 100-page PDF with a lower threshold
+python main.py --notebook --files big_paper.pdf --large-doc-threshold 20
+
+# Permanent: set in .env
+LARGE_DOC_PAGE_THRESHOLD=20
+
+# Disable Docling entirely (always uses pdfplumber)
+python main.py --notebook --files paper.pdf --no-docling
 ```
 
 ### Save disk space

@@ -247,8 +247,10 @@ START
 [ingest]
   │  • Docling (default) → layout-aware parsing, table extraction,
   │    PPTX/XLSX/HTML/image support → raw text + chunks
-  │  • DocumentProcessor (fallback with --no-docling) → pdfplumber /
-  │    python-docx / plain read → raw text + chunks
+  │  • Auto-switch: PDFs > LARGE_DOC_PAGE_THRESHOLD pages (default 50)
+  │    use DocumentProcessor instead to avoid ~500 MB Docling ML models
+  │  • DocumentProcessor (explicit fallback: --no-docling) → pdfplumber /
+  │    python-docx / plain read → page-by-page streaming, low RAM
   │  • OllamaEmbedder → FAISS + ChromaDB cache
   │  • BM25Okapi index built from chunks
   │
@@ -311,16 +313,16 @@ Available from CLI flags and UI tab buttons.
 Document (PDF / DOCX / TXT / HTML / web page)
         │
         ▼
-  Docling (default parser — tools/document_tools.py)
-  ├── Layout-aware PDF parsing, table extraction
-  ├── PPTX, XLSX, HTML, and image support
-  ├── clean_text    (control-char removal, whitespace normalise)
-  └── chunk_text    (sliding window, chunk_size=800, overlap=150)
-
-  DocumentProcessor (fallback with --no-docling)
-  ├── extract_text  (pdfplumber / python-docx / plain read)
-  ├── clean_text
-  └── chunk_text
+  Parser selection (tools/document_tools.py — get_processor())
+  ├── _peek_pdf_pages()  counts pages cheaply before committing
+  ├── PDF ≤ LARGE_DOC_PAGE_THRESHOLD pages (default 50, env-configurable)
+  │     └── Docling  →  layout-aware parsing, table extraction,
+  │                       PPTX/XLSX/HTML/image support
+  ├── PDF >  LARGE_DOC_PAGE_THRESHOLD pages  (auto RAM guard)
+  │     └── DocumentProcessor  →  pdfplumber page-by-page streaming,
+  │                                no ~500 MB ML models loaded
+  └── --no-docling flag  →  always DocumentProcessor
+  Both paths: clean_text → chunk_text (chunk_size=800, overlap=150)
         │
         ├──────────────────────────────────┐
         ▼                                  ▼
@@ -544,7 +546,7 @@ ResearchBuddy/
 │   ├── evidence_map.py         ← Plotly Population × Intervention bubble chart
 │   ├── concept_drift.py        ← TF-IDF keyword shift across 5-year buckets
 │   │
-│   ├── document_tools.py       ← Docling parser (default) + DocumentProcessor (fallback)
+│   ├── document_tools.py       ← get_processor() auto-selects Docling or pdfplumber by page count
 │   ├── docling_processor.py    ← Advanced Docling parser
 │   ├── hybrid_store.py         ← HybridStore: FAISS + ChromaDB + BM25 + RRF
 │   ├── embeddings.py           ← OllamaEmbedder (batched /api/embed)

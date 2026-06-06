@@ -44,7 +44,7 @@ ResearchBuddy/
 │   ├── trend_analyzer.py           ← CrossRef facet year-count trends
 │   ├── evidence_map.py             ← Plotly Population × Intervention bubble chart
 │   ├── concept_drift.py            ← TF-IDF keyword shift (pure stdlib, no scikit-learn)
-│   ├── document_tools.py           ← PDF/DOCX/TXT chunking
+│   ├── document_tools.py           ← get_processor(): Docling default, pdfplumber auto-switch for large PDFs
 │   ├── docling_processor.py        ← Advanced Docling parser
 │   ├── hybrid_store.py             ← FAISS + BM25 + ChromaDB + RRF (HybridStore)
 │   ├── embeddings.py               ← OllamaEmbedder (batched /api/embed calls)
@@ -148,7 +148,7 @@ ingest → summarize → retrieve → verify_citations → build_kg → generate
 
 | Agent | Node | What it produces |
 |-------|------|-----------------|
-| 1 | `ingest` | Loads sources and chunks from NotebookMemory into pipeline state |
+| 1 | `ingest` | Loads sources; Docling for normal PDFs, pdfplumber auto-selected for large PDFs (> `LARGE_DOC_PAGE_THRESHOLD` pages) |
 | 2 | `summarize` | Per-doc summaries + cross-document synthesis |
 | 3 | `retrieve` | Hybrid RAG on focus query; SR-RAG grades chunks |
 | 4 | `verify_citations` | Verifies 5–8 claims against source material (HIGH/MEDIUM/LOW confidence) |
@@ -170,6 +170,15 @@ ingest → summarize → retrieve → verify_citations → build_kg → generate
 | Timeline | `--notebook-timeline <id>` | Chronological events table |
 | Study comparison | `--notebook-study-table <id>` | Research method/sample/findings table |
 | 7-agent pipeline | `--notebook-pipeline <id>` | All of the above in sequence |
+
+### Document parsing CLI flags
+
+```
+--no-docling              Always use pdfplumber (disables Docling ML models)
+--ocr                     Enable Docling OCR for scanned PDFs
+--large-doc-threshold N   PDFs with more than N pages auto-switch to pdfplumber
+                          (default: LARGE_DOC_PAGE_THRESHOLD from settings, usually 50)
+```
 
 ### Persistence
 
