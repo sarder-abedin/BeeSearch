@@ -5,7 +5,7 @@ Local AI tools for systematic literature review and source-grounded research not
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange)](https://langchain-ai.github.io/langgraph/)
 [![Ollama](https://img.shields.io/badge/Ollama-local%20LLM-green)](https://ollama.ai)
-[![License: PolyForm NC](https://img.shields.io/badge/License-PolyForm%20NC-blue)](LICENSE)
+[![License: PolyForm NC](https://img.shields.io/badge/License-PolyForm%20NC-blue)](https://polyformproject.org/licenses/noncommercial/1.0.0)
 
 ---
 
