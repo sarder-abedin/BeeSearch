@@ -36,6 +36,28 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "is_port_in_use":          ("tools.shutdown",        "is_port_in_use"),
     "install_signal_handlers": ("tools.shutdown",        "install_signal_handlers"),
     "load_url_as_document":    ("tools.web_loader",      "load_url_as_document"),
+    # ── New analysis tools ────────────────────────────────────────────
+    "generate_prisma_mermaid":  ("tools.prisma_diagram",        "generate_prisma_mermaid"),
+    "generate_prisma_dot":      ("tools.prisma_diagram",        "generate_prisma_dot"),
+    "run_sensitivity_analysis": ("tools.sensitivity_analysis",  "run_sensitivity_analysis"),
+    "build_sensitivity_scenarios": ("tools.sensitivity_analysis", "build_sensitivity_scenarios"),
+    "save_monitor_state":       ("tools.literature_monitor",    "save_monitor_state"),
+    "load_monitor_state":       ("tools.literature_monitor",    "load_monitor_state"),
+    "find_new_papers":          ("tools.literature_monitor",    "find_new_papers"),
+    "list_monitors":            ("tools.literature_monitor",    "list_monitors"),
+    "delete_monitor":           ("tools.literature_monitor",    "delete_monitor"),
+    "monitor_id_from_question": ("tools.literature_monitor",    "monitor_id_from_question"),
+    "generate_preregistration": ("tools.preregistration",       "generate_preregistration"),
+    "generate_prisma_checklist": ("tools.preregistration",      "generate_prisma_checklist"),
+    "extract_structured_row":   ("tools.extraction_table",      "extract_structured_row"),
+    "build_extraction_table":   ("tools.extraction_table",      "build_extraction_table"),
+    "extraction_table_to_csv":  ("tools.extraction_table",      "extraction_table_to_csv"),
+    "extraction_table_to_markdown": ("tools.extraction_table",  "extraction_table_to_markdown"),
+    "map_research_gaps":        ("tools.research_gaps",         "map_research_gaps"),
+    "generate_hypotheses":      ("tools.hypothesis_generator",  "generate_hypotheses"),
+    "parse_bibtex":             ("tools.zotero_importer",       "parse_bibtex"),
+    "import_bibtex_to_notebook": ("tools.zotero_importer",      "import_bibtex_to_notebook"),
+    "sr_to_notebook":           ("tools.bridge",                "sr_to_notebook"),
 }
 
 __all__ = list(_EXPORTS)

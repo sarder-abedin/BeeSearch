@@ -39,9 +39,10 @@ def extraction_table_to_csv(rows: List[Dict[str, str]]) -> str:
     if not rows:
         return ""
     fieldnames = ["author_year", "study_design", "population", "intervention", "comparator", "outcome", "key_finding", "limitations", "quality", "citation_key", "doi"]
+    human_headers = ["Author/Year", "Study Design", "Population", "Intervention", "Comparator", "Outcome", "Key Finding", "Limitations", "Quality", "Citation Key", "DOI"]
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
-    writer.writeheader()
+    output.write(",".join(human_headers) + "\r\n")
     writer.writerows(rows)
     return output.getvalue()
 
