@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "research-tools": {
+      "command": "python",
+      "args": ["mcp_servers/research_tools_server.py"],
+      "cwd": ".",
+      "description": "Academic search (arXiv, Semantic Scholar, CrossRef), web search, notebook RAG query, and document ingestion tools"
+    }
+  }
+}

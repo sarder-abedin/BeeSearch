@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────────────────────
+#  Agentic Research Assistant — Python Dependencies
+#  All packages are 100% open-source / freely available
+#
+#  NOTE: This project uses Hybrid RAG — dense (Ollama embeddings + FAISS)
+#  + sparse (BM25) retrieval fused via RRF.
+#  Google Search is served by a FastAPI microservice (tools/google_search_service.py).
+# ─────────────────────────────────────────────────────────────
+
+# ── Agentic Orchestration ────────────────────────────────────
+langgraph>=0.2.0          # State-machine agent framework (Apache 2.0)
+langchain>=0.3.0          # LLM toolkit used by LangGraph nodes
+langchain-community>=0.3.0
+
+# ── Local LLM via Ollama ─────────────────────────────────────
+ollama>=0.3.0             # Python client for Ollama (MIT)
+langchain-ollama>=0.2.0   # LangChain × Ollama integration
+
+# ── Document Processing ──────────────────────────────────────
+pdfplumber>=0.11.0        # PDF text + table extraction (MIT)
+python-docx>=1.1.0        # DOCX processing (MIT)
+docling>=2.0.0            # Advanced parsing: layout, tables, OCR, PPTX, XLSX (MIT)
+opencv-python-headless>=4.8.0  # Headless OpenCV — avoids libGL.so.1 requirement in Docker
+
+# ── Hybrid RAG ───────────────────────────────────────────────
+faiss-cpu>=1.8.0          # Fast in-memory dense vector search — FAISS (MIT)
+chromadb>=0.5.0           # Persistent embedding cache (Apache 2.0)
+rank-bm25>=0.2.2          # BM25 sparse keyword retrieval (Apache 2.0)
+
+# ── Academic / Scientific Search ─────────────────────────────
+arxiv>=2.1.0              # arXiv API client (MIT)
+requests>=2.31.0          # HTTP requests for Semantic Scholar, CrossRef
+
+# ── Web Search ───────────────────────────────────────────────
+ddgs>=9.0.0               # DuckDuckGo search — no API key required (MIT)
+
+# ── MCP ──────────────────────────────────────────────────────
+mcp>=1.0.0                     # Model Context Protocol server SDK (MIT)
+langchain-mcp-adapters>=0.1.0  # LangChain × MCP integration (MIT)
+orjson>=3.10.0                 # Fast JSON serialization for SQLite blobs (MIT)
+
+# ── Output & Formatting ──────────────────────────────────────
+rich>=13.0.0              # Beautiful terminal output (MIT)
+jinja2>=3.1.0             # Report templating (BSD)
+markdown>=3.6             # Markdown → HTML conversion (BSD)
+
+# ── Proposal Export (DOCX + PDF) ─────────────────────────────
+reportlab>=4.2.0          # PDF generation — pure Python (BSD)
+# python-docx already listed above — used in write mode for proposals
+pydantic-settings>=2.0.0  # BaseSettings for config (MIT)
+
+# ── Streamlit UI ─────────────────────────────────────────────
+streamlit>=1.37.0         # Web UI framework (Apache 2.0)
+streamlit-extras>=0.4.0   # Additional Streamlit components
+
+# ── Utilities ────────────────────────────────────────────────
+python-dotenv>=1.0.0      # .env file loader (BSD)
+pydantic>=2.7.0           # Data validation (MIT)
+tenacity>=8.3.0           # Retry logic for API calls (Apache 2.0)
+tqdm>=4.66.0              # Progress bars (MIT)
+tiktoken>=0.7.0           # Token counting (MIT)
+psutil>=5.9.0             # Cross-platform RAM/CPU detection for hardware profiling (BSD)
+graphviz>=0.21            # Python binding for Graphviz DOT rendering — PNG/SVG export (MIT)
+                          # Requires system package: apt install graphviz
+pyttsx3>=2.90             # Offline text-to-speech synthesis — audio WAV export (MPL-2.0)
+                          # Requires system package: apt install espeak-ng
+# Note: tools/cli_recommender.py (smart CLI recommendations) uses only stdlib
+#       (difflib, re) — no additional packages required.
+
+# ── Literature Discovery & Trend Analysis ────────────────────────────────────
+scholarly>=1.7.0          # Google Scholar scraper — no API key required (Unlicense)
+networkx>=3.0             # Graph data structures for citation networks (BSD)
+pyvis>=0.3.2              # Interactive network visualisation → HTML (BSD)
+plotly>=5.18.0            # Interactive charts for trend / evidence-map tabs (MIT)
+matplotlib>=3.8.0         # Fallback static charts and PNG export (PSF/BSD)
+
+# ── RAGchecker Faithfulness Evaluation (optional, not in Docker image) ───────
+# ragchecker has a heavy dependency chain (litellm, openai, tiktoken) that can
+# conflict with streamlit during Docker pip-install resolution.  Install it
+# manually in your local venv or after the container starts:
+#   pip install ragchecker>=0.1.9
+# If not installed, faithfulness checks are silently skipped (is_available()
+# returns False).  See tools/ragchecker_eval.py.
+# ragchecker>=0.1.9

@@ -1,0 +1,97 @@
+# ─────────────────────────────────────────────────────────────
+# Agentic Research Assistant — Docker Compose (CPU)
+#
+# Starts two services:
+#   ollama  — Ollama LLM server (model storage persisted in a volume)
+#   app     — Streamlit web UI (http://localhost:8501)
+#
+# Usage:
+#   docker compose up --build          # first run (builds app image)
+#   docker compose up                  # subsequent runs
+#   docker compose down                # stop and remove containers
+#
+# Pull a different model:
+#   docker compose exec ollama ollama pull mistral-nemo:12b
+#
+# ⚠️  Apple Silicon Mac (M1/M2/M3): the ollama/ollama image runs under
+#     x86 emulation and will fail its healthcheck. Install native Ollama
+#     (https://ollama.com/download), pull your model, then use the
+#     standalone Mac file instead (do NOT combine with this file):
+#   docker compose -f docker-compose.mac.yml up --build
+#
+# For GPU support use:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Ollama LLM server ───────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: research-ollama
+    volumes:
+      # Model weights persist across restarts — avoids re-downloading
+      - ollama_models:/root/.ollama
+    ports:
+      # Expose so you can also run `ollama` CLI from the host
+      - "11434:11434"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/version 2>/dev/null || wget -qO- http://localhost:11434/api/version 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ── Pull the default model on first start ───────────────────
+  # This service runs once, pulls the model, then exits.
+  # If the model is already downloaded, the pull is a no-op.
+  model-init:
+    image: ollama/ollama:latest
+    container_name: research-model-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ollama_models:/root/.ollama
+    entrypoint: ["ollama", "pull"]
+    command: "${OLLAMA_MODEL:-llama3.2:3b}"
+    restart: "no"
+
+  # ── Streamlit web application ───────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: research-app
+    ports:
+      - "${APP_PORT:-8501}:8501"
+    environment:
+      # Point to the Ollama service by its compose service name
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - NUM_CTX=${NUM_CTX:-32768}
+      # Optional: Semantic Scholar API key for higher rate limits
+      - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
+      - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
+    volumes:
+      # Generated reports and session memory persist on the host
+      - ./outputs:/app/outputs
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+# ── Named volumes ───────────────────────────────────────────
+volumes:
+  # Ollama model weights — stored in Docker-managed volume so they
+  # survive `docker compose down` (only removed with --volumes flag)
+  ollama_models:

@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────
+# Mac standalone Compose file — Apple Silicon (M1/M2/M3)
+#
+# Uses native Ollama instead of the Docker container.
+# The ollama/ollama image runs under x86 emulation on Apple
+# Silicon and consistently fails its healthcheck.
+#
+# Prerequisites:
+#   1. Install Ollama: https://ollama.com/download (macOS .dmg)
+#   2. ollama pull llama3.2:3b
+#   3. ollama pull nomic-embed-text   (for Hybrid RAG)
+#   (Ollama starts automatically on login after installation)
+#
+# Usage (this file only — do NOT combine with docker-compose.yml):
+#   docker compose -f docker-compose.mac.yml up --build
+#   docker compose -f docker-compose.mac.yml down --remove-orphans
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Streamlit web application ────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: research-app
+    ports:
+      - "${APP_PORT:-8501}:8501"
+    environment:
+      # Talk to native Ollama running on the Mac host
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - NUM_CTX=${NUM_CTX:-32768}
+      - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
+      - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
+      # Web search uses DuckDuckGo in-process — no separate service needed
+      # Keep sessions alive for long LLM/PDF runs (1 hour)
+      - STREAMLIT_SERVER_SESSION_IDLE_SECONDS=3600
+    volumes:
+      # Generated reports and session memory persist on the host
+      - ./outputs:/app/outputs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
