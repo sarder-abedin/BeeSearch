@@ -13,6 +13,7 @@ from config.hardware import (
     get_available_models, get_recommended_tier, recommend_config,
 )
 from config.settings import get_settings
+from ui.glossary import term_help
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -45,6 +46,7 @@ def render_sidebar() -> dict:
             st.session_state["sidebar_max_results_applied"] = _all["max_results"]
             st.session_state["sidebar_chunk_size_applied"] = _all["chunk_size"]
             st.session_state["sidebar_chunk_overlap_applied"] = _all["chunk_overlap"]
+            st.session_state["sidebar_large_doc_threshold_applied"] = _all["large_doc_page_threshold"]
 
         _ram_override = st.session_state.get("hw_ram_override_gb", 0.0)
         if _ram_override and _ram_override != hw["ram_gb"]:
@@ -75,6 +77,7 @@ def render_sidebar() -> dict:
                 f"**Performance tier:** :{_tc}[{tier['label']}]  \n"
                 f"<small>{tier['description']}</small>",
                 unsafe_allow_html=True,
+                help=term_help("Hardware tier"),
             )
 
             if hw.get("in_docker"):
@@ -154,12 +157,14 @@ def render_sidebar() -> dict:
         _rec_top_k = tier["hybrid_top_k"]
         _rec_chunk = tier["chunk_size"]
         _rec_max = tier["max_results"]
+        _rec_threshold = tier["large_doc_page_threshold"]
         _r1, _r2 = st.columns(2)
         _r1.metric("Context (tokens)", f"{_rec_ctx:,}")
         _r2.metric("Chunks per query", _rec_top_k)
         _r3, _r4 = st.columns(2)
         _r3.metric("Chunk size (chars)", _rec_chunk)
         _r4.metric("Max papers", _rec_max)
+        st.caption(f"Large-doc switch to fast parsing: pages > **{_rec_threshold}**")
         if _rec_model != "—":
             st.caption(f"Recommended model: **{_rec_model}**")
         if rec.get("can_run") and _rec_model != "—":
@@ -169,6 +174,7 @@ def render_sidebar() -> dict:
                     "model": _rec_model, "num_ctx": _rec_ctx,
                     "hybrid_top_k": _rec_top_k, "max_results": _rec_max,
                     "chunk_size": _rec_chunk, "chunk_overlap": tier["chunk_overlap"],
+                    "large_doc_page_threshold": _rec_threshold,
                 }
                 st.rerun()
 
@@ -193,7 +199,7 @@ def render_sidebar() -> dict:
 
         # ── Context window ────────────────────────────────────
         st.divider()
-        st.markdown("#### Context Window")
+        st.markdown("#### Context Window", help=term_help("Context window"))
         ctx_options = [2048, 4096, 8192, 16384, 32768, 65536, 131072]
         if "sidebar_num_ctx" in st.session_state:
             applied = st.session_state["sidebar_num_ctx"]
@@ -203,7 +209,7 @@ def render_sidebar() -> dict:
 
         # ── Hybrid RAG ────────────────────────────────────────
         st.divider()
-        st.markdown("#### Hybrid RAG")
+        st.markdown("#### Hybrid RAG", help=term_help("Hybrid retrieval"))
         st.caption("FAISS dense + BM25 sparse search, fused with Reciprocal Rank Fusion.")
 
         _embed_options, _embed_help_lines = [], []
@@ -239,7 +245,7 @@ def render_sidebar() -> dict:
 
         # ── Document settings ─────────────────────────────────
         st.divider()
-        st.markdown("#### Document Settings")
+        st.markdown("#### Document Settings", help=term_help("Docling / OCR"))
         use_docling = st.toggle("Advanced Parsing (Docling)", value=True, key="sidebar_use_docling")
         if use_docling:
             use_ocr = st.toggle("Enable OCR (slower)", value=False, key="sidebar_use_ocr")
@@ -251,6 +257,13 @@ def render_sidebar() -> dict:
             _co = st.session_state.pop("sidebar_chunk_overlap_applied", 150)
             chunk_size = st.slider("Chunk size (chars)", 400, 1200, _cs, step=100, key="sidebar_chunk_size")
             chunk_overlap = st.slider("Chunk overlap (chars)", 50, 300, _co, step=25, key="sidebar_chunk_overlap")
+        _threshold_default = st.session_state.pop("sidebar_large_doc_threshold_applied", cfg.large_doc_page_threshold)
+        large_doc_page_threshold = st.slider(
+            "Large-PDF page threshold", min_value=10, max_value=300,
+            value=_threshold_default, step=10, key="sidebar_large_doc_threshold",
+            help="PDFs with more pages than this automatically switch from Docling to the "
+                 "lighter pdfplumber parser, avoiding a large memory spike on big documents.",
+        )
 
         # ── Safe Shutdown ─────────────────────────────────────
         st.divider()
@@ -291,5 +304,6 @@ def render_sidebar() -> dict:
         "chunk_overlap": chunk_overlap,
         "use_docling": use_docling,
         "use_ocr": use_ocr,
+        "large_doc_page_threshold": large_doc_page_threshold,
         "style_profile": None,
     }

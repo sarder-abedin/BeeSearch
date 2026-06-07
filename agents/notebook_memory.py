@@ -313,3 +313,92 @@ class NotebookMemory:
             return []
         meta = unpack(row["meta_json"])
         return meta.get("conversation", [])[-max_turns:]
+
+    # ── Cross-notebook search ─────────────────────────────────
+
+    def search_all_notebooks(
+        self,
+        query: str,
+        limit: int = 30,
+        notebook_ids: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Keyword-search every chunk in every notebook (or a chosen subset) —
+        "search across everything I've ever uploaded".
+
+        This runs a lightweight, dependency-free substring/keyword search
+        directly over the shared `notebook_chunks` table (the same SQLite
+        store every notebook's text already lives in), then ranks candidates
+        in Python by how many distinct query terms each chunk contains and
+        how often they occur. It deliberately avoids requiring each
+        notebook's FAISS/BM25 index to be built or loaded — those are
+        per-notebook, in-memory, and expensive to construct on demand —
+        so results return instantly even for notebooks you haven't opened
+        in this session.
+
+        Returns hits ordered by relevance, each shaped as:
+            {notebook_id, notebook_name, doc_id, doc_name, page_num,
+             chunk_index, text, snippet, matched_terms, score}
+        """
+        terms = sorted({t.lower() for t in query.split() if t.strip()})
+        if not terms:
+            return []
+
+        where_terms = " OR ".join(["LOWER(c.text) LIKE ?"] * len(terms))
+        params: List[Any] = [f"%{t}%" for t in terms]
+
+        sql = (
+            "SELECT c.notebook_id, c.doc_id, c.doc_name, c.page_num, c.chunk_index, c.text, "
+            "       n.name AS notebook_name "
+            "FROM notebook_chunks c "
+            "JOIN notebooks n ON n.notebook_id = c.notebook_id "
+            f"WHERE ({where_terms})"
+        )
+        if notebook_ids:
+            sql += f" AND c.notebook_id IN ({','.join('?' for _ in notebook_ids)})"
+            params.extend(notebook_ids)
+        sql += " LIMIT 1000"  # cap candidates fetched before in-Python ranking
+
+        with _tx(self._db_path) as conn:
+            rows = conn.execute(sql, params).fetchall()
+
+        hits: List[Dict[str, Any]] = []
+        for row in rows:
+            text = row["text"] or ""
+            lowered = text.lower()
+            matched_terms = sum(1 for t in terms if t in lowered)
+            if not matched_terms:
+                continue
+            occurrences = sum(lowered.count(t) for t in terms)
+            hits.append({
+                "notebook_id": row["notebook_id"],
+                "notebook_name": row["notebook_name"] or "Untitled",
+                "doc_id": row["doc_id"],
+                "doc_name": row["doc_name"],
+                "page_num": row["page_num"],
+                "chunk_index": row["chunk_index"],
+                "text": text,
+                "snippet": _make_snippet(text, terms),
+                "matched_terms": matched_terms,
+                "score": matched_terms * 1000 + occurrences,
+            })
+
+        hits.sort(key=lambda h: h["score"], reverse=True)
+        return hits[:limit]
+
+
+def _make_snippet(text: str, terms: List[str], radius: int = 110) -> str:
+    """Return a short excerpt centred on the first matched term, for result previews."""
+    lowered = text.lower()
+    pos = -1
+    for t in terms:
+        idx = lowered.find(t)
+        if idx != -1 and (pos == -1 or idx < pos):
+            pos = idx
+    if pos == -1:
+        snippet = text[: radius * 2].strip()
+        return snippet + ("…" if len(text) > radius * 2 else "")
+    start = max(0, pos - radius)
+    end = min(len(text), pos + radius)
+    snippet = text[start:end].strip()
+    return ("…" if start > 0 else "") + snippet + ("…" if end < len(text) else "")

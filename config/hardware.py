@@ -37,6 +37,7 @@ TIER_CONFIGS: List[Dict] = [
         "chunk_size": 1200,
         "chunk_overlap": 250,
         "max_results": 12,
+        "large_doc_page_threshold": 200,
     },
     {
         "tier": "high",
@@ -48,6 +49,7 @@ TIER_CONFIGS: List[Dict] = [
         "chunk_size": 1000,
         "chunk_overlap": 200,
         "max_results": 10,
+        "large_doc_page_threshold": 80,
     },
     {
         "tier": "standard",
@@ -59,6 +61,7 @@ TIER_CONFIGS: List[Dict] = [
         "chunk_size": 800,
         "chunk_overlap": 150,
         "max_results": 6,
+        "large_doc_page_threshold": 50,
     },
     {
         "tier": "low",
@@ -70,6 +73,7 @@ TIER_CONFIGS: List[Dict] = [
         "chunk_size": 600,
         "chunk_overlap": 100,
         "max_results": 4,
+        "large_doc_page_threshold": 20,
     },
 ]
 

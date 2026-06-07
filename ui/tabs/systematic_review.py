@@ -9,6 +9,7 @@ import streamlit as st
 
 from agents.systematic_review_graph import run_systematic_review
 from agents.systematic_review_state import create_systematic_review_state
+from ui.glossary import render_glossary_expander, term_help
 from ui.helpers import render_eval_result, render_rag_reflection
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ def _tab_synthesis(final_state: dict, settings: dict) -> None:
 def _tab_evidence(final_state: dict) -> None:
     n_inc = len(final_state.get("included_papers", []))
     n_exc = len(final_state.get("excluded_papers", []))
-    st.subheader(f"Evidence Table ({n_inc} included papers)")
+    st.subheader(f"Evidence Table ({n_inc} included papers)", help=term_help("Quality score"))
     _render_evidence_table(final_state.get("evidence_table", []))
 
     if final_state.get("excluded_papers"):
@@ -165,7 +166,7 @@ def _tab_discovery(final_state: dict, settings: dict) -> None:
     st.divider()
 
     # ── Citation Network ──────────────────────────────────────────────────
-    st.subheader("Citation Network")
+    st.subheader("Citation Network", help=term_help("Citation network"))
     st.markdown(
         "Ego network showing citation links **between** the included papers. "
         "Green = High quality, Amber = Medium, Red = Low. "
@@ -261,6 +262,164 @@ def _render_preprint_tracking(tracking: list) -> None:
                 st.markdown(f"**Journal:** {r['published_venue']}")
 
 
+def _seed_meta_rows(evidence_table: list) -> list:
+    """Build initial editable rows (label + blank effect/CI/N) from the evidence table."""
+    import re
+    rows = []
+    for row in evidence_table:
+        authors = row.get("authors", [])
+        author_str = authors[0].split(",")[0] if authors else (row.get("citation_key") or "Unknown")
+        year = row.get("year") or "n.d."
+        label = f"{author_str} et al. ({year})" if len(authors) > 1 else f"{author_str} ({year})"
+        n_match = re.search(r"\d+", str(row.get("sample_size") or ""))
+        rows.append({
+            "citation_key": row.get("citation_key", ""),
+            "label": label,
+            "effect": None,
+            "ci_low": None,
+            "ci_high": None,
+            "n": int(n_match.group()) if n_match else None,
+        })
+    return rows
+
+
+def _render_meta_analysis(final_state: dict, settings: dict) -> None:
+    """Pool effect sizes from the evidence table into a forest plot (generic inverse-variance)."""
+    import hashlib
+
+    import pandas as pd
+
+    from tools.meta_analysis import MEASURE_LABELS, extract_effect_size_row, run_meta_analysis
+
+    st.subheader("Statistical Meta-Analysis", help=term_help("Pooled effect / meta-analysis"))
+    st.markdown(
+        "Pool each study's reported effect size and 95% confidence interval into a single "
+        "estimate with a forest plot — the standard step for combining evidence across studies. "
+        "Enter the numbers from each paper's results (or draft them with the LLM below), then "
+        "review and correct them before pooling — abstracts often round or omit statistics."
+    )
+
+    evidence_table = final_state.get("evidence_table", [])
+    included = final_state.get("included_papers", [])
+    if not evidence_table:
+        st.info("Evidence table is empty — run the systematic review first.")
+        return
+
+    identity = [str(r.get("citation_key", "")) for r in evidence_table]
+    table_hash = hashlib.md5("|".join(identity).encode("utf-8")).hexdigest()[:10]
+    if st.session_state.get("_meta_table_hash") != table_hash:
+        st.session_state["_meta_rows"] = _seed_meta_rows(evidence_table)
+        st.session_state["_meta_table_hash"] = table_hash
+        st.session_state["_meta_seed_version"] = st.session_state.get("_meta_seed_version", 0) + 1
+        st.session_state.pop("_meta_result", None)
+
+    measure_codes = list(MEASURE_LABELS.keys())
+    measure = st.selectbox(
+        "Effect measure", options=measure_codes,
+        format_func=lambda code: MEASURE_LABELS[code],
+        key="_meta_measure", help=term_help("Effect size"),
+    )
+
+    if st.button("Draft effect sizes from abstracts (LLM, best-effort)", key="meta_llm_draft"):
+        by_key = {p.get("citation_key"): p for p in included if p.get("citation_key")}
+        evidence_by_key = {e.get("citation_key"): e for e in evidence_table if e.get("citation_key")}
+        rows = st.session_state["_meta_rows"]
+        model = settings.get("model", "llama3.1:8b")
+        num_ctx = settings.get("num_ctx", 32768)
+        status_text = st.empty()
+        progress_bar = st.progress(0)
+        n_filled = 0
+        for i, row in enumerate(rows):
+            ck = row.get("citation_key")
+            paper = by_key.get(ck) or evidence_by_key.get(ck)
+            if paper is not None:
+                draft = extract_effect_size_row(paper, measure, model, num_ctx)
+                if draft.get("found"):
+                    row["effect"] = draft["effect"]
+                    row["ci_low"] = draft["ci_low"]
+                    row["ci_high"] = draft["ci_high"]
+                    if draft.get("n") is not None:
+                        row["n"] = draft["n"]
+                    n_filled += 1
+            pct = int(100 * (i + 1) / len(rows))
+            progress_bar.progress(pct)
+            status_text.markdown(f"**Drafting effect sizes…** `{pct}%` ({i + 1}/{len(rows)})")
+        status_text.empty()
+        progress_bar.empty()
+        st.session_state["_meta_rows"] = rows
+        st.session_state["_meta_seed_version"] = st.session_state.get("_meta_seed_version", 0) + 1
+        st.session_state.pop("_meta_result", None)
+        if n_filled:
+            st.success(
+                f"Drafted {n_filled} of {len(rows)} effect sizes from abstracts. Review carefully "
+                "before pooling — abstracts often round or omit statistics."
+            )
+        else:
+            st.warning("No usable effect sizes found in the abstracts. Enter them manually below.")
+
+    st.caption("Edit any cell, or add/remove rows — leave a study blank to exclude it from pooling.")
+    df = pd.DataFrame(st.session_state["_meta_rows"])
+    for col in ("label", "effect", "ci_low", "ci_high", "n"):
+        if col not in df.columns:
+            df[col] = None
+    editor_key = f"_meta_editor_{st.session_state.get('_meta_seed_version', 0)}"
+    edited = st.data_editor(
+        df[["label", "effect", "ci_low", "ci_high", "n"]],
+        key=editor_key, num_rows="dynamic", use_container_width=True,
+        column_config={
+            "label": st.column_config.TextColumn("Study", width="medium"),
+            "effect": st.column_config.NumberColumn(
+                "Effect", format="%.3f",
+                help=f"Point estimate as {MEASURE_LABELS[measure]}",
+            ),
+            "ci_low": st.column_config.NumberColumn("95% CI low", format="%.3f"),
+            "ci_high": st.column_config.NumberColumn("95% CI high", format="%.3f"),
+            "n": st.column_config.NumberColumn("N", format="%.0f", help="Sample size (optional)"),
+        },
+    )
+
+    if st.button("Run Meta-Analysis", key="run_meta_analysis_btn", type="primary"):
+        st.session_state["_meta_result"] = run_meta_analysis(edited.to_dict("records"), measure=measure)
+
+    result = st.session_state.get("_meta_result")
+    if not result:
+        return
+    if not result.get("ok"):
+        st.warning(result.get("reason", "Could not pool these studies."))
+        return
+
+    st.divider()
+    fe, rand_fx, het = result["fixed_effect"], result["random_effects"], result["heterogeneity"]
+    st.markdown(f"**Pooled {result['measure_label']}** — k = {result['k']} studies")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Fixed-effect", f"{fe['estimate']:.2f}",
+              help=f"95% CI [{fe['ci_low']:.2f}, {fe['ci_high']:.2f}]")
+    c2.metric("Random-effects", f"{rand_fx['estimate']:.2f}",
+              help=f"95% CI [{rand_fx['ci_low']:.2f}, {rand_fx['ci_high']:.2f}]")
+    c3.metric("I² (heterogeneity)", f"{het['i_squared']:.0f}%", help=term_help("Heterogeneity (I²)"))
+    c4.metric("τ² (between-study variance)", f"{het['tau_squared']:.3f}")
+    st.caption(f"Cochran's Q = {het['q']:.2f} (df = {het['df']}) · {het['interpretation']}")
+
+    model_choice = st.radio(
+        "Pooling model shown in the forest plot", options=["random", "fixed"],
+        format_func=lambda m: ("Random-effects (recommended — allows for between-study variation)"
+                               if m == "random" else "Fixed-effect (assumes one true underlying effect)"),
+        key="_meta_model_choice", horizontal=True,
+        help=term_help("Fixed-effect vs. random-effects model"),
+    )
+
+    st.subheader("Forest Plot", help=term_help("Forest plot"))
+    try:
+        from tools.meta_analysis import meta_analysis_to_forest_plotly
+        import streamlit.components.v1 as components
+        html = meta_analysis_to_forest_plotly(result, model=model_choice)
+        components.html(html, height=130 + 42 * (result["k"] + 1) + 20, scrolling=False)
+    except ImportError:
+        from tools.meta_analysis import meta_analysis_to_forest_png
+        png = meta_analysis_to_forest_png(result, model=model_choice)
+        st.image(png, caption="Forest plot (matplotlib fallback)")
+
+
 def _tab_trends(final_state: dict, settings: dict) -> None:
     """Research Trends · Evidence Map · Concept Drift."""
     rq = final_state.get("research_question", "")
@@ -338,7 +497,7 @@ def _tab_trends(final_state: dict, settings: dict) -> None:
     st.divider()
 
     # ── Evidence Map ─────────────────────────────────────────────────────
-    st.subheader("Evidence Map")
+    st.subheader("Evidence Map", help=term_help("Evidence map"))
     st.markdown(
         "Bubble chart of evidence density across Population × Intervention dimensions. "
         "Bubble size = number of studies; colour = average quality."
@@ -370,8 +529,17 @@ def _tab_trends(final_state: dict, settings: dict) -> None:
 
     st.divider()
 
+    # ── Statistical Meta-Analysis ─────────────────────────────────────────
+    try:
+        _render_meta_analysis(final_state, settings)
+    except Exception as e:
+        st.error(f"Meta-analysis failed: {e}")
+        logger.exception("Meta-analysis section failed")
+
+    st.divider()
+
     # ── Concept Drift ─────────────────────────────────────────────────────
-    st.subheader("Concept Drift Tracker")
+    st.subheader("Concept Drift Tracker", help=term_help("Concept drift"))
     st.markdown(
         "Detects vocabulary shifts across time periods in the included papers — "
         "which terms are rising, which are declining."
@@ -549,6 +717,148 @@ def _tab_export(final_state: dict, rq: str, session_id: str, settings: dict) -> 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Guided templates — presets for common review types
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Power-user note: choosing a template only pre-fills the research-question and
+# inclusion/exclusion text areas below — every field stays freely editable, the
+# raw CLI flags (--inclusion/--exclusion/etc.) are untouched, and "scratch" stays
+# the default so nothing changes for users who never open this expander.
+
+SR_TEMPLATES: list = [
+    {
+        "key": "clinical_rct",
+        "label": "Clinical RCT review",
+        "description": "Randomised controlled trials evaluating a clinical intervention in human participants.",
+        "research_question": "What is the effect of [intervention] on [outcome] in [population]?",
+        "inclusion": [
+            "Randomised controlled trials (RCTs)",
+            "Human participants",
+            "Peer-reviewed, published 2010–present",
+            "Reports the outcome of interest with quantitative results",
+        ],
+        "exclusion": [
+            "Animal or in-vitro studies",
+            "Case reports, editorials, conference abstracts only",
+            "No control/comparison group",
+            "Non-English publications",
+        ],
+        "note": "Pairs well with **Statistical Meta-Analysis** (pool effect sizes across trials) "
+                "and **Preprint Status** (flags retracted or unpublished trials).",
+    },
+    {
+        "key": "cs_survey",
+        "label": "CS literature survey",
+        "description": "Computer-science / engineering survey of methods, systems or benchmarks.",
+        "research_question": "What approaches have been proposed for [task/problem], and how do they compare on [metric]?",
+        "inclusion": [
+            "Peer-reviewed papers or well-cited preprints (arXiv)",
+            "Proposes, benchmarks, or surveys a method for the stated task",
+            "Published within the last 10 years",
+            "Reports quantitative results or a clear architectural contribution",
+        ],
+        "exclusion": [
+            "Position papers / opinion pieces with no technical contribution",
+            "Duplicate or superseded preprint versions",
+            "Workshop posters with no accompanying results",
+        ],
+        "note": "Pairs well with **Citation Network**, **Concept Drift Tracker** and "
+                "**Research Trend Forecaster** — CS moves fast, so track what's rising.",
+    },
+    {
+        "key": "qual_synthesis",
+        "label": "Qualitative evidence synthesis",
+        "description": "Thematic synthesis of qualitative studies (interviews, ethnography, case studies).",
+        "research_question": "How do [population] experience or perceive [phenomenon]?",
+        "inclusion": [
+            "Qualitative or mixed-methods studies",
+            "Primary research with original data collection",
+            "Clearly describes participants and methodology",
+            "Published in peer-reviewed venues",
+        ],
+        "exclusion": [
+            "Purely quantitative studies with no qualitative component",
+            "Secondary analyses or reviews of other qualitative work",
+            "Grey literature without peer review",
+        ],
+        "note": "Pairs well with **Evidence Map** and **Narrative Synthesis** — themes matter "
+                "more than pooled numbers here, so Statistical Meta-Analysis isn't recommended.",
+    },
+    {
+        "key": "scoping_review",
+        "label": "Scoping / mapping review",
+        "description": "Broad map of what evidence exists on a topic, before committing to a focused review.",
+        "research_question": "What is the nature and extent of research on [topic] in [context]?",
+        "inclusion": [
+            "Any study design that addresses the topic",
+            "Published in any language with an available English abstract",
+            "No date restriction (or specify a broad range)",
+        ],
+        "exclusion": [
+            "Studies entirely off-topic despite keyword matches",
+            "Duplicates across databases",
+        ],
+        "note": "Pairs well with **Evidence Map**, **Research Trend Forecaster**, and "
+                "**Cross-Notebook Search** to connect findings to material you've already collected.",
+    },
+]
+
+_SR_TEMPLATE_BY_KEY = {t["key"]: t for t in SR_TEMPLATES}
+
+
+def _consume_template_application() -> None:
+    """Apply a queued template choice to the question/criteria widgets before they render.
+
+    Must run before the `sr_question` / `sr_inclusion` / `sr_exclusion` text areas
+    are instantiated (Streamlit forbids writing a widget's session-state key after
+    the widget exists) — mirrors the `hw_apply_*` pattern used in ui/sidebar.py.
+    """
+    pending = st.session_state.pop("sr_apply_template", None)
+    if not pending:
+        return
+    tmpl = _SR_TEMPLATE_BY_KEY.get(pending)
+    if not tmpl:
+        return
+    st.session_state["sr_question"] = tmpl["research_question"]
+    st.session_state["sr_inclusion"] = "\n".join(tmpl["inclusion"])
+    st.session_state["sr_exclusion"] = "\n".join(tmpl["exclusion"])
+
+
+def _render_template_picker() -> None:
+    """Optional preset picker that pre-fills the question + criteria for common review types."""
+    _consume_template_application()
+    with st.expander("Guided templates — start from a preset review type (optional)", expanded=False):
+        st.caption(
+            "Pick a starting point for a common review type — it pre-fills the research "
+            "question and inclusion/exclusion criteria below, and you can edit anything "
+            "afterwards. Prefer to write your own? Just skip this and start typing."
+        )
+        labels = {"_none": "— Start from scratch —"}
+        labels.update({t["key"]: t["label"] for t in SR_TEMPLATES})
+        choice = st.selectbox(
+            "Template", options=list(labels.keys()), format_func=lambda k: labels[k],
+            key="sr_template_choice",
+        )
+        if choice != "_none":
+            tmpl = _SR_TEMPLATE_BY_KEY[choice]
+            st.markdown(f"_{tmpl['description']}_")
+            st.markdown(f"**Suggested research question:** {tmpl['research_question']}")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Inclusion criteria**")
+                for item in tmpl["inclusion"]:
+                    st.markdown(f"- {item}")
+            with c2:
+                st.markdown("**Exclusion criteria**")
+                for item in tmpl["exclusion"]:
+                    st.markdown(f"- {item}")
+            st.caption(tmpl["note"])
+            if st.button("Use this template", key="sr_apply_template_btn", type="primary"):
+                st.session_state["sr_apply_template"] = choice
+                st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -566,7 +876,15 @@ scores · Citation network · Preprint status · Research trends · Evidence map
 Concept drift · DOCX/PDF manuscript · Plain-language summaries
 """
     )
+    render_glossary_expander([
+        "Systematic review", "PRISMA", "Inclusion / exclusion criteria", "Quality score",
+        "Effect size", "Heterogeneity (I²)", "Forest plot", "Pooled effect / meta-analysis",
+        "Fixed-effect vs. random-effects model", "Citation network", "Concept drift", "Evidence map",
+    ])
     st.divider()
+
+    # ── Guided templates ──────────────────────────────────────────────────────
+    _render_template_picker()
 
     # ── Inputs ────────────────────────────────────────────────────────────────
     rq = st.text_area(
@@ -574,11 +892,12 @@ Concept drift · DOCX/PDF manuscript · Plain-language summaries
         height=90,
         placeholder="e.g. What is the effect of sleep deprivation on working memory performance "
                     "in university students?",
+        help=term_help("Systematic review"),
         key="sr_question",
     )
     col_inc, col_exc = st.columns(2)
     with col_inc:
-        st.markdown("**Inclusion criteria** *(one per line)*")
+        st.markdown("**Inclusion criteria** *(one per line)*", help=term_help("Inclusion / exclusion criteria"))
         inc_raw = st.text_area(
             "Inclusion criteria",
             height=120,
@@ -588,7 +907,7 @@ Concept drift · DOCX/PDF manuscript · Plain-language summaries
             label_visibility="collapsed",
         )
     with col_exc:
-        st.markdown("**Exclusion criteria** *(one per line)*")
+        st.markdown("**Exclusion criteria** *(one per line)*", help=term_help("Inclusion / exclusion criteria"))
         exc_raw = st.text_area(
             "Exclusion criteria",
             height=120,
@@ -668,7 +987,7 @@ Concept drift · DOCX/PDF manuscript · Plain-language summaries
     render_rag_reflection(final_state.get("rag_reflection_info"), key_suffix="_sr")
     st.divider()
 
-    st.subheader("PRISMA Flow")
+    st.subheader("PRISMA Flow", help=term_help("PRISMA"))
     _render_prisma_flow(final_state.get("prisma_flow", {}))
     n_included = len(final_state.get("included_papers", []))
     n_excluded = len(final_state.get("excluded_papers", []))

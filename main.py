@@ -40,6 +40,10 @@ python main.py --notebook --notebook-id <id> --files paper.pdf notes.txt
 # List all saved notebooks
 python main.py --list-notebooks
 
+# Search across every source in every notebook you've ever created
+python main.py --search-notebooks "transformer attention mechanism"
+# (or, inside an open notebook session: /search-all <query>)
+
 # Advanced analysis (one-shot)
 python main.py --notebook-summary <notebook_id>     # cross-doc summary
 python main.py --notebook-faq <notebook_id>         # generate FAQ
@@ -83,7 +87,7 @@ _KNOWN_FLAGS = [
     "--systematic-review", "--sr", "--inclusion", "--exclusion",
     "--sr-docx", "--sr-pdf", "--sr-plain-language", "--sr-trends",
     "--sr-preprints", "--sr-concept-drift", "--sr-author", "--sr-institution",
-    "--notebook", "--notebook-id", "--notebook-name", "--list-notebooks",
+    "--notebook", "--notebook-id", "--notebook-name", "--list-notebooks", "--search-notebooks",
     "--notebook-summary", "--notebook-faq", "--notebook-review",
     "--notebook-audio", "--notebook-mindmap", "--notebook-graph",
     "--notebook-compare", "--compare-docs",
@@ -226,6 +230,11 @@ def _parse_args():
     nb.add_argument(
         "--list-notebooks", action="store_true",
         help="List all saved Research Notebooks",
+    )
+    nb.add_argument(
+        "--search-notebooks", type=str, default="", metavar="QUERY",
+        help="Search across every source in every notebook you've ever created "
+             "(e.g. --search-notebooks \"transformer attention\")",
     )
     nb.add_argument(
         "--notebook-summary", type=str, default="", metavar="NOTEBOOK_ID",
@@ -808,6 +817,39 @@ def _cmd_list_notebooks():
     console.print(table)
 
 
+def _cmd_search_notebooks(query: str, limit: int = 20) -> None:
+    """One-shot 'search across everything I've ever uploaded' — every notebook, every source."""
+    from agents.notebook_memory import NotebookMemory
+    query = query.strip()
+    if not query:
+        console.print("[yellow]Provide a search query, e.g. --search-notebooks \"transformer attention\"[/yellow]")
+        return
+    with console.status(f"Searching every notebook for '{query}'…"):
+        hits = NotebookMemory().search_all_notebooks(query, limit=limit)
+    if not hits:
+        console.print(f"[yellow]No matches for '{query}' in any notebook.[/yellow]")
+        console.print("[dim]Tip: run `python main.py --list-notebooks` to see what you have.[/dim]")
+        return
+
+    nb_count = len({h["notebook_id"] for h in hits})
+    console.print(Panel(
+        f"[bold]{len(hits)}[/bold] matching passage(s) for [cyan]'{query}'[/cyan] "
+        f"across [bold]{nb_count}[/bold] notebook(s)",
+        title="🔍 Cross-Notebook Search", border_style="blue",
+    ))
+    for h in hits:
+        console.print(
+            f"\n  [cyan][{h['notebook_id']}] {h['notebook_name'][:32]}[/cyan] · "
+            f"{h['doc_name'][:44]} (p.{h['page_num']}) "
+            f"— {h['matched_terms']} term(s) matched"
+        )
+        console.print(f"    [dim]{h['snippet']}[/dim]")
+    console.print(
+        "\n[dim]Tip: open a notebook with "
+        "`python main.py --notebook --notebook-id <id>`[/dim]"
+    )
+
+
 def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
     from config.settings import get_settings
     settings_cfg = get_settings()
@@ -1170,6 +1212,7 @@ def _cmd_notebook(args) -> None:
         "  /audio         Audio script+WAV  /mindmap        Mind map (DOT+PNG+SVG)\n"
         "  /graph         Knowledge graph   /compare        Compare two sources\n"
         "  /timeline      Extract timeline  /study-table    Study comparison table\n"
+        "  /search-all <query>              Search every notebook you've ever created\n"
         "  /quit          Exit[/dim]\n"
     )
 
@@ -1294,6 +1337,30 @@ def _cmd_notebook(args) -> None:
                 }
                 _cmd_notebook_advanced(notebook_id, feature_map[cmd], args)
 
+            elif cmd == "/search-all":
+                q = arg.strip() or Prompt.ask("Search query (across every notebook)")
+                if not q.strip():
+                    console.print("[yellow]Enter a search term.[/yellow]")
+                else:
+                    with console.status("Searching every notebook you have…"):
+                        hits = memory.search_all_notebooks(q.strip(), limit=15)
+                    if not hits:
+                        console.print(f"[yellow]No matches for '{q}' in any notebook.[/yellow]")
+                    else:
+                        console.print(f"\n[green]{len(hits)} match(es) for '{q}':[/green]\n")
+                        for h in hits:
+                            console.print(
+                                f"  [cyan][{h['notebook_name'][:24]}][/cyan] "
+                                f"{h['doc_name'][:40]} (p.{h['page_num']}) "
+                                f"— {h['matched_terms']} term(s) matched"
+                            )
+                            console.print(f"    [dim]{h['snippet']}[/dim]")
+                        console.print(
+                            "\n[dim]Tip: open one of these with "
+                            "`python main.py --notebook --notebook-id <id>` "
+                            "(run `python main.py --list-notebooks` to look up IDs).[/dim]"
+                        )
+
             elif cmd == "/compare":
                 nb = memory.load(notebook_id)
                 srcs = nb.get("sources", []) if nb else []
@@ -1376,6 +1443,10 @@ def main():
     # ── Utility commands ───────────────────────────────────────────────────────
     if args.list_notebooks:
         _cmd_list_notebooks()
+        return
+
+    if args.search_notebooks:
+        _cmd_search_notebooks(args.search_notebooks)
         return
 
     if args.notebook_summary:

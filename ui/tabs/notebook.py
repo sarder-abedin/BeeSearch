@@ -11,6 +11,7 @@ from agents.notebook_memory import NotebookMemory
 from agents.notebook_state import create_notebook_state
 from config.settings import get_settings
 from tools.hybrid_store import _stores as _hybrid_stores
+from ui.glossary import render_glossary_expander, term_help
 from ui.helpers import get_supported_file_types, process_uploads, render_eval_result, render_rag_reflection
 
 logger = logging.getLogger(__name__)
@@ -780,8 +781,17 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
         if not goal.strip():
             st.warning("Please enter a research goal.")
         else:
-            from agents.graph import run_research
-            from agents.state import create_initial_state
+            try:
+                from agents.graph import run_research
+                from agents.state import create_initial_state
+            except ModuleNotFoundError:
+                st.error(
+                    "The Research Report agent isn't available in this build "
+                    "(its `agents.graph` / `agents.state` modules are missing). "
+                    "Try **Pipeline** or **Chat** for grounded answers from your sources instead."
+                )
+                logger.warning("Research Report unavailable: agents.graph/agents.state not found")
+                return
 
             processed_docs = _rebuild_processed_docs(notebook)
             initial_state = create_initial_state(
@@ -845,9 +855,18 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
 
 def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
     """Conversational science communicator grounded in the notebook's sources."""
-    from agents.story_graph import run_story_turn
-    from agents.story_memory import StorytellerMemory
-    from agents.story_state import create_story_state
+    try:
+        from agents.story_graph import run_story_turn
+        from agents.story_memory import StorytellerMemory
+        from agents.story_state import create_story_state
+    except ModuleNotFoundError:
+        st.info(
+            "The Explain agent isn't available in this build "
+            "(its `agents.story_*` modules are missing). "
+            "Try the **Chat** tab to ask grounded questions about your sources instead."
+        )
+        logger.warning("Explain tab unavailable: agents.story_* modules not found")
+        return
 
     st.markdown(
         "Ask questions about your notebook sources in plain language. "
@@ -978,6 +997,75 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
     st.rerun()
 
 
+# ── Cross-notebook search ────────────────────────────────────────────────────────
+
+def _render_cross_notebook_search(memory: NotebookMemory) -> None:
+    """
+    "Search across everything I've ever uploaded" — a single search box that
+    looks through every source in every notebook at once, not just the one
+    that's currently open.
+
+    Runs NotebookMemory.search_all_notebooks(), a lightweight keyword search
+    over the shared notebook_chunks table — instant, with no per-notebook
+    index to build first. Each hit can jump straight to its source notebook.
+    """
+    with st.expander("Search across all notebooks", expanded=False):
+        st.caption(
+            "Search the full text of every source in every notebook you've ever "
+            "created — handy when you can't remember which notebook a paper or "
+            "passage lives in."
+        )
+        col_q, col_n = st.columns([4, 1])
+        with col_q:
+            query = st.text_input(
+                "Search all notebooks", key="xns_query",
+                placeholder="e.g. transformer attention mechanism",
+                label_visibility="collapsed",
+            )
+        with col_n:
+            limit = st.number_input(
+                "Max results", min_value=5, max_value=100, value=20, step=5,
+                key="xns_limit", label_visibility="collapsed",
+                help="Maximum number of matching passages to show.",
+            )
+        run = st.button("Search all notebooks", key="xns_run", type="primary")
+
+        if run:
+            q = query.strip()
+            if not q:
+                st.warning("Enter at least one search term.")
+                st.session_state.pop("xns_results", None)
+            else:
+                with st.spinner("Searching every notebook you have…"):
+                    st.session_state["xns_results"] = memory.search_all_notebooks(q, limit=int(limit))
+                    st.session_state["xns_query_used"] = q
+
+        results = st.session_state.get("xns_results")
+        if results is not None:
+            q_used = st.session_state.get("xns_query_used", "")
+            if not results:
+                st.info(f"No matches for **{q_used}** in any notebook yet — try a shorter or different phrase.")
+            else:
+                nb_count = len({h["notebook_id"] for h in results})
+                st.success(
+                    f"{len(results)} matching passage(s) for **{q_used}** "
+                    f"across {nb_count} notebook(s)."
+                )
+                for i, hit in enumerate(results):
+                    header = (
+                        f"[{hit['notebook_name'][:28]}] {hit['doc_name'][:42]} "
+                        f"— p.{hit['page_num']} · {hit['matched_terms']} term(s) matched"
+                    )
+                    with st.expander(header):
+                        st.markdown(hit["snippet"])
+                        if st.button(
+                            f"Open “{hit['notebook_name'][:28]}” notebook",
+                            key=f"xns_open_{i}_{hit['notebook_id']}_{hit['doc_id']}_{hit['chunk_index']}",
+                        ):
+                            st.session_state["nb_jump_to"] = hit["notebook_id"]
+                            st.rerun()
+
+
 # ── Main tab ─────────────────────────────────────────────────────────────────────
 
 def tab_notebook(settings: dict) -> None:
@@ -1003,8 +1091,23 @@ mind maps, audio scripts, source comparisons, knowledge graphs, full **Research 
 for conversational science communication with multiple explanation styles.
 """
     )
+    render_glossary_expander([
+        "RAG (Retrieval-Augmented Generation)", "Hybrid retrieval", "Embedding model",
+        "Context window", "Chunking", "Docling / OCR", "Quality score", "Faithfulness",
+    ])
 
     memory = NotebookMemory()
+
+    # A cross-notebook search hit may queue a "jump to notebook" request.
+    # Apply it — and clear the cached selector label so the staleness-recovery
+    # logic below re-derives the correct label — before the selectbox renders.
+    _jump_to = st.session_state.pop("nb_jump_to", None)
+    if _jump_to:
+        st.session_state["nb_active_id"] = _jump_to
+        st.session_state.pop("nb_selector", None)
+
+    _render_cross_notebook_search(memory)
+
     src_col, chat_col = st.columns([1, 2])
 
     # ── Left: notebook selector + source management ──────────────────────────
@@ -1061,7 +1164,7 @@ for conversational science communication with multiple explanation styles.
                 return
 
             st.divider()
-            st.markdown("#### Sources")
+            st.markdown("#### Sources", help=term_help("Chunking"))
 
             # ── Upload files ──────────────────────────────────
             files = st.file_uploader(
