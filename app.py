@@ -2,8 +2,8 @@
 app.py — BeeSearch Streamlit entry point
 ─────────────────────────────────────────────
 Two modes:
-  Mode 4 — PRISMA Systematic Literature Review
-  Mode 5 — Research Notebook (NotebookLM-style grounded Q&A)
+  Mode 1 — PRISMA Systematic Literature Review
+  Mode 2 — Research Notebook (NotebookLM-style grounded Q&A)
 
 Run:  streamlit run app.py
 """

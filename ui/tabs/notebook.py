@@ -880,8 +880,10 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
 
     st.markdown(
         "Ask questions about your notebook sources in plain language. "
-        "Choose an explanation style — simple language, an extended analogy, "
-        "a step-by-step walkthrough, or a structured debate."
+        "Choose an explanation **style** — simple language, an extended analogy, "
+        "a step-by-step walkthrough, or a structured debate — and an audience "
+        "**level** — novice, intermediate, or expert — and the agent tailors its "
+        "response to both."
     )
 
     memory = StorytellerMemory()
@@ -898,6 +900,18 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
         }[x],
         horizontal=True,
         key=f"nb_explain_style_{active_id}",
+    )
+    explanation_level = st.radio(
+        "Explanation level",
+        options=["novice", "intermediate", "expert"],
+        format_func=lambda x: {
+            "novice":       "Novice",
+            "intermediate": "Intermediate",
+            "expert":       "Expert",
+        }[x],
+        index=1,
+        horizontal=True,
+        key=f"nb_explain_level_{active_id}",
     )
 
     # Resolve or auto-create a story session linked to this notebook
@@ -978,6 +992,7 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
         model_name=settings["model"],
         num_ctx=settings["num_ctx"],
         explanation_style=explanation_style,
+        explanation_level=explanation_level,
     )
 
     step_log = st.empty()

@@ -24,7 +24,7 @@ Single-turn invocation model
 One call to `run_notebook_turn()` = one question → one grounded answer.
 The graph is compiled fresh per invocation (negligible overhead). Notebook
 continuity (sources, chunks, conversation) lives in NotebookMemory, not in
-the graph state — consistent with how run_story_turn()/run_wisdom_turn() work.
+the graph state.
 """
 
 from __future__ import annotations
