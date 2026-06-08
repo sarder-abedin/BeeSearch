@@ -17,7 +17,7 @@ Local AI tools for systematic literature review and source-grounded research not
 
 | Mode | What it does |
 |------|-------------|
-| **1 — Systematic Literature Review** | Full PRISMA pipeline: search Google Scholar + arXiv + Semantic Scholar + CrossRef, LLM abstract screener, inclusion/exclusion screening, evidence extraction, narrative synthesis. Generates DOCX/PDF reports, plain-language summaries, citation networks, preprint tracking, trend analysis, evidence maps, and concept drift detection. |
+| **1 — Systematic Literature Review** | Full PRISMA ((**P**referred **R**eporting **I**tems for **S**ystematic reviews and **M**eta-**A**nalyses)) pipeline: search Google Scholar + arXiv + Semantic Scholar + CrossRef, LLM abstract screener, inclusion/exclusion screening, evidence extraction, narrative synthesis. Generates DOCX/PDF reports, plain-language summaries, citation networks, preprint tracking, trend analysis, evidence maps, and concept drift detection. |
 | **2 — Research Notebook** | NotebookLM-style workspace: upload PDFs, DOCX, TXT, or web pages; chat with grounded citations from your sources; run a 7-agent analysis pipeline (summary, citation verification, knowledge graph, study guide, podcast script); advanced tools: FAQ, literature review, mind map, timeline, study comparison table. |
 
 ---
