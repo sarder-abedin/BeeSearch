@@ -4,7 +4,7 @@ PolyForm Noncommercial License 1.0.0
 
 Copyright (c) 2026 Sarder Fakhrul Abedin (<https://github.com/sarder-abedin>)
 
-Required Notice: Copyright Sarder Abedin (<https://github.com/sarder-abedin>)
+Required Notice: Copyright Sarder Fakhrul Abedin (<https://github.com/sarder-abedin>)
 
 Acceptance
 
