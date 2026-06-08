@@ -106,7 +106,7 @@ def _tab_synthesis(final_state: dict, settings: dict) -> None:
     )
 
 
-def _tab_evidence(final_state: dict) -> None:
+def _tab_evidence(final_state: dict, settings: dict) -> None:
     n_inc = len(final_state.get("included_papers", []))
     n_exc = len(final_state.get("excluded_papers", []))
     st.subheader(f"Evidence Table ({n_inc} included papers)", help=term_help("Quality score"))
@@ -118,14 +118,11 @@ def _tab_evidence(final_state: dict) -> None:
                 reason = p.get("exclusion_reason", "")
                 st.markdown(f"- **{p.get('title','')[:70]}** ({p.get('year','n.d.')}) — _{reason}_")
 
+    st.divider()
+    _render_abstract_screener(final_state, settings)
 
-def _tab_discovery(final_state: dict, settings: dict) -> None:
-    """Abstract Screener · Citation Network · Preprint Status."""
-    rq = final_state.get("research_question", "")
-    model = settings.get("model", "llama3.1:8b")
-    num_ctx = settings.get("num_ctx", 32768)
 
-    # ── Abstract Screener ─────────────────────────────────────────────────
+def _render_abstract_screener(final_state: dict, settings: dict) -> None:
     st.subheader("Abstract Screener")
     st.markdown(
         "LLM relevance scores (0–100) for every paper retrieved before the inclusion/exclusion "
@@ -163,81 +160,85 @@ def _tab_discovery(final_state: dict, settings: dict) -> None:
     else:
         st.info("Abstract screener scores will appear here after running the systematic review.")
 
-    st.divider()
 
-    # ── Citation Network ──────────────────────────────────────────────────
+def _render_citation_network_section(final_state: dict, settings: dict) -> None:
     st.subheader("Citation Network", help=term_help("Citation network"))
     st.markdown(
         "Ego network showing citation links **between** the included papers. "
         "Green = High quality, Amber = Medium, Red = Low. "
-        "Requires Semantic Scholar API calls (~30s for 20 papers)."
+        "Requires Semantic Scholar API calls — click below to fetch them (~30s for 20 papers)."
     )
     included = final_state.get("included_papers", [])
     if not included:
         st.info("No included papers to build a network from.")
-    else:
-        existing_html = final_state.get("citation_graph_html", "")
-        if existing_html:
-            st.components.v1.html(existing_html, height=520, scrolling=False)
-        else:
-            if st.button("Build Citation Network", key="build_network"):
-                with st.spinner("Querying Semantic Scholar for citation links…"):
-                    try:
-                        from tools.citation_network import (
-                            build_citation_network,
-                            network_to_pyvis_html,
-                            network_stats,
-                        )
-                        G, meta = build_citation_network(included, max_papers=25)
-                        html = network_to_pyvis_html(G, meta)
-                        stats = network_stats(G)
-                        st.session_state["_cn_html"] = html
-                        st.session_state["_cn_stats"] = stats
-                        st.success(
-                            f"Network built: {stats['nodes']} nodes, "
-                            f"{stats['edges']} citation edges, "
-                            f"{stats['isolated']} isolated papers."
-                        )
-                    except Exception as e:
-                        st.error(f"Citation network failed: {e}")
+        return
 
-            if st.session_state.get("_cn_html"):
-                st.components.v1.html(st.session_state["_cn_html"], height=520, scrolling=False)
-                stats = st.session_state.get("_cn_stats", {})
-                if stats.get("most_cited"):
-                    st.markdown("**Most cited within corpus:**")
-                    for node, deg in stats["most_cited"]:
-                        st.markdown(f"- {node} — cited by {deg} included paper(s)")
+    existing_html = final_state.get("citation_graph_html", "")
+    if existing_html:
+        st.components.v1.html(existing_html, height=520, scrolling=False)
+        return
 
-    st.divider()
+    if st.button("Build Citation Network", key="build_network"):
+        with st.spinner("Querying Semantic Scholar for citation links…"):
+            try:
+                from tools.citation_network import (
+                    build_citation_network,
+                    network_to_pyvis_html,
+                    network_stats,
+                )
+                G, meta = build_citation_network(included, max_papers=25)
+                html = network_to_pyvis_html(G, meta)
+                stats = network_stats(G)
+                st.session_state["_cn_html"] = html
+                st.session_state["_cn_stats"] = stats
+                st.success(
+                    f"Network built: {stats['nodes']} nodes, "
+                    f"{stats['edges']} citation edges, "
+                    f"{stats['isolated']} isolated papers."
+                )
+            except Exception as e:
+                st.error(f"Citation network failed: {e}")
 
-    # ── Preprint Status ────────────────────────────────────────────────────
+    if st.session_state.get("_cn_html"):
+        st.components.v1.html(st.session_state["_cn_html"], height=520, scrolling=False)
+        stats = st.session_state.get("_cn_stats", {})
+        if stats.get("most_cited"):
+            st.markdown("**Most cited within corpus:**")
+            for node, deg in stats["most_cited"]:
+                st.markdown(f"- {node} — cited by {deg} included paper(s)")
+
+
+def _render_preprint_status_section(final_state: dict, settings: dict) -> None:
     st.subheader("Preprint Status")
     st.markdown(
         "Checks each included paper against CrossRef to identify unverified preprints "
-        "and flag any retractions. Requires CrossRef API calls (~0.25s per paper)."
+        "and flag any retractions. Requires CrossRef API calls — click below to check "
+        "(~0.25s per paper)."
     )
+    included = final_state.get("included_papers", [])
     if not included:
         st.info("No included papers.")
-    else:
-        existing_tracking = final_state.get("preprint_tracking", [])
-        if existing_tracking:
-            _render_preprint_tracking(existing_tracking)
-        else:
-            if st.button("Check Preprint Status", key="check_preprints"):
-                with st.spinner("Querying CrossRef for publication status…"):
-                    try:
-                        from tools.preprint_tracker import track_preprints, preprint_summary
-                        tracking = track_preprints(included)
-                        summary = preprint_summary(tracking)
-                        st.session_state["_pt_tracking"] = tracking
-                        st.session_state["_pt_summary"] = summary
-                    except Exception as e:
-                        st.error(f"Preprint tracking failed: {e}")
+        return
 
-            tracking = st.session_state.get("_pt_tracking")
-            if tracking:
-                _render_preprint_tracking(tracking)
+    existing_tracking = final_state.get("preprint_tracking", [])
+    if existing_tracking:
+        _render_preprint_tracking(existing_tracking)
+        return
+
+    if st.button("Check Preprint Status", key="check_preprints"):
+        with st.spinner("Querying CrossRef for publication status…"):
+            try:
+                from tools.preprint_tracker import track_preprints, preprint_summary
+                tracking = track_preprints(included)
+                summary = preprint_summary(tracking)
+                st.session_state["_pt_tracking"] = tracking
+                st.session_state["_pt_summary"] = summary
+            except Exception as e:
+                st.error(f"Preprint tracking failed: {e}")
+
+    tracking = st.session_state.get("_pt_tracking")
+    if tracking:
+        _render_preprint_tracking(tracking)
 
 
 def _render_preprint_tracking(tracking: list) -> None:
@@ -420,18 +421,15 @@ def _render_meta_analysis(final_state: dict, settings: dict) -> None:
         st.image(png, caption="Forest plot (matplotlib fallback)")
 
 
-def _tab_trends(final_state: dict, settings: dict) -> None:
-    """Research Trends · Evidence Map · Concept Drift."""
+def _render_research_trends_section(final_state: dict, settings: dict) -> None:
     rq = final_state.get("research_question", "")
-    model = settings.get("model", "llama3.1:8b")
-    num_ctx = settings.get("num_ctx", 32768)
     included = final_state.get("included_papers", [])
 
-    # ── Research Trend Forecaster ─────────────────────────────────────────
     st.subheader("Research Trend Forecaster")
     st.markdown(
         "Publication volume by year for this research area, sourced from CrossRef (field-wide) "
-        "and compared to the papers retrieved in this SR run."
+        "and compared to the papers retrieved in this SR run. Requires CrossRef API calls — "
+        "click below to fetch them (a few seconds)."
     )
 
     if st.button("Analyze Trends", key="run_trends"):
@@ -494,13 +492,13 @@ def _tab_trends(final_state: dict, settings: dict) -> None:
                 st.warning("Install plotly (`pip install plotly`) to see the trend chart.")
                 st.json(chart)
 
-    st.divider()
 
-    # ── Evidence Map ─────────────────────────────────────────────────────
+def _render_evidence_map_section(final_state: dict, settings: dict) -> None:
     st.subheader("Evidence Map", help=term_help("Evidence map"))
     st.markdown(
         "Bubble chart of evidence density across Population × Intervention dimensions. "
-        "Bubble size = number of studies; colour = average quality."
+        "Bubble size = number of studies; colour = average quality. Renders instantly from "
+        "this review's evidence table — no extra API calls."
     )
     evidence_table = final_state.get("evidence_table", [])
 
@@ -527,22 +525,16 @@ def _tab_trends(final_state: dict, settings: dict) -> None:
         except Exception as e:
             st.error(f"Evidence map failed: {e}")
 
-    st.divider()
 
-    # ── Statistical Meta-Analysis ─────────────────────────────────────────
-    try:
-        _render_meta_analysis(final_state, settings)
-    except Exception as e:
-        st.error(f"Meta-analysis failed: {e}")
-        logger.exception("Meta-analysis section failed")
+def _render_concept_drift_section(final_state: dict, settings: dict) -> None:
+    model = settings.get("model", "llama3.1:8b")
+    num_ctx = settings.get("num_ctx", 32768)
 
-    st.divider()
-
-    # ── Concept Drift ─────────────────────────────────────────────────────
     st.subheader("Concept Drift Tracker", help=term_help("Concept drift"))
     st.markdown(
         "Detects vocabulary shifts across time periods in the included papers — "
-        "which terms are rising, which are declining."
+        "which terms are rising, which are declining. Runs an LLM analysis pass over "
+        "the corpus (~tens of seconds depending on corpus size)."
     )
 
     all_papers = final_state.get("raw_papers", [])
@@ -584,6 +576,38 @@ def _tab_trends(final_state: dict, settings: dict) -> None:
             st.divider()
             st.markdown("**LLM Analysis of Vocabulary Shifts:**")
             st.markdown(drift["llm_analysis"])
+
+
+_EXPLORE_TOOLS = [
+    ("citation_network", "Citation Network", _render_citation_network_section),
+    ("preprint_status", "Preprint Status", _render_preprint_status_section),
+    ("research_trends", "Research Trends", _render_research_trends_section),
+    ("evidence_map", "Evidence Map", _render_evidence_map_section),
+    ("meta_analysis", "Meta-Analysis", _render_meta_analysis),
+    ("concept_drift", "Concept Drift", _render_concept_drift_section),
+]
+
+
+def _tab_explore(final_state: dict, settings: dict) -> None:
+    """Pick one deep-dive analysis tool to run on this review's corpus."""
+    st.markdown(
+        "Optional deep-dive tools that run on top of this review's corpus — pick one below. "
+        "Each shows what it needs and roughly how long it takes before you run it."
+    )
+    labels = {key: label for key, label, _ in _EXPLORE_TOOLS}
+    choice = st.radio(
+        "Tool",
+        options=list(labels.keys()),
+        format_func=lambda k: labels[k],
+        key="sr_explore_tool",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    st.divider()
+    for key, _, render_fn in _EXPLORE_TOOLS:
+        if key == choice:
+            render_fn(final_state, settings)
+            break
 
 
 def _tab_export(final_state: dict, rq: str, session_id: str, settings: dict) -> None:
@@ -827,7 +851,7 @@ def _consume_template_application() -> None:
 def _render_template_picker() -> None:
     """Optional preset picker that pre-fills the question + criteria for common review types."""
     _consume_template_application()
-    with st.expander("Guided templates — start from a preset review type (optional)", expanded=False):
+    with st.expander("New to systematic reviews? Start from a guided template (optional)", expanded=False):
         st.caption(
             "Pick a starting point for a common review type — it pre-fills the research "
             "question and inclusion/exclusion criteria below, and you can edit anything "
@@ -866,15 +890,10 @@ def tab_systematic_review(settings: dict) -> None:
     """Mode 7 — PRISMA Systematic Review."""
     st.header("Mode 7 — Systematic Review")
     st.markdown(
-        """
-Conduct a **PRISMA-style systematic review** powered by local LLM inference (Ollama).
-Searches Google Scholar · arXiv · Semantic Scholar · CrossRef, screens papers, extracts
-evidence, synthesises findings, and provides advanced analysis tools.
-
-**What you get:** PRISMA flow · Evidence table · Narrative synthesis · Abstract screener
-scores · Citation network · Preprint status · Research trends · Evidence map ·
-Concept drift · DOCX/PDF manuscript · Plain-language summaries
-"""
+        "Conduct a **PRISMA-style systematic review** powered by local LLM inference (Ollama). "
+        "Describe your research question and criteria below — ResearchBuddy searches Google "
+        "Scholar, arXiv, Semantic Scholar and CrossRef, screens papers, extracts evidence, and "
+        "synthesises the findings into a full review you can explore, analyse further, and export."
     )
     render_glossary_expander([
         "Systematic review", "PRISMA", "Inclusion / exclusion criteria", "Quality score",
@@ -894,6 +913,10 @@ Concept drift · DOCX/PDF manuscript · Plain-language summaries
                     "in university students?",
         help=term_help("Systematic review"),
         key="sr_question",
+    )
+    st.caption(
+        "These guide the screening step — be specific (study design, population, "
+        "publication window, language, …) for sharper include/exclude decisions."
     )
     col_inc, col_exc = st.columns(2)
     with col_inc:
@@ -922,63 +945,74 @@ Concept drift · DOCX/PDF manuscript · Plain-language summaries
     if run_btn and not rq.strip():
         st.warning("Please enter a research question.")
         return
-    if not run_btn:
-        return
 
-    # ── Run ───────────────────────────────────────────────────────────────────
-    inclusion = [l.strip() for l in inc_raw.splitlines() if l.strip()]
-    exclusion = [l.strip() for l in exc_raw.splitlines() if l.strip()]
+    final_state = None
 
-    initial_state = create_systematic_review_state(
-        research_question=rq.strip(),
-        inclusion_criteria=inclusion,
-        exclusion_criteria=exclusion,
-        model_name=settings["model"],
-        num_ctx=settings["num_ctx"],
-    )
+    if run_btn:
+        # ── Run ───────────────────────────────────────────────────────────────
+        inclusion = [l.strip() for l in inc_raw.splitlines() if l.strip()]
+        exclusion = [l.strip() for l in exc_raw.splitlines() if l.strip()]
 
-    st.divider()
-    st.subheader("Running Systematic Review…")
-    status_text = st.empty()
-    progress_bar = st.progress(0)
-    step_log = st.expander("Step log", expanded=False)
-    log_lines: list = []
+        initial_state = create_systematic_review_state(
+            research_question=rq.strip(),
+            inclusion_criteria=inclusion,
+            exclusion_criteria=exclusion,
+            model_name=settings["model"],
+            num_ctx=settings["num_ctx"],
+        )
 
-    node_labels = {
-        "query_generation":    "Generating search queries",
-        "literature_search":   "Searching Google Scholar · arXiv · Semantic Scholar · CrossRef",
-        "screening":           "Screening papers by title/abstract",
-        "evidence_extraction": "Extracting evidence from papers",
-        "synthesis":           "Synthesising findings",
-        "sr_eval":             "Evaluating review quality",
-    }
+        # New corpus incoming — drop any cached deep-dive results from a
+        # previous run so stale citation/trend/drift artefacts don't bleed through.
+        for k in ("_cn_html", "_cn_stats", "_pt_tracking", "_pt_summary",
+                  "_trend_data", "_trend_json", "_drift_data"):
+            st.session_state.pop(k, None)
 
-    def stream_callback(node_name: str, state: dict) -> None:
-        pct = state.get("progress_pct", 0)
-        label = node_labels.get(node_name, node_name)
-        detail = state.get("status_detail", "")
-        progress_bar.progress(pct)
-        status_text.markdown(f"**{label}…** `{pct}%`" + (f"  \n{detail}" if detail else ""))
-        log_lines.append(f"{label} ({pct}%)" + (f" — {detail}" if detail else ""))
-        with step_log:
-            st.text("\n".join(log_lines))
+        st.divider()
+        st.subheader("Running Systematic Review…")
+        status_text = st.empty()
+        progress_bar = st.progress(0)
+        step_log = st.expander("Step log", expanded=False)
+        log_lines: list = []
 
-    start = time.time()
-    try:
-        final_state = run_systematic_review(initial_state, stream_callback=stream_callback)
-    except Exception as e:
-        st.error(f"Workflow error: {e}")
-        logger.exception("Systematic review failed")
-        return
+        node_labels = {
+            "query_generation":    "Generating search queries",
+            "literature_search":   "Searching Google Scholar · arXiv · Semantic Scholar · CrossRef",
+            "screening":           "Screening papers by title/abstract",
+            "evidence_extraction": "Extracting evidence from papers",
+            "synthesis":           "Synthesising findings",
+            "sr_eval":             "Evaluating review quality",
+        }
 
-    elapsed = time.time() - start
-    progress_bar.progress(100)
-    status_text.markdown(f"**Done.** Finished in `{elapsed:.1f}s`")
+        def stream_callback(node_name: str, state: dict) -> None:
+            pct = state.get("progress_pct", 0)
+            label = node_labels.get(node_name, node_name)
+            detail = state.get("status_detail", "")
+            progress_bar.progress(pct)
+            status_text.markdown(f"**{label}…** `{pct}%`" + (f"  \n{detail}" if detail else ""))
+            log_lines.append(f"{label} ({pct}%)" + (f" — {detail}" if detail else ""))
+            with step_log:
+                st.text("\n".join(log_lines))
 
-    # Persist result for session reuse
-    st.session_state["sr_last_result"] = final_state
+        start = time.time()
+        try:
+            final_state = run_systematic_review(initial_state, stream_callback=stream_callback)
+        except Exception as e:
+            st.error(f"Workflow error: {e}")
+            logger.exception("Systematic review failed")
+            return
 
-    # ── Results ───────────────────────────────────────────────────────────────
+        elapsed = time.time() - start
+        progress_bar.progress(100)
+        status_text.markdown(f"**Done.** Finished in `{elapsed:.1f}s`")
+
+        # Persist result so it survives reruns triggered by other widgets below
+        st.session_state["sr_last_result"] = final_state
+    else:
+        final_state = st.session_state.get("sr_last_result")
+        if not final_state:
+            return
+
+    # ── Results — single shared rendering path for fresh AND cached runs ──────
     for err in final_state.get("errors", []):
         st.warning(err)
 
@@ -987,6 +1021,8 @@ Concept drift · DOCX/PDF manuscript · Plain-language summaries
     render_rag_reflection(final_state.get("rag_reflection_info"), key_suffix="_sr")
     st.divider()
 
+    research_question = final_state.get("research_question", "")
+    st.caption(f"**Reviewing:** {research_question}")
     st.subheader("PRISMA Flow", help=term_help("PRISMA"))
     _render_prisma_flow(final_state.get("prisma_flow", {}))
     n_included = len(final_state.get("included_papers", []))
@@ -997,30 +1033,26 @@ Concept drift · DOCX/PDF manuscript · Plain-language summaries
         f"Included: {n_included} · Excluded: {n_excluded}"
     )
 
-    session_id = initial_state.get("session_id", "sr")
+    session_id = final_state.get("session_id", "sr")
 
-    t_synthesis, t_evidence, t_discovery, t_trends, t_export = st.tabs([
+    t_synthesis, t_evidence, t_explore, t_export = st.tabs([
         "Synthesis",
-        "Evidence Table",
-        "Discovery",
-        "Trends & Analysis",
-        "Export & Reports",
+        "Evidence",
+        "Explore",
+        "Write-up & Export",
     ])
 
     with t_synthesis:
         _tab_synthesis(final_state, settings)
 
     with t_evidence:
-        _tab_evidence(final_state)
+        _tab_evidence(final_state, settings)
 
-    with t_discovery:
-        _tab_discovery(final_state, settings)
-
-    with t_trends:
-        _tab_trends(final_state, settings)
+    with t_explore:
+        _tab_explore(final_state, settings)
 
     with t_export:
-        _tab_export(final_state, rq, session_id, settings)
+        _tab_export(final_state, research_question, session_id, settings)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
