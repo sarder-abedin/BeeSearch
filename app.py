@@ -9,14 +9,20 @@ Run:  streamlit run app.py
 """
 from __future__ import annotations
 import logging
+from pathlib import Path
 import streamlit as st
+
+_LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"
+_logo = str(_LOGO_PATH) if _LOGO_PATH.exists() else "🐝"
 
 st.set_page_config(
     page_title="BeeSearch",
-    page_icon=None,
+    page_icon=_logo,
     layout="wide",
     initial_sidebar_state="expanded",
 )
+if _LOGO_PATH.exists():
+    st.logo(str(_LOGO_PATH), size="large")
 
 from config.settings import get_settings
 from ui.sidebar import render_sidebar

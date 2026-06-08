@@ -1,6 +1,9 @@
 """ui/landing.py — BeeSearch landing page."""
 from __future__ import annotations
+from pathlib import Path
 import streamlit as st
+
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
 
 _PROJECTS = [
     {
@@ -109,6 +112,8 @@ def _card_html(project: dict) -> str:
 def render_landing() -> None:
     st.markdown(_CARD_CSS, unsafe_allow_html=True)
 
+    if _LOGO_PATH.exists():
+        st.image(str(_LOGO_PATH), width=120)
     st.markdown(
         "<h1 style='margin-bottom:0.15rem'>BeeSearch</h1>",
         unsafe_allow_html=True,
