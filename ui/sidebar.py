@@ -239,7 +239,7 @@ def render_sidebar() -> dict:
         st.divider()
         st.markdown("#### Search Settings")
         _max_results_default = st.session_state.pop("sidebar_max_results_applied", 6)
-        max_results = st.slider("Max papers per query", 3, 15, _max_results_default,
+        max_results = st.slider("Max papers per query", 3, 20, _max_results_default,
                                 key="sidebar_max_results")
         include_crossref = st.toggle("Include CrossRef search", value=False)
 
