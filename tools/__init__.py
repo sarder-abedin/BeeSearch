@@ -1,5 +1,5 @@
 """
-tools/__init__.py — ResearchBuddy lazy re-exports.
+tools/__init__.py — BeeSearch lazy re-exports.
 
 Submodules are only imported when the specific name is first accessed,
 keeping startup and tests fast.

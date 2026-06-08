@@ -24,7 +24,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 _USER_AGENT = (
-    "Mozilla/5.0 (compatible; ResearchBuddy/1.0; +https://github.com/sarder-abedin/ResearchBuddy) "
+    "Mozilla/5.0 (compatible; BeeSearch/1.0; +https://github.com/sarder-abedin/BeeSearch) "
     "research-notebook-fetcher"
 )
 

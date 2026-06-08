@@ -1,4 +1,4 @@
-# ResearchBuddy — Tutorial
+# BeeSearch — Tutorial
 
 ## Installation
 
@@ -16,8 +16,8 @@ ollama pull mistral-nemo:12b     # for 128k context window
 ollama pull nomic-embed-text
 
 # 4. Clone and install
-git clone https://github.com/sarder-abedin/ResearchBuddy.git
-cd ResearchBuddy
+git clone https://github.com/sarder-abedin/BeeSearch.git
+cd BeeSearch
 pip install -r requirements.txt
 
 # 5. Check your hardware

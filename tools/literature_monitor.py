@@ -4,7 +4,7 @@ import json, logging, os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
-_MONITOR_DIR = os.path.join(os.path.expanduser("~"), ".researchbuddy", "monitors")
+_MONITOR_DIR = os.path.join(os.path.expanduser("~"), ".beesearch", "monitors")
 
 def _monitor_path(monitor_id: str) -> str:
     os.makedirs(_MONITOR_DIR, exist_ok=True)

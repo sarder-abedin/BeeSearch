@@ -113,7 +113,7 @@ Definitions
 
 The licensor is the individual or entity offering these
 terms, and the software is the software the licensor makes
-available under these terms, ResearchBuddy.
+available under these terms, BeeSearch.
 
 You refers to the individual or entity agreeing to these
 terms.

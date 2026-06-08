@@ -27,7 +27,7 @@ _S2_BASE = "https://api.semanticscholar.org/graph/v1"
 
 
 def _headers() -> Dict[str, str]:
-    h = {"User-Agent": "ResearchBuddy/1.0"}
+    h = {"User-Agent": "BeeSearch/1.0"}
     if cfg.semantic_scholar_api_key:
         h["x-api-key"] = cfg.semantic_scholar_api_key
     return h

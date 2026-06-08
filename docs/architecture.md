@@ -1,8 +1,8 @@
-# ResearchBuddy — Architecture
+# BeeSearch — Architecture
 
 ## System Overview
 
-ResearchBuddy is a **2-mode, local-first AI research system** built on LangGraph state machines, Ollama LLMs, and Hybrid RAG. All computation runs locally — no cloud LLM, no paid API.
+BeeSearch is a **2-mode, local-first AI research system** built on LangGraph state machines, Ollama LLMs, and Hybrid RAG. All computation runs locally — no cloud LLM, no paid API.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -501,7 +501,7 @@ The `tools` package uses `__getattr__` for deferred loading. No submodule is imp
 ## File Map
 
 ```
-ResearchBuddy/
+BeeSearch/
 │
 ├── app.py                    ← Streamlit entry point; landing page dispatcher
 ├── main.py                   ← CLI — SR + Notebook modes

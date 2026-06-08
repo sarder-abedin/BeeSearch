@@ -1,5 +1,5 @@
 """
-ui/sidebar.py — ResearchBuddy sidebar: hardware detection, model settings.
+ui/sidebar.py — BeeSearch sidebar: hardware detection, model settings.
 """
 
 from __future__ import annotations
@@ -287,7 +287,7 @@ def render_sidebar() -> dict:
 
         st.divider()
         st.markdown(
-            "**ResearchBuddy**  \n"
+            "**BeeSearch**  \n"
             "Local AI · Ollama · LangGraph · Hybrid RAG  \n"
             "Google Scholar · arXiv · Semantic Scholar · CrossRef"
         )

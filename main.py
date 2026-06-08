@@ -1,5 +1,5 @@
 """
-main.py — ResearchBuddy CLI
+main.py — BeeSearch CLI
 ────────────────────────────
 Systematic Literature Review (Mode 1) and Research Notebook (Mode 2).
 
@@ -126,7 +126,7 @@ def _parse_args():
     parser = _SmartParser(
         prog="python main.py",
         description=(
-            "ResearchBuddy — local AI for systematic literature review and research notebooks.\n\n"
+            "BeeSearch — local AI for systematic literature review and research notebooks.\n\n"
             "  Mode 1 — Systematic Literature Review (--systematic-review / --sr)\n"
             "  Mode 2 — Research Notebook           (--notebook)\n"
         ),
@@ -1473,7 +1473,7 @@ def main():
     # ── Hardware check ─────────────────────────────────────────────────────────
     from config.settings import get_settings
     ollama_url = get_settings().ollama_base_url
-    console.rule("[bold cyan]ResearchBuddy — System Check[/bold cyan]")
+    console.rule("[bold cyan]BeeSearch — System Check[/bold cyan]")
     rec = _print_hardware_banner(ollama_url, user_model=args.model)
     console.rule()
     if rec.get("user_chose_model"):

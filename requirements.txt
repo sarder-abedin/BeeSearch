@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-#  ResearchBuddy — Python Dependencies
+#  BeeSearch — Python Dependencies
 #  Systematic Literature Review + Research Notebook
 # ─────────────────────────────────────────────────────────────
 

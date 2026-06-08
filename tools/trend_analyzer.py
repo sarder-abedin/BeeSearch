@@ -55,7 +55,7 @@ def _s2_year_counts(query: str) -> Dict[int, int]:
     """Query Semantic Scholar and bucket results by year."""
     counts: Dict[int, int] = {}
     try:
-        headers = {"User-Agent": "ResearchBuddy/1.0"}
+        headers = {"User-Agent": "BeeSearch/1.0"}
         if cfg.semantic_scholar_api_key:
             headers["x-api-key"] = cfg.semantic_scholar_api_key
         resp = requests.get(

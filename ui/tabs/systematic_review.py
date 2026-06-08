@@ -891,7 +891,7 @@ def tab_systematic_review(settings: dict) -> None:
     st.header("Mode 7 — Systematic Review")
     st.markdown(
         "Conduct a **PRISMA-style systematic review** powered by local LLM inference (Ollama). "
-        "Describe your research question and criteria below — ResearchBuddy searches Google "
+        "Describe your research question and criteria below — BeeSearch searches Google "
         "Scholar, arXiv, Semantic Scholar and CrossRef, screens papers, extracts evidence, and "
         "synthesises the findings into a full review you can explore, analyse further, and export."
     )

@@ -1,4 +1,4 @@
-"""projects — ResearchBuddy project registry."""
+"""projects — BeeSearch project registry."""
 
 PROJECT_REGISTRY = {
     "mode1": {"name": "Systematic Literature Review"},

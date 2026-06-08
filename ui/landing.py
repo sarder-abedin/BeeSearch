@@ -1,4 +1,4 @@
-"""ui/landing.py — ResearchBuddy landing page."""
+"""ui/landing.py — BeeSearch landing page."""
 from __future__ import annotations
 import streamlit as st
 
@@ -110,7 +110,7 @@ def render_landing() -> None:
     st.markdown(_CARD_CSS, unsafe_allow_html=True)
 
     st.markdown(
-        "<h1 style='margin-bottom:0.15rem'>ResearchBuddy</h1>",
+        "<h1 style='margin-bottom:0.15rem'>BeeSearch</h1>",
         unsafe_allow_html=True,
     )
     st.markdown(

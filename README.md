@@ -1,4 +1,4 @@
-# ResearchBuddy.ai
+# BeeSearch
 
 Local AI tools for systematic literature review and source-grounded research notebooks — no cloud, no API fees, no data leaving your machine.
 
@@ -49,8 +49,8 @@ ollama pull llama3.1:8b
 ollama pull nomic-embed-text   # for Hybrid RAG (Research Notebook)
 
 # 2. Clone and install
-git clone https://github.com/sarder-abedin/ResearchBuddy.git
-cd ResearchBuddy
+git clone https://github.com/sarder-abedin/BeeSearch.git
+cd BeeSearch
 pip install -r requirements.txt
 
 # 3. Launch the UI

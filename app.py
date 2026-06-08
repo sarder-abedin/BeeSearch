@@ -1,5 +1,5 @@
 """
-app.py — ResearchBuddy Streamlit entry point
+app.py — BeeSearch Streamlit entry point
 ─────────────────────────────────────────────
 Two modes:
   Mode 4 — PRISMA Systematic Literature Review
@@ -12,7 +12,7 @@ import logging
 import streamlit as st
 
 st.set_page_config(
-    page_title="ResearchBuddy",
+    page_title="BeeSearch",
     page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",

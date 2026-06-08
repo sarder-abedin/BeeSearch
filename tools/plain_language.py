@@ -158,7 +158,7 @@ FOR IMMEDIATE RELEASE
 
 **About this Review:** [1 sentence]
 
-**Media Contact:** press@researchbuddy.org
+**Media Contact:** press@beesearch.org
 
 Rules:
 - Inverted pyramid: most newsworthy information first

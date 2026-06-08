@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cli.py — ResearchBuddy command-line interface
+cli.py — BeeSearch command-line interface
 
 Usage:
   python cli.py sr   "<research question>"  [options]
@@ -377,8 +377,8 @@ def cmd_hyp(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="researchbuddy",
-        description="ResearchBuddy CLI — AI-powered systematic review and research notebook",
+        prog="beesearch",
+        description="BeeSearch CLI — AI-powered systematic review and research notebook",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

@@ -1,6 +1,6 @@
-# ResearchBuddy — Technical Overview
+# BeeSearch — Technical Overview
 
-ResearchBuddy is a local-first AI tool for two research workflows:
+BeeSearch is a local-first AI tool for two research workflows:
 
 1. **Systematic Literature Review** — PRISMA-compliant pipeline with Google Scholar, abstract screener, and post-synthesis analysis tools
 2. **Research Notebook** — NotebookLM-style grounded Q&A with Hybrid RAG and a 7-agent analysis pipeline
@@ -12,7 +12,7 @@ Everything runs locally via Ollama. No cloud LLM calls, no API keys (except Cros
 ## Repository layout
 
 ```
-ResearchBuddy/
+BeeSearch/
 ├── app.py                          ← Streamlit entry point (2 modes)
 ├── main.py                         ← CLI entry point (2 modes)
 ├── requirements.txt

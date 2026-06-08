@@ -39,7 +39,7 @@ GLOSSARY: Dict[str, str] = {
     "RAG (Retrieval-Augmented Generation)": (
         "The AI first retrieves the most relevant passages from your documents, "
         "then writes its answer grounded in those passages — instead of relying "
-        "only on what it memorised during training. This is how ResearchBuddy "
+        "only on what it memorised during training. This is how BeeSearch "
         "keeps answers tied to your sources."
     ),
     "Hybrid retrieval": (
@@ -120,7 +120,7 @@ GLOSSARY: Dict[str, str] = {
         "parser."
     ),
     "Hardware tier": (
-        "ResearchBuddy's auto-detected performance profile (Low / Standard / "
+        "BeeSearch's auto-detected performance profile (Low / Standard / "
         "High / Maximum) based on your RAM, used to pre-select sensible "
         "defaults for model size, context window, and document chunking."
     ),
