@@ -105,7 +105,8 @@ html, body,
 
 /* ── Buttons ────────────────────────────────────────────────────────── */
 [data-testid="baseButton-primary"] {
-    background-color: #2563EB !important;
+    background-color: #B45309 !important;
+    color: #FFFFFF !important;
     border: none !important;
     border-radius: 6px !important;
     font-weight: 500 !important;
@@ -113,7 +114,8 @@ html, body,
     transition: background-color 0.15s ease !important;
 }
 [data-testid="baseButton-primary"]:hover {
-    background-color: #1D4ED8 !important;
+    background-color: #92400E !important;
+    color: #FFFFFF !important;
 }
 [data-testid="baseButton-secondary"] {
     background-color: transparent !important;
@@ -167,8 +169,8 @@ html, body,
     border-bottom: 2px solid transparent;
 }
 [data-testid="stTabs"] [role="tab"][aria-selected="true"] {
-    color: #2563EB;
-    border-bottom-color: #2563EB;
+    color: #B45309;
+    border-bottom-color: #B45309;
 }
 
 /* ── Alerts / info boxes ─────────────────────────────────────────────── */
@@ -186,8 +188,8 @@ html, body,
 }
 [data-testid="stTextArea"] textarea:focus,
 [data-testid="stTextInput"] input:focus {
-    border-color: #2563EB !important;
-    box-shadow: 0 0 0 2px rgba(37,99,235,0.12) !important;
+    border-color: #B45309 !important;
+    box-shadow: 0 0 0 2px rgba(180,83,9,0.12) !important;
 }
 
 /* ── Select boxes ───────────────────────────────────────────────────── */
@@ -205,7 +207,7 @@ html, body,
 
 /* ── Progress bar ───────────────────────────────────────────────────── */
 [data-testid="stProgressBar"] > div > div {
-    background-color: #2563EB !important;
+    background-color: #B45309 !important;
     border-radius: 4px !important;
 }
 
@@ -248,12 +250,12 @@ code {
 .badge-high   { background:#DCFCE7; color:#166534; padding:2px 8px; border-radius:4px; font-size:0.8rem; font-weight:600; }
 .badge-medium { background:#FEF9C3; color:#854D0E; padding:2px 8px; border-radius:4px; font-size:0.8rem; font-weight:600; }
 .badge-low    { background:#FEE2E2; color:#991B1B; padding:2px 8px; border-radius:4px; font-size:0.8rem; font-weight:600; }
-.badge-info   { background:#DBEAFE; color:#1E40AF; padding:2px 8px; border-radius:4px; font-size:0.8rem; font-weight:600; }
+.badge-info   { background:#E2E8F0; color:#334155; padding:2px 8px; border-radius:4px; font-size:0.8rem; font-weight:600; }
 
 /* ── Mode cards on landing page ─────────────────────────────────────── */
 .mode-number {
     display: inline-block;
-    background: #2563EB;
+    background: #B45309;
     color: #FFFFFF;
     font-size: 0.75rem;
     font-weight: 700;

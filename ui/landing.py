@@ -51,13 +51,13 @@ _CARD_CSS = """
     transition: border-color 0.15s, box-shadow 0.15s;
 }
 .mode-card:hover {
-    border-color: #93C5FD;
-    box-shadow: 0 2px 12px rgba(37,99,235,0.09);
+    border-color: #FCD34D;
+    box-shadow: 0 2px 12px rgba(180,83,9,0.09);
 }
 .mode-label {
     display: inline-block;
-    background: #EFF6FF;
-    color: #1D4ED8;
+    background: #FFFBEB;
+    color: #92400E;
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.08em;
