@@ -102,7 +102,7 @@ def evidence_map_to_plotly_html(map_data: Dict[str, Any]) -> str:
         marker=dict(
             size=[max(s * 18, 12) for s in map_data["sizes"]],
             color=map_data["colors"],
-            colorscale=[[0, "#e74c3c"], [0.5, "#f39c12"], [1, "#2ecc71"]],
+            colorscale=[[0, "#EF4444"], [0.5, "#F59E0B"], [1, "#10B981"]],
             cmin=1, cmax=3,
             colorbar=dict(
                 title="Quality",
@@ -111,7 +111,7 @@ def evidence_map_to_plotly_html(map_data: Dict[str, Any]) -> str:
             ),
             showscale=True,
             opacity=0.85,
-            line=dict(width=1, color="white"),
+            line=dict(width=1, color="#FFFFFF"),
         ),
         text=map_data["texts"],
         hoverinfo="text",
@@ -124,18 +124,18 @@ def evidence_map_to_plotly_html(map_data: Dict[str, Any]) -> str:
             tickvals=list(range(len(x_labels))),
             ticktext=x_labels,
             showgrid=True,
-            gridcolor="#333333",
+            gridcolor="#E2E8F0",
         ),
         yaxis=dict(
             title="Population / Study Type",
             tickvals=list(range(len(y_labels))),
             ticktext=y_labels,
             showgrid=True,
-            gridcolor="#333333",
+            gridcolor="#E2E8F0",
         ),
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        font=dict(color="white"),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#F8FAFC",
+        font=dict(color="#334155"),
         height=460,
         margin=dict(l=150, r=20, t=60, b=120),
     )
@@ -153,29 +153,34 @@ def evidence_map_to_png(map_data: Dict[str, Any]) -> bytes:
         raise ImportError("pip install matplotlib")
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    fig.patch.set_facecolor("#0e1117")
-    ax.set_facecolor("#1a1a2e")
+    fig.patch.set_facecolor("#FFFFFF")
+    ax.set_facecolor("#F8FAFC")
+
+    from matplotlib.colors import LinearSegmentedColormap
+    quality_cmap = LinearSegmentedColormap.from_list("quality", ["#EF4444", "#F59E0B", "#10B981"])
 
     sc = ax.scatter(
         map_data["x_vals"],
         map_data["y_vals"],
         s=[max(n * 200, 100) for n in map_data["sizes"]],
         c=map_data["colors"],
-        cmap="RdYlGn",
+        cmap=quality_cmap,
         vmin=1, vmax=3,
         alpha=0.85,
-        edgecolors="white",
+        edgecolors="#FFFFFF",
         linewidths=0.5,
     )
 
     ax.set_xticks(range(len(map_data["x_labels"])))
-    ax.set_xticklabels(map_data["x_labels"], rotation=30, ha="right", color="white", fontsize=8)
+    ax.set_xticklabels(map_data["x_labels"], rotation=30, ha="right", color="#334155", fontsize=8)
     ax.set_yticks(range(len(map_data["y_labels"])))
-    ax.set_yticklabels(map_data["y_labels"], color="white", fontsize=8)
-    ax.set_title("Evidence Map: Population × Intervention", color="white")
-    ax.set_xlabel("Intervention / Study Design", color="white")
-    ax.set_ylabel("Population / Study Type", color="white")
-    ax.tick_params(colors="white")
+    ax.set_yticklabels(map_data["y_labels"], color="#334155", fontsize=8)
+    ax.set_title("Evidence Map: Population × Intervention", color="#334155")
+    ax.set_xlabel("Intervention / Study Design", color="#334155")
+    ax.set_ylabel("Population / Study Type", color="#334155")
+    ax.tick_params(colors="#334155")
+    for spine in ax.spines.values():
+        spine.set_color("#E2E8F0")
     plt.colorbar(sc, ax=ax, label="Avg Quality (1=Low, 2=Medium, 3=High)")
     plt.tight_layout()
 

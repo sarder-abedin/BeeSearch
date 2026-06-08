@@ -1152,6 +1152,12 @@ for conversational science communication with multiple explanation styles.
             if st.button("Create notebook", key="nb_create", type="primary", use_container_width=True):
                 nb_id = memory.new_notebook(new_name or "Untitled Notebook")
                 st.session_state["nb_active_id"] = nb_id
+                # Drop the cached selector label (same trick "jump to notebook" uses
+                # below) so the staleness recovery picks the new notebook's label on
+                # the next run — otherwise the selector is left reading "+ New
+                # notebook" (still a *valid* option) while the panel beneath it
+                # shows the notebook that was just created.
+                st.session_state.pop("nb_selector", None)
                 st.rerun()
 
         active_id = selected_id or st.session_state.get("nb_active_id")

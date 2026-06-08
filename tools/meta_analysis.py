@@ -331,7 +331,7 @@ def meta_analysis_to_forest_plotly(result: Dict[str, Any], model: str = "random"
     for y, s in zip(study_y, studies):
         fig.add_trace(go.Scatter(
             x=[s["ci_low"], s["ci_high"]], y=[y, y],
-            mode="lines", line=dict(color="#5dade2", width=2),
+            mode="lines", line=dict(color="#60A5FA", width=2),
             hoverinfo="skip", showlegend=False,
         ))
 
@@ -341,7 +341,7 @@ def meta_analysis_to_forest_plotly(result: Dict[str, Any], model: str = "random"
         marker=dict(
             symbol="square",
             size=[max(8, min(30, s[weight_key] * 0.7)) for s in studies],
-            color="#2e86c1", line=dict(width=1, color="white"),
+            color="#2563EB", line=dict(width=1, color="#1D4ED8"),
         ),
         text=[
             f"{s['label']}<br>{measure} = {s['effect']:.2f} "
@@ -356,15 +356,15 @@ def meta_analysis_to_forest_plotly(result: Dict[str, Any], model: str = "random"
     fig.add_trace(go.Scatter(
         x=[pooled["ci_low"], pooled["estimate"], pooled["ci_high"], pooled["estimate"], pooled["ci_low"]],
         y=[pooled_y, pooled_y + half_h, pooled_y, pooled_y - half_h, pooled_y],
-        mode="lines", fill="toself", fillcolor="#e67e22", line=dict(color="#e67e22"),
+        mode="lines", fill="toself", fillcolor="#F59E0B", line=dict(color="#F59E0B"),
         hoverinfo="text",
         text=f"{pooled_label}<br>{measure} = {pooled['estimate']:.2f} [{pooled['ci_low']:.2f}, {pooled['ci_high']:.2f}]",
         name=pooled_label, showlegend=False,
     ))
 
-    fig.add_vline(x=result["null_value"], line=dict(color="#aaaaaa", dash="dash", width=1))
+    fig.add_vline(x=result["null_value"], line=dict(color="#94A3B8", dash="dash", width=1))
 
-    xaxis: Dict[str, Any] = dict(title=f"{measure} (95% CI)", gridcolor="#333333", zeroline=False)
+    xaxis: Dict[str, Any] = dict(title=f"{measure} (95% CI)", gridcolor="#E2E8F0", zeroline=False)
     if result["log_scale"]:
         xaxis["type"] = "log"
 
@@ -372,9 +372,9 @@ def meta_analysis_to_forest_plotly(result: Dict[str, Any], model: str = "random"
         title=f"Forest Plot — {result['measure_label']}",
         xaxis=xaxis,
         yaxis=dict(tickvals=y_pos, ticktext=labels, showgrid=False, zeroline=False, range=[-1, len(labels)]),
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        font=dict(color="white"),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#F8FAFC",
+        font=dict(color="#334155"),
         height=130 + 42 * len(labels),
         margin=dict(l=10, r=20, t=60, b=60),
     )
@@ -398,34 +398,34 @@ def meta_analysis_to_forest_png(result: Dict[str, Any], model: str = "random") -
     study_y, pooled_y = y_pos[:-1], y_pos[-1]
 
     fig, ax = plt.subplots(figsize=(9, 1.2 + 0.5 * n))
-    fig.patch.set_facecolor("#0e1117")
-    ax.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("#FFFFFF")
+    ax.set_facecolor("#F8FAFC")
 
     for y, s in zip(study_y, studies):
         ax.plot([s["ci_low"], s["ci_high"]], [y, y],
-                color="#5dade2", linewidth=1.6, zorder=2)
+                color="#60A5FA", linewidth=1.6, zorder=2)
         size = max(30, min(260, s[weight_key] * 9))
-        ax.scatter([s["effect"]], [y], s=size, marker="s", color="#2e86c1",
-                   edgecolors="white", linewidths=0.6, zorder=3)
+        ax.scatter([s["effect"]], [y], s=size, marker="s", color="#2563EB",
+                   edgecolors="#1D4ED8", linewidths=0.6, zorder=3)
 
     half_h = 0.22
     diamond = plt.Polygon(
         [(pooled["ci_low"], pooled_y), (pooled["estimate"], pooled_y + half_h),
          (pooled["ci_high"], pooled_y), (pooled["estimate"], pooled_y - half_h)],
-        closed=True, facecolor="#e67e22", edgecolor="#e67e22", zorder=3,
+        closed=True, facecolor="#F59E0B", edgecolor="#F59E0B", zorder=3,
     )
     ax.add_patch(diamond)
-    ax.axvline(result["null_value"], color="#aaaaaa", linestyle="--", linewidth=1, zorder=1)
+    ax.axvline(result["null_value"], color="#94A3B8", linestyle="--", linewidth=1, zorder=1)
     if result["log_scale"]:
         ax.set_xscale("log")
 
     ax.set_yticks(y_pos)
-    ax.set_yticklabels(labels, color="white", fontsize=9)
-    ax.set_xlabel(f"{measure} (95% CI)", color="white")
-    ax.set_title(f"Forest Plot — {result['measure_label']}", color="white")
-    ax.tick_params(colors="white")
+    ax.set_yticklabels(labels, color="#334155", fontsize=9)
+    ax.set_xlabel(f"{measure} (95% CI)", color="#334155")
+    ax.set_title(f"Forest Plot — {result['measure_label']}", color="#334155")
+    ax.tick_params(colors="#334155")
     for spine in ax.spines.values():
-        spine.set_color("#444444")
+        spine.set_color("#E2E8F0")
     ax.set_ylim(-1, n)
     plt.tight_layout()
 

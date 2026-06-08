@@ -144,13 +144,13 @@ def network_to_pyvis_html(G: object, node_meta: Dict[str, Dict]) -> str:
     except ImportError:
         raise ImportError("pip install pyvis")
 
-    net = Network(height="500px", width="100%", directed=True, bgcolor="#0e1117", font_color="white")
+    net = Network(height="500px", width="100%", directed=True, bgcolor="#0F172A", font_color="white")
     net.barnes_hut(spring_length=120)
 
-    quality_colors = {"High": "#2ecc71", "Medium": "#f39c12", "Low": "#e74c3c"}
+    quality_colors = {"High": "#10B981", "Medium": "#F59E0B", "Low": "#EF4444"}
 
     for node_id, data in node_meta.items():
-        color = quality_colors.get(data.get("quality", "Medium"), "#f39c12")
+        color = quality_colors.get(data.get("quality", "Medium"), "#F59E0B")
         label = f"{node_id}\n({data.get('year', '?')})"
         title_text = f"{data.get('title', '')}\n{data.get('journal', '')}"
         net.add_node(node_id, label=label, title=title_text, color=color, size=15)

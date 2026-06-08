@@ -468,7 +468,7 @@ def _tab_trends(final_state: dict, settings: dict) -> None:
                     x=years,
                     y=chart.get("field_counts", []),
                     name="Field-wide (CrossRef)",
-                    marker_color="#1a6496",
+                    marker_color="#2563EB",
                     opacity=0.7,
                 ))
                 fig.add_trace(go.Scatter(
@@ -476,17 +476,17 @@ def _tab_trends(final_state: dict, settings: dict) -> None:
                     y=chart.get("corpus_counts", []),
                     name="This SR corpus",
                     mode="lines+markers",
-                    marker=dict(color="#f39c12", size=6),
-                    line=dict(color="#f39c12", width=2),
+                    marker=dict(color="#F59E0B", size=6),
+                    line=dict(color="#F59E0B", width=2),
                 ))
                 fig.update_layout(
                     title=f"Publication Trend: {rq[:60]}…" if len(rq) > 60 else f"Publication Trend: {rq}",
-                    xaxis_title="Year",
-                    yaxis_title="Publications",
-                    paper_bgcolor="#0e1117",
-                    plot_bgcolor="#0e1117",
-                    font=dict(color="white"),
-                    legend=dict(bgcolor="#1a1a2e"),
+                    xaxis=dict(title="Year", gridcolor="#E2E8F0"),
+                    yaxis=dict(title="Publications", gridcolor="#E2E8F0"),
+                    paper_bgcolor="#FFFFFF",
+                    plot_bgcolor="#F8FAFC",
+                    font=dict(color="#334155"),
+                    legend=dict(bgcolor="rgba(255,255,255,0.8)", bordercolor="#E2E8F0", borderwidth=1),
                     height=380,
                 )
                 st.plotly_chart(fig, use_container_width=True)
