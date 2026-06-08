@@ -1,4 +1,4 @@
-# ResearchBuddy
+# ResearchBuddy.ai
 
 Local AI tools for systematic literature review and source-grounded research notebooks — no cloud, no API fees, no data leaving your machine.
 
