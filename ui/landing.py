@@ -115,11 +115,11 @@ def render_landing() -> None:
     if _LOGO_PATH.exists():
         st.image(str(_LOGO_PATH), width=120)
     st.markdown(
-        "<h1 style='margin-bottom:0.15rem'>BeeSearch</h1>",
+        "<h1 style='margin-bottom:0.15rem'></h1>",
         unsafe_allow_html=True,
     )
     st.markdown(
-        "<p style='color:#cfd7e3;font-size:0.9rem;margin-bottom:1.5rem'>"
+        "<p style='color:#0c0f12;font-size:0.9rem;margin-bottom:1.5rem'>"
         "Local AI tools for systematic literature review and source-grounded research notebooks — "
         "Ollama · LangGraph · Hybrid RAG · Google Scholar · arXiv · Semantic Scholar"
         "</p>",
