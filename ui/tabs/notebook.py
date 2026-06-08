@@ -12,7 +12,10 @@ from agents.notebook_state import create_notebook_state
 from config.settings import get_settings
 from tools.hybrid_store import _stores as _hybrid_stores
 from ui.glossary import render_glossary_expander, term_help
-from ui.helpers import get_supported_file_types, process_uploads, render_eval_result, render_rag_reflection
+from ui.helpers import (
+    get_supported_file_types, process_uploads, render_eval_result, render_rag_reflection,
+    render_query_gate, render_chat_gate,
+)
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -520,6 +523,7 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
         help="Agent 3 (Retrieval) uses this query to surface the most relevant chunks. "
              "Leave blank for a broad overview.",
     )
+    query_final, query_ready = render_query_gate(query, key=f"nb_pipeline_query_{active_id}", settings=settings)
 
     cache_key = f"nb_pipeline_{active_id}"
     col_run, col_clr = st.columns([4, 1])
@@ -527,41 +531,44 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
 
     if col_run.button(btn_label, key=f"nb_run_pipeline_{active_id}",
                       type="primary", use_container_width=True):
-        st.session_state.pop(cache_key, None)
-        initial = create_pipeline_state(
-            notebook_id=active_id,
-            settings=settings,
-            query=query.strip(),
-        )
+        if not query_ready:
+            st.info("Please resolve the grammar suggestion above, then click **Run Full Pipeline** again.")
+        else:
+            st.session_state.pop(cache_key, None)
+            initial = create_pipeline_state(
+                notebook_id=active_id,
+                settings=settings,
+                query=query_final.strip(),
+            )
 
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
-        _AGENT_LABELS = {
-            "ingest": "Agent 1 — Document Ingestion",
-            "summarize": "Agent 2 — Summarization",
-            "retrieve": "Agent 3 — Retrieval",
-            "verify_citations": "Agent 4 — Citation Verification",
-            "build_kg": "Agent 5 — Knowledge Graph",
-            "generate_study_guide": "Agent 6 — Study Guide",
-            "generate_podcast": "Agent 7 — Podcast Script",
-        }
+            _AGENT_LABELS = {
+                "ingest": "Agent 1 — Document Ingestion",
+                "summarize": "Agent 2 — Summarization",
+                "retrieve": "Agent 3 — Retrieval",
+                "verify_citations": "Agent 4 — Citation Verification",
+                "build_kg": "Agent 5 — Knowledge Graph",
+                "generate_study_guide": "Agent 6 — Study Guide",
+                "generate_podcast": "Agent 7 — Podcast Script",
+            }
 
-        def _cb(node_name: str, partial_state: dict) -> None:
-            pct = partial_state.get("progress_pct", 0)
-            label = _AGENT_LABELS.get(node_name, node_name)
-            progress_bar.progress(pct / 100)
-            status_text.caption(f"{label} ({pct}%)")
+            def _cb(node_name: str, partial_state: dict) -> None:
+                pct = partial_state.get("progress_pct", 0)
+                label = _AGENT_LABELS.get(node_name, node_name)
+                progress_bar.progress(pct / 100)
+                status_text.caption(f"{label} ({pct}%)")
 
-        try:
-            with st.spinner("Running pipeline…"):
-                result = run_notebook_pipeline(initial, stream_callback=_cb)
-            progress_bar.progress(1.0)
-            status_text.caption("Pipeline complete.")
-            st.session_state[cache_key] = dict(result)
-        except Exception as exc:
-            st.error(f"Pipeline failed: {exc}")
-            return
+            try:
+                with st.spinner("Running pipeline…"):
+                    result = run_notebook_pipeline(initial, stream_callback=_cb)
+                progress_bar.progress(1.0)
+                status_text.caption("Pipeline complete.")
+                st.session_state[cache_key] = dict(result)
+            except Exception as exc:
+                st.error(f"Pipeline failed: {exc}")
+                return
 
     if col_clr.button("Clear", key=f"nb_clr_pipeline_{active_id}"):
         st.session_state.pop(cache_key, None)
@@ -750,6 +757,7 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
         key=f"nb_rpt_goal_{active_id}",
         placeholder="e.g. 'Summarise key findings on transformer attention mechanisms'",
     )
+    goal_final, goal_ready = render_query_gate(goal, key=f"nb_rpt_goal_{active_id}", settings=settings)
     col1, col2 = st.columns(2)
     include_academic = col1.toggle(
         "Search academic sources",
@@ -780,6 +788,8 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
     if col_run.button(btn_label, key=f"nb_rpt_run_{active_id}", type="primary", use_container_width=True):
         if not goal.strip():
             st.warning("Please enter a research goal.")
+        elif not goal_ready:
+            st.info("Please resolve the grammar suggestion above, then click **Generate Research Report** again.")
         else:
             try:
                 from agents.graph import run_research
@@ -795,7 +805,7 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
 
             processed_docs = _rebuild_processed_docs(notebook)
             initial_state = create_initial_state(
-                goal=goal.strip(),
+                goal=goal_final.strip(),
                 uploaded_docs=processed_docs,
                 mode=mode,
                 include_web_search=include_web,
@@ -932,7 +942,7 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
         placeholder=f"Ask anything about {nb_name}…",
         key=f"nb_explain_chat_{active_id}",
     )
-    message = pending or user_input
+    message = render_chat_gate(pending or user_input, key=f"nb_explain_{active_id}", settings=settings)
     if not message:
         return
 
@@ -999,7 +1009,7 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
 
 # ── Cross-notebook search ────────────────────────────────────────────────────────
 
-def _render_cross_notebook_search(memory: NotebookMemory) -> None:
+def _render_cross_notebook_search(memory: NotebookMemory, settings: dict) -> None:
     """
     "Search across everything I've ever uploaded" — a single search box that
     looks through every source in every notebook at once, not just the one
@@ -1022,6 +1032,7 @@ def _render_cross_notebook_search(memory: NotebookMemory) -> None:
                 placeholder="e.g. transformer attention mechanism",
                 label_visibility="collapsed",
             )
+            query_final, query_ready = render_query_gate(query, key="xns_query", settings=settings)
         with col_n:
             limit = st.number_input(
                 "Max results", min_value=5, max_value=100, value=20, step=5,
@@ -1031,14 +1042,17 @@ def _render_cross_notebook_search(memory: NotebookMemory) -> None:
         run = st.button("Search all notebooks", key="xns_run", type="primary")
 
         if run:
-            q = query.strip()
-            if not q:
-                st.warning("Enter at least one search term.")
-                st.session_state.pop("xns_results", None)
+            if not query_ready:
+                st.info("Please resolve the grammar suggestion above, then click **Search all notebooks** again.")
             else:
-                with st.spinner("Searching every notebook you have…"):
-                    st.session_state["xns_results"] = memory.search_all_notebooks(q, limit=int(limit))
-                    st.session_state["xns_query_used"] = q
+                q = query_final.strip()
+                if not q:
+                    st.warning("Enter at least one search term.")
+                    st.session_state.pop("xns_results", None)
+                else:
+                    with st.spinner("Searching every notebook you have…"):
+                        st.session_state["xns_results"] = memory.search_all_notebooks(q, limit=int(limit))
+                        st.session_state["xns_query_used"] = q
 
         results = st.session_state.get("xns_results")
         if results is not None:
@@ -1106,7 +1120,7 @@ for conversational science communication with multiple explanation styles.
         st.session_state["nb_active_id"] = _jump_to
         st.session_state.pop("nb_selector", None)
 
-    _render_cross_notebook_search(memory)
+    _render_cross_notebook_search(memory, settings)
 
     src_col, chat_col = st.columns([1, 2])
 
@@ -1334,7 +1348,7 @@ for conversational science communication with multiple explanation styles.
             typed = st.chat_input(
                 placeholder="Ask a question about your sources…", key="nb_chat_input",
             )
-            message = pending or typed
+            message = render_chat_gate(pending or typed, key="nb_chat", settings=settings)
             if not message:
                 pass  # fall through to other tabs rendering
             else:

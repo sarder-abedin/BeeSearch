@@ -491,3 +491,155 @@ def render_feedback_section(
                 st.divider()
 
     return st.session_state[output_key]
+
+
+# ── Grammar check gate (optional pre-submission query correction) ──────────────
+
+def _run_grammar_check(text: str, settings: dict) -> dict:
+    from tools.grammar_check import check_and_fix_grammar
+    return check_and_fix_grammar(
+        text, model_name=settings.get("model", ""), num_ctx=settings.get("num_ctx", 8192),
+    )
+
+
+def _render_grammar_suggestion(cached: dict, *, key: str) -> None:
+    """Renders the original-vs-suggested comparison and Accept / Keep / Edit controls.
+    Mutates `cached["final"]` in st.session_state and reruns once the user decides."""
+    st.info("✏️ **Suggested grammar fixes** — review below, then choose how to proceed.")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.caption("Your version")
+        st.markdown(f"> {cached['source']}")
+    with c2:
+        st.caption("Suggested correction")
+        st.markdown(f"> {cached['corrected']}")
+
+    edit_flag = f"_gc_editing_{key}"
+    b1, b2, b3 = st.columns(3)
+    if b1.button("✓ Use suggested", key=f"_gc_accept_{key}", use_container_width=True):
+        cached["final"] = cached["corrected"]
+        st.session_state.pop(edit_flag, None)
+        st.rerun()
+    if b2.button("Keep my original", key=f"_gc_keep_{key}", use_container_width=True):
+        cached["final"] = cached["source"]
+        st.session_state.pop(edit_flag, None)
+        st.rerun()
+    if b3.button("✏️ Edit it myself", key=f"_gc_editbtn_{key}", use_container_width=True):
+        st.session_state[edit_flag] = True
+
+    if st.session_state.get(edit_flag):
+        edited = st.text_area(
+            "Your edited version", value=cached["corrected"], key=f"_gc_editta_{key}", height=100,
+        )
+        if st.button("Use this edited version", key=f"_gc_editconfirm_{key}", type="primary"):
+            cached["final"] = edited.strip()
+            st.session_state.pop(edit_flag, None)
+            st.rerun()
+
+
+def render_query_gate(raw_text: str, *, key: str, settings: dict) -> tuple[str, bool]:
+    """
+    Optional grammar-check gate for a text_input/text_area query, paired with a
+    "Run"-style action button elsewhere on the page.
+
+    Renders a small radio toggle ("Use as typed" / "Check grammar before
+    running"). When checking is enabled, runs a quick LLM grammar/spelling pass
+    the first time it sees this exact text, and shows an inline review with
+    three resolutions: accept the suggestion, keep the original, or hand-edit it.
+
+    Returns ``(text_to_submit, ready)``:
+      - ``ready=True``  → safe to proceed; ``text_to_submit`` is what should be
+        processed (the original if checking is off / text unchanged / user kept
+        it, or the user-approved/edited correction otherwise).
+      - ``ready=False`` → a suggestion is awaiting the user's decision; the
+        caller's action should be held off (e.g. show "resolve the suggestion
+        above, then click Run again").
+
+    `key` must be unique per field (used to namespace widgets and cached state).
+    """
+    mode = st.radio(
+        "Grammar check",
+        options=["as_typed", "check_fix"],
+        format_func=lambda m: "Use as typed" if m == "as_typed" else "✓ Check grammar before running",
+        horizontal=True,
+        label_visibility="collapsed",
+        key=f"_gc_mode_{key}",
+    )
+    if mode == "as_typed" or not raw_text.strip():
+        return raw_text, True
+
+    state_key = f"_gc_state_{key}"
+    cached = st.session_state.get(state_key)
+
+    if cached is None or cached["source"] != raw_text:
+        with st.spinner("Checking grammar…"):
+            result = _run_grammar_check(raw_text, settings)
+        if not result["changed"]:
+            st.session_state[state_key] = {"source": raw_text, "corrected": raw_text, "final": raw_text}
+            return raw_text, True
+        st.session_state[state_key] = {"source": raw_text, "corrected": result["corrected"], "final": None}
+        cached = st.session_state[state_key]
+
+    if cached["final"] is not None:
+        if cached["final"] != cached["source"]:
+            st.caption(f"✓ Using corrected version: _{cached['final'][:140]}{'…' if len(cached['final']) > 140 else ''}_")
+        return cached["final"], True
+
+    _render_grammar_suggestion(cached, key=key)
+    return raw_text, False
+
+
+def render_chat_gate(raw_message: str | None, *, key: str, settings: dict) -> str | None:
+    """
+    Optional grammar-check gate for a chat-style input (st.chat_input / pending
+    follow-up question). Renders a small radio toggle once per call; pass it
+    whatever the chat input returned (often None).
+
+    When checking is enabled and a fresh message arrives, the message is held
+    back, quickly grammar-checked, and shown for the user's approval (accept /
+    keep original / hand-edit) before it is sent into the conversation.
+
+    Returns the message that should be processed THIS run, or None if nothing
+    should be sent yet (checking disabled + no message, or a suggestion is still
+    awaiting the user's decision).
+    """
+    mode = st.radio(
+        "Grammar check",
+        options=["as_typed", "check_fix"],
+        format_func=lambda m: "Send as typed" if m == "as_typed" else "✓ Check grammar before sending",
+        horizontal=True,
+        label_visibility="collapsed",
+        key=f"_gc_mode_{key}",
+    )
+    state_key = f"_gc_chatstate_{key}"
+    cached = st.session_state.get(state_key)
+
+    if mode == "as_typed":
+        if cached:
+            st.session_state.pop(state_key, None)
+            return cached["source"]
+        return raw_message if (raw_message and raw_message.strip()) else None
+
+    # mode == "check_fix"
+    if raw_message and raw_message.strip():
+        st.session_state[state_key] = {"source": raw_message.strip(), "corrected": None, "final": None}
+        cached = st.session_state[state_key]
+
+    if not cached:
+        return None
+
+    if cached["final"] is not None:
+        final = cached["final"]
+        st.session_state.pop(state_key, None)
+        return final
+
+    if cached["corrected"] is None:
+        with st.spinner("Checking grammar…"):
+            result = _run_grammar_check(cached["source"], settings)
+        if not result["changed"]:
+            st.session_state.pop(state_key, None)
+            return cached["source"]
+        cached["corrected"] = result["corrected"]
+
+    _render_grammar_suggestion(cached, key=key)
+    return None

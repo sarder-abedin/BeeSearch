@@ -10,7 +10,7 @@ import streamlit as st
 from agents.systematic_review_graph import run_systematic_review
 from agents.systematic_review_state import create_systematic_review_state
 from ui.glossary import render_glossary_expander, term_help
-from ui.helpers import render_eval_result, render_rag_reflection
+from ui.helpers import render_eval_result, render_rag_reflection, render_query_gate
 
 logger = logging.getLogger(__name__)
 
@@ -914,6 +914,7 @@ def tab_systematic_review(settings: dict) -> None:
         help=term_help("Systematic review"),
         key="sr_question",
     )
+    rq_final, rq_ready = render_query_gate(rq, key="sr_question", settings=settings)
     st.caption(
         "These guide the screening step — be specific (study design, population, "
         "publication window, language, …) for sharper include/exclude decisions."
@@ -929,6 +930,7 @@ def tab_systematic_review(settings: dict) -> None:
             key="sr_inclusion",
             label_visibility="collapsed",
         )
+        inc_final, inc_ready = render_query_gate(inc_raw, key="sr_inclusion", settings=settings)
     with col_exc:
         st.markdown("**Exclusion criteria** *(one per line)*", help=term_help("Inclusion / exclusion criteria"))
         exc_raw = st.text_area(
@@ -939,6 +941,7 @@ def tab_systematic_review(settings: dict) -> None:
             key="sr_exclusion",
             label_visibility="collapsed",
         )
+        exc_final, exc_ready = render_query_gate(exc_raw, key="sr_exclusion", settings=settings)
 
     run_btn = st.button("Run Systematic Review", key="run_sr", type="primary", use_container_width=True)
 
@@ -946,15 +949,19 @@ def tab_systematic_review(settings: dict) -> None:
         st.warning("Please enter a research question.")
         return
 
+    if run_btn and not (rq_ready and inc_ready and exc_ready):
+        st.info("Please resolve the grammar suggestion(s) above, then click **Run Systematic Review** again.")
+        return
+
     final_state = None
 
     if run_btn:
         # ── Run ───────────────────────────────────────────────────────────────
-        inclusion = [l.strip() for l in inc_raw.splitlines() if l.strip()]
-        exclusion = [l.strip() for l in exc_raw.splitlines() if l.strip()]
+        inclusion = [l.strip() for l in inc_final.splitlines() if l.strip()]
+        exclusion = [l.strip() for l in exc_final.splitlines() if l.strip()]
 
         initial_state = create_systematic_review_state(
-            research_question=rq.strip(),
+            research_question=rq_final.strip(),
             inclusion_criteria=inclusion,
             exclusion_criteria=exclusion,
             model_name=settings["model"],
