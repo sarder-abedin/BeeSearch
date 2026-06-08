@@ -1,0 +1,14 @@
+# Streamlit theme configuration
+# ───────────────────────────────
+# Pins a light theme so the app always renders with a light background and
+# dark text, regardless of the visitor's OS/browser dark-mode preference
+# (Streamlit otherwise auto-detects and falls back to its near-black dark
+# theme). Colors match the palette already used in ui/theme.py.
+
+[theme]
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F8FAFC"
+textColor = "#0F172A"
+font = "sans serif"

@@ -19,6 +19,29 @@ h1 { font-size: 1.75rem; font-weight: 700; color: #0F172A; letter-spacing: -0.02
 h2 { font-size: 1.35rem; font-weight: 600; color: #1E293B; letter-spacing: -0.01em; }
 h3 { font-size: 1.1rem;  font-weight: 600; color: #334155; }
 
+/* ── Force a light app background + dark body text ───────────────────── */
+/* Always pin light/dark regardless of the visitor's OS/browser dark-mode
+   preference — Streamlit otherwise auto-detects and falls back to its
+   near-black dark theme for the main content area (the .streamlit/config.toml
+   [theme] block is the primary fix; these rules are defense-in-depth so the
+   app still looks right even if that config is ever overridden upstream). */
+html, body,
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stHeader"],
+[data-testid="stBottomBlockContainer"] {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+}
+[data-testid="stHeader"] {
+    background-color: rgba(255, 255, 255, 0) !important;
+}
+.stApp p, .stApp span, .stApp label, .stApp li,
+.stApp .stMarkdown, [data-testid="stMarkdownContainer"] {
+    color: #1E293B;
+}
+
 /* ── Main content area ──────────────────────────────────────────────── */
 .main .block-container {
     padding-top: 2rem;

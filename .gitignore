@@ -28,8 +28,8 @@ models/
 # ChromaDB persistent store
 chroma_db/
 
-# Streamlit
-.streamlit/
+# Streamlit (config.toml holds the app theme and is committed; secrets.toml is not)
+.streamlit/secrets.toml
 
 # OS
 .DS_Store
