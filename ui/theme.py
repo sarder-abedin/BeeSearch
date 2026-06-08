@@ -124,7 +124,7 @@ html, body,
 }
 [data-testid="baseButton-secondary"]:hover {
     border-color: #94A3B8 !important;
-    background-color: #F8FAFC !important;
+    background-color: #DAE1EB !important;
 }
 
 /* ── Metric widgets ─────────────────────────────────────────────────── */
