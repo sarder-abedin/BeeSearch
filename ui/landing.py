@@ -83,7 +83,7 @@ _CARD_CSS = """
 }
 .mode-tag {
     background: #F1F5F9;
-    color: #475569;
+    color: #b4becc;
     font-size: 0.72rem;
     font-weight: 500;
     padding: 2px 7px;
@@ -114,7 +114,7 @@ def render_landing() -> None:
         unsafe_allow_html=True,
     )
     st.markdown(
-        "<p style='color:#64748B;font-size:0.9rem;margin-bottom:1.5rem'>"
+        "<p style='color:#cfd7e3;font-size:0.9rem;margin-bottom:1.5rem'>"
         "Local AI tools for systematic literature review and source-grounded research notebooks — "
         "Ollama · LangGraph · Hybrid RAG · Google Scholar · arXiv · Semantic Scholar"
         "</p>",
