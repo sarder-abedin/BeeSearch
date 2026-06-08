@@ -105,7 +105,7 @@ html, body,
 
 /* ── Buttons ────────────────────────────────────────────────────────── */
 [data-testid="baseButton-primary"] {
-    background-color: #2563EB !important;
+    background-color: #C3CEE6 !important;
     border: none !important;
     border-radius: 6px !important;
     font-weight: 500 !important;
@@ -167,8 +167,8 @@ html, body,
     border-bottom: 2px solid transparent;
 }
 [data-testid="stTabs"] [role="tab"][aria-selected="true"] {
-    color: #2563EB;
-    border-bottom-color: #2563EB;
+    color: #C3CEE6;
+    border-bottom-color: #C3CEE6;
 }
 
 /* ── Alerts / info boxes ─────────────────────────────────────────────── */
@@ -186,7 +186,7 @@ html, body,
 }
 [data-testid="stTextArea"] textarea:focus,
 [data-testid="stTextInput"] input:focus {
-    border-color: #2563EB !important;
+    border-color: #C3CEE6 !important;
     box-shadow: 0 0 0 2px rgba(37,99,235,0.12) !important;
 }
 
@@ -205,7 +205,7 @@ html, body,
 
 /* ── Progress bar ───────────────────────────────────────────────────── */
 [data-testid="stProgressBar"] > div > div {
-    background-color: #2563EB !important;
+    background-color: #C3CEE6 !important;
     border-radius: 4px !important;
 }
 
@@ -253,7 +253,7 @@ code {
 /* ── Mode cards on landing page ─────────────────────────────────────── */
 .mode-number {
     display: inline-block;
-    background: #2563EB;
+    background: #C3CEE6;
     color: #FFFFFF;
     font-size: 0.75rem;
     font-weight: 700;
