@@ -364,8 +364,9 @@ def storyteller_node(state: StoryState) -> Dict[str, Any]:
 
     # Online results block (when source router fetched supplementary material)
     online_results: List[Dict[str, Any]] = state.get("online_results", [])
+    source_decision: Dict[str, Any] = state.get("source_decision", {})
     online_block = ""
-    citation_rule = ""
+    attribution_format = ""
     if online_results:
         lines = []
         for i, r in enumerate(online_results, 1):
@@ -377,15 +378,35 @@ def storyteller_node(state: StoryState) -> Dict[str, Any]:
                 f"URL: {r.get('url', '')}\n"
                 f"Excerpt: {r.get('snippet', '')[:350]}"
             )
-        online_block = "\n\nONLINE SOURCES (use these to supplement the document context):\n" + "\n\n".join(lines)
-        citation_rule = (
-            "\n6b. You have been given online sources because the document context "
-            "does not fully cover this question. Integrate relevant online sources "
-            "naturally. Cite them inline as [Source N] immediately after the claim "
-            "they support. Add a 'References' section at the very end of your "
-            "explanation (before the JSON) listing only the sources you actually cited, "
-            "formatted as: [Source N] Title — URL"
+        online_block = (
+            "\n\nONLINE SOURCES (fetched because document coverage was insufficient):\n"
+            + "\n\n".join(lines)
         )
+        coverage_score = source_decision.get("coverage_score", 5)
+        gap_reason = source_decision.get("reason", "the documents do not fully cover this topic")
+        attribution_format = f"""
+
+CRITICAL — PER-SECTION SOURCE ATTRIBUTION REQUIRED:
+The uploaded documents scored only {coverage_score}/10 coverage for this question ({gap_reason}).
+You MUST structure your response using these exact labelled sections in this order:
+
+**From your documents:**
+Explain what the uploaded documents actually say about this question. Quote brief passages where useful.
+If the documents say very little, keep this section short and honest — do not pad it.
+
+**Why online search was needed:**
+1–2 sentences only. What specific gap did the documents leave? What could not be answered from them alone?
+
+**From online sources:**
+Fill the gap using the online sources provided. Apply the chosen style and audience level here too.
+Cite every claim from an online source with [Source N] placed immediately after it.
+Only use sources that are genuinely relevant — skip irrelevant ones.
+
+**References:**
+List only the online sources you actually cited, in this format:
+[Source N] Title — URL (Authors, Year if available)
+
+After the References section, end with the suggested_questions JSON and nothing else."""
 
     # Concepts already covered
     covered_block = ""
@@ -395,16 +416,20 @@ def storyteller_node(state: StoryState) -> Dict[str, Any]:
             f"{', '.join(concepts_covered[:20])}"
         )
 
+    online_note = (
+        " When online sources are provided, follow the attribution format below."
+        if online_results else ""
+    )
     system = f"""You are a Research Partner — a gifted science communicator who excels at making
-complex research concepts genuinely understandable.
+complex research concepts genuinely understandable.{attribution_format}
 
 CORE RULES:
 1. Never use unexplained jargon relative to the target audience below — define any term that audience wouldn't already know.
 2. STYLE — {style_instruction}
 3. AUDIENCE LEVEL — {level_instruction}
-4. Write 3–6 paragraphs only — no lengthy essays. Be concise and memorable.
+4. {"Follow the per-section attribution format above." if online_results else "Write 3–6 paragraphs only — no lengthy essays. Be concise and memorable."}
 5. Build on the previous conversation — reference and connect to what was discussed before.
-6. Quote short passages from the provided document context when they are directly relevant.{citation_rule}
+6. {"Each section should be written in the chosen style and at the chosen audience level." if online_results else "Quote short passages from the provided document context when they are directly relevant."}
 7. At the very end of your response (after any References section), append EXACTLY this JSON (no other text after it):
    {{"suggested_questions": ["Question 1?", "Question 2?", "Question 3?"]}}
    The questions should be natural follow-ups a curious reader would want to ask next.

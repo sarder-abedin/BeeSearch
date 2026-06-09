@@ -1297,14 +1297,14 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
             if "web" in sources_searched:
                 src_labels.append("web")
             src_str = " + ".join(src_labels) if src_labels else "online"
-            badge = (
-                f"Documents insufficient (coverage {score}/10) — "
-                f"supplemented with {online_count} online source(s) "
-                f"({src_str})"
+            st.info(
+                f"Document coverage: {score}/10 — {reason}  \n"
+                f"The response below is split into sections: what your documents cover, "
+                f"why online search was needed, and what was found online "
+                f"({online_count} source(s) from {src_str}). "
+                f"Each online claim is cited with [Source N].",
+                icon=None,
             )
-            st.caption(badge)
-            if reason:
-                st.caption(f"Reason: {reason}")
         else:
             st.caption(f"Answered from your documents (coverage {score}/10)")
 
