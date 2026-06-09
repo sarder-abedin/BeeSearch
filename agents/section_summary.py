@@ -140,8 +140,10 @@ def detect_sections_heuristic(
         if _is_heading_heuristic(text):
             if current_chunks:
                 sections.append((current_title or "Preamble", current_chunks))
-            current_title = text
-            current_chunks = []
+            # Use only the first line as the title; retain the full chunk so any
+            # body text in the same chunk is not silently discarded.
+            current_title = text.split("\n", 1)[0].strip()
+            current_chunks = [chunk]
         else:
             current_chunks.append(chunk)
 

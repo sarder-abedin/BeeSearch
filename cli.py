@@ -408,7 +408,6 @@ def cmd_sections(args: argparse.Namespace) -> None:
     print(f"Found {len(sections)} section(s).\n")
 
     lines: list[str] = [f"# Section Breakdown — {chosen_filename}\n"]
-    reviews: list[dict] = []
 
     # ── Summarise + claim questions
     for i, (title, sec_chunks) in enumerate(sections, 1):
@@ -442,7 +441,6 @@ def cmd_sections(args: argparse.Namespace) -> None:
         for i, (title, sec_chunks) in enumerate(sections, 1):
             print(f"  [{i}/{len(sections)}] Reviewing: {title[:60]}…")
             rev = review_section(title, sec_chunks, settings_model, settings_ctx)
-            reviews.append(rev)
 
             _section(f"Expert Review — {title}")
             print(f"  Strengths   : {rev.get('strengths', '')}")
