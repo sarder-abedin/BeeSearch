@@ -127,6 +127,8 @@ Make sure Ollama is running on your host machine **before** starting the contain
 # Ollama listens on host.docker.internal automatically on Mac
 docker compose -f docker-compose.mac.yml up --build
 # Open http://localhost:8501
+# Killing the docker after use and removing the port binding
+docker compose -f docker-compose.mac.yml down --remove-orphans
 ```
 
 #### Linux (CPU)
