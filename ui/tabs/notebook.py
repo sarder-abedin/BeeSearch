@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import streamlit as st
 
@@ -1002,6 +1003,8 @@ def _rebuild_processed_docs(notebook: dict) -> list:
         docs.append(ProcessedDocument(
             doc_id=doc_id,
             filename=filename,
+            file_type=src.get("file_type", Path(filename).suffix.lstrip(".").lower() or "unknown"),
+            total_pages=src.get("total_pages", len(set(c.get("page_num", 0) for c in sorted_chunks))),
             total_chunks=len(doc_chunks),
             chunks=doc_chunks,
             raw_text=raw_text,
