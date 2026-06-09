@@ -25,7 +25,7 @@ Local AI tools for systematic literature review and source-grounded research not
 - **Google Scholar** — primary search source for SR (no API key, `scholarly` library)
 - **Abstract Screener** — LLM scores each paper 0–100 before formal screening
 - **PRISMA 2020 reports** — DOCX and PDF with full Methods → Results → Discussion scaffold
-- **Plain-language summaries** — patient (8th-grade), policy brief, press release
+- **Plain-language summaries** — general public, policy brief, press release
 - **Citation Network** — interactive Pyvis HTML graph of links between included papers
 - **Trend Analysis** — CrossRef field-wide year-by-year publication counts + growing/declining classification
 - **Evidence Map** — Plotly Population × Intervention bubble chart
