@@ -1476,20 +1476,29 @@ for conversational science communication with multiple explanation styles.
             # Filter out Streamlit DeletedFile sentinels before counting/processing
             valid_files = [f for f in (files or []) if hasattr(f, "name") and hasattr(f, "getbuffer")]
             if valid_files:
-                st.caption(
-                    f"📎 {len(valid_files)} file(s) ready — will be indexed automatically when "
-                    f"you ask a question, or click below to add now."
-                )
-                if st.button("Add files now", key=f"nb_add_files_{active_id}",
-                            use_container_width=True):
-                    with st.spinner("Processing and indexing documents…"):
-                        processed = process_uploads(valid_files, settings)
+                # Proactively index any file that isn't already in this notebook.
+                # Runs on every render — duplicate guard in add_source makes this safe.
+                indexed_filenames = {s["filename"] for s in notebook.get("sources", [])}
+                new_files = [f for f in valid_files if f.name not in indexed_filenames]
+                if new_files:
+                    with st.spinner(
+                        f"Indexing {len(new_files)} new file(s) — "
+                        "this may take a moment for large documents…"
+                    ):
+                        processed = process_uploads(new_files, settings)
                         added = _index_and_store(active_id, processed, settings, source_type="file")
                     if added > 0:
-                        st.success(f"Added {added} source(s).")
+                        notebook = memory.load(active_id)
                         st.rerun()
+                    elif processed:
+                        st.info("File(s) already indexed in this notebook.")
                     else:
-                        st.warning("No new sources were added (may be duplicates).")
+                        st.warning(
+                            "Could not process the uploaded file(s). "
+                            "Check that the file is readable and not password-protected."
+                        )
+                else:
+                    st.caption(f"📎 {len(valid_files)} file(s) indexed and ready.")
 
             # ── Add a web page (optional) ─────────────────────
             with st.expander("Add a specific web page (optional)"):
@@ -1633,21 +1642,8 @@ for conversational science communication with multiple explanation styles.
             else:
                 auto_web = st.session_state.get(f"nb_auto_web_{active_id}", False)
 
-                # Auto-ingest any files waiting in the uploader before answering.
-                # Filter out Streamlit DeletedFile sentinels (no .name / .getbuffer).
-                _raw_pending = st.session_state.get(f"nb_files_{active_id}") or []
-                pending_files = [f for f in _raw_pending if hasattr(f, "name") and hasattr(f, "getbuffer")]
-                if pending_files:
-                    with st.spinner(
-                        f"Indexing {len(pending_files)} uploaded file(s) before answering…"
-                    ):
-                        processed = process_uploads(pending_files, settings)
-                        added = _index_and_store(active_id, processed, settings, source_type="file")
-                    if added > 0:
-                        st.toast(f"✅ Indexed {added} new source(s) from upload.")
-                        notebook = memory.load(active_id)  # reload with updated sources
-                    elif processed:
-                        st.toast("ℹ️ Uploaded files already in notebook (skipping duplicates).")
+                # Reload notebook in case files were indexed since the last render.
+                notebook = memory.load(active_id)
 
                 if not notebook.get("sources") and not auto_web:
                     st.warning(
