@@ -119,39 +119,81 @@ streamlit run app.py
 
 ### Option B — Docker
 
-Make sure Ollama is running on your host machine **before** starting the container. The container needs to reach it over the Docker bridge network.
+Docker bundles the app **and** an Ollama server together — no separate Ollama install needed.
 
-#### macOS
+#### Quick start (all platforms)
 
-```bash
-# Ollama listens on host.docker.internal automatically on Mac
-docker compose -f docker-compose.mac.yml up --build
-# Open http://localhost:8501
-```
+Use the platform start script. It builds the images, starts the containers, waits for the app to pass its health-check, then **opens `http://localhost:8501` in your default browser automatically**.
 
-#### Linux (CPU)
+| Platform | Command |
+|----------|---------|
+| **macOS** (Apple Silicon or Intel) | `./scripts/start-mac.sh` |
+| **Linux — CPU** | `./scripts/start.sh` |
+| **Linux — GPU (NVIDIA)** | `./scripts/start-gpu.sh` |
+| **Windows** (Docker Desktop, Git Bash) | `./scripts/start.sh` |
 
-```bash
-# Use the host gateway IP so the container can reach Ollama on the host
-OLLAMA_BASE_URL=http://172.17.0.1:11434 docker compose up --build
-# Open http://localhost:8501
-```
-
-#### Linux (GPU — NVIDIA)
+Add `--build` to force a full image rebuild:
 
 ```bash
-OLLAMA_BASE_URL=http://172.17.0.1:11434 docker compose -f docker-compose.gpu.yml up --build
+./scripts/start.sh --build
 ```
 
-#### Windows
+The browser opens at `http://localhost:8501` once the container is healthy (~30–60 s on first run while Docker downloads images and builds layers). On Ctrl-C the script shuts the containers down cleanly.
 
-```powershell
-# On Windows, Docker Desktop uses host.docker.internal just like macOS
+---
+
+#### Manual Docker commands (advanced)
+
+If you prefer running Docker commands directly:
+
+```bash
+# Build and start (Ollama + app together)
 docker compose up --build
-# Open http://localhost:8501
+
+# Start without rebuilding (subsequent runs)
+docker compose up
+
+# Stop and remove containers
+docker compose down
+
+# Pull a different model while running
+docker compose exec ollama ollama pull mistral-nemo:12b
 ```
 
-> **Tip — finding the bridge IP on Linux:** Run `ip route show default | awk '{print $3}'` or `docker network inspect bridge | grep Gateway`. Common value is `172.17.0.1`. You can also set `network_mode: host` in `docker-compose.yml` so the container shares the host network directly.
+> **Linux bridge IP** — if the app can't reach Ollama, find the bridge IP with:
+> `ip route show default | awk '{print $3}'` (common value: `172.17.0.1`), then:
+> ```bash
+> OLLAMA_BASE_URL=http://172.17.0.1:11434 docker compose up --build
+> ```
+> Alternatively, set `network_mode: host` in `docker-compose.yml`.
+
+---
+
+#### Running the CLI inside Docker
+
+Once the containers are running you can execute any `main.py` or `cli.py` command **inside the running app container** without leaving Docker:
+
+```bash
+# Open an interactive Research Notebook session
+docker compose exec app python main.py --notebook --notebook-name "My Research"
+
+# Run a Systematic Literature Review
+docker compose exec app python main.py --systematic-review \
+  --goal "Effect of sleep deprivation on working memory" \
+  --inclusion "Human participants" "Peer-reviewed" \
+  --exclusion "Animal studies"
+
+# List all saved notebooks
+docker compose exec app python main.py --list-notebooks
+
+# Section-by-section breakdown (cli.py)
+docker compose exec app python cli.py sections <notebook-id> --source paper.pdf
+
+# Open a shell inside the container
+docker compose exec app bash
+```
+
+> **Tip:** Replace `app` with `research-app` if you're not using `docker compose` from the project root (the container name is `research-app` as set in `docker-compose.yml`).
 
 ---
 
