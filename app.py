@@ -9,8 +9,32 @@ Run:  streamlit run app.py
 """
 from __future__ import annotations
 import logging
+import os
+import threading
+import time
+import webbrowser
 from pathlib import Path
 import streamlit as st
+
+# Open the default browser once when the server first starts.
+# Guards:
+#   - _BEESEARCH_BROWSER_OPENED env var  → only fires once per process
+#   - STREAMLIT_SERVER_HEADLESS=true      → skipped inside Docker containers
+if not os.environ.get("_BEESEARCH_BROWSER_OPENED"):
+    os.environ["_BEESEARCH_BROWSER_OPENED"] = "1"
+    _headless = os.environ.get("STREAMLIT_SERVER_HEADLESS", "false").lower() in ("true", "1")
+    if not _headless:
+        _port = os.environ.get("STREAMLIT_SERVER_PORT", "8501")
+        _url = f"http://localhost:{_port}"
+
+        def _open_browser() -> None:
+            time.sleep(1.5)
+            try:
+                webbrowser.open(_url)
+            except Exception:
+                pass
+
+        threading.Thread(target=_open_browser, daemon=True).start()
 
 _LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"
 _logo = str(_LOGO_PATH) if _LOGO_PATH.exists() else "BeeSearch"
