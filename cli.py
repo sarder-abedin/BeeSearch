@@ -144,7 +144,7 @@ def cmd_sr(args: argparse.Namespace) -> None:
         md = _build_sr_markdown(args.question, final)
         output_path = Path(args.output)
         output_path.write_text(md, encoding="utf-8")
-        print(f"\n✅ Saved to {output_path.resolve()}")
+        print(f"\nSaved to {output_path.resolve()}")
 
     if args.json_output:
         json_path = Path(args.json_output)
@@ -153,7 +153,7 @@ def cmd_sr(args: argparse.Namespace) -> None:
             if isinstance(v, (str, int, float, list, dict, type(None)))
         }
         json_path.write_text(json.dumps(export, indent=2, default=str), encoding="utf-8")
-        print(f"✅ JSON saved to {json_path.resolve()}")
+        print(f"JSON saved to {json_path.resolve()}")
 
 
 # ── Command: nb ──────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ def cmd_nb(args: argparse.Namespace) -> None:
     # Resolve notebook ID
     if args.new:
         nb_id = memory.new_notebook(args.new)
-        print(f"✅ Created notebook '{args.new}' — ID: {nb_id}")
+        print(f"Created notebook '{args.new}' — ID: {nb_id}")
     else:
         nb_id = args.notebook_id
         if not nb_id:
@@ -193,7 +193,7 @@ def cmd_nb(args: argparse.Namespace) -> None:
         print("Type your question and press Enter. Type 'exit' to quit.\n")
         while True:
             try:
-                question = input("❓ ")
+                question = input("> ")
             except (KeyboardInterrupt, EOFError):
                 break
             if question.strip().lower() in ("exit", "quit", "q"):
@@ -221,7 +221,7 @@ def _ask_notebook(nb_id: str, question: str, args: argparse.Namespace) -> None:
         include_web_search=getattr(args, "web", False),
     )
 
-    print(f"\n🧠 Searching notebook {nb_id}…")
+    print(f"\nSearching notebook {nb_id}…")
 
     def _cb(node_name: str, _s: dict) -> None:
         labels = {"retrieve": "Retrieving", "answer": "Answering", "save": "Saving"}
@@ -229,12 +229,12 @@ def _ask_notebook(nb_id: str, question: str, args: argparse.Namespace) -> None:
 
     final = run_notebook_turn(state, stream_callback=_cb)
 
-    print(f"\n🤖 Answer:\n")
+    print(f"\nAnswer:\n")
     print(final.get("assistant_response", ""))
 
     citations = final.get("citations", [])
     if citations:
-        print(f"\n📎 Sources:")
+        print(f"\nSources:")
         for c in citations:
             doc = c.get("doc_name", "")
             page = c.get("page", "")
@@ -244,7 +244,7 @@ def _ask_notebook(nb_id: str, question: str, args: argparse.Namespace) -> None:
 
     suggested = final.get("suggested_questions", [])
     if suggested:
-        print(f"\n💡 Suggested follow-ups:")
+        print(f"\nSuggested follow-ups:")
         for i, q in enumerate(suggested, 1):
             print(f"  {i}. {q}")
 
@@ -265,9 +265,9 @@ def cmd_bib(args: argparse.Namespace) -> None:
 
     print(f"Importing {bib_path.name} into notebook {args.notebook_id}…")
     added, errors = import_bibtex_to_notebook(content, args.notebook_id, settings)
-    print(f"✅ Imported {added} references.")
+    print(f"Imported {added} references.")
     for err in errors:
-        print(f"  ⚠️  {err}")
+        print(f"  Warning: {err}")
 
 
 # ── Command: gap ─────────────────────────────────────────────────────
@@ -327,7 +327,7 @@ def cmd_gap(args: argparse.Namespace) -> None:
         for g in gap_map.get("priority_gaps", []):
             lines.append(f"- {g}")
         out.write_text("\n".join(lines), encoding="utf-8")
-        print(f"\n✅ Saved to {out.resolve()}")
+        print(f"\nSaved to {out.resolve()}")
 
 
 # ── Command: sections ────────────────────────────────────────────────
@@ -420,7 +420,7 @@ def cmd_sections(args: argparse.Namespace) -> None:
         if claim_qs:
             print(f"\n  Critical Questions:")
             for q in claim_qs:
-                print(f"    ❓ {q}")
+                print(f"    {q}")
 
         lines += [
             f"## {i}. {title}",
@@ -465,7 +465,7 @@ def cmd_sections(args: argparse.Namespace) -> None:
     if args.output:
         out = Path(args.output)
         out.write_text("\n".join(lines), encoding="utf-8")
-        print(f"\n✅ Saved to {out.resolve()}")
+        print(f"\nSaved to {out.resolve()}")
 
 
 # ── Command: hyp ────────────────────────────────────────────────────
@@ -508,7 +508,7 @@ def cmd_hyp(args: argparse.Namespace) -> None:
                 "",
             ]
         out.write_text("\n".join(lines), encoding="utf-8")
-        print(f"\n✅ Saved to {out.resolve()}")
+        print(f"\nSaved to {out.resolve()}")
 
 
 # ── Entry point ────────────────────────────────────────────────────────

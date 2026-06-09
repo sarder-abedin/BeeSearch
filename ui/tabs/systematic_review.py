@@ -151,7 +151,7 @@ def _render_abstract_screener(final_state: dict, settings: dict) -> None:
             score = r.get("score", 0)
             verdict = r.get("verdict", "")
             rationale = r.get("rationale", "")
-            color = {"include": "🟢", "uncertain": "🟡", "exclude": "🔴"}.get(verdict, "⚪")
+            color = {"include": "[INCLUDE]", "uncertain": "[UNCERTAIN]", "exclude": "[EXCLUDE]"}.get(verdict, "")
             with st.expander(f"{color} [{score}/100] {paper.get('title','')[:70]}"):
                 st.markdown(f"**Verdict:** {verdict.upper()}  |  **Score:** {score}/100")
                 st.markdown(f"**Rationale:** {rationale}")
@@ -248,13 +248,13 @@ def _render_preprint_tracking(tracking: list) -> None:
     c1.metric("Journal", summary.get("journal", 0))
     c2.metric("Published (was preprint)", summary.get("published", 0))
     c3.metric("Preprint only", summary.get("preprint", 0))
-    c4.metric("Retracted ⚠️", summary.get("retracted", 0))
+    c4.metric("Retracted", summary.get("retracted", 0))
     st.divider()
     for r in tracking:
         paper = r.get("paper", {})
         status = r.get("preprint_status", "unknown")
-        icon = {"journal": "📰", "published": "✅", "preprint": "⚠️", "retracted": "🚫"}.get(status, "❓")
-        with st.expander(f"{icon} {paper.get('title','')[:70]} — {status.upper()}"):
+        label = {"journal": "[JOURNAL]", "published": "[PUBLISHED]", "preprint": "[PREPRINT]", "retracted": "[RETRACTED]"}.get(status, "[UNKNOWN]")
+        with st.expander(f"{label} {paper.get('title','')[:70]} — {status.upper()}"):
             st.markdown(f"**Status:** {status}")
             st.markdown(f"**Note:** {r.get('note','')}")
             if r.get("published_doi"):
