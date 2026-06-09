@@ -42,6 +42,11 @@ _MAX_TOTAL_CHARS = 20_000    # hard ceiling for the whole context block
 
 # ── LLM factory ──────────────────────────────────────────────────────────────
 
+def _max_predict(settings: dict) -> int:
+    """Reserve 25% of context for the prompt; use the rest for output (min 4096)."""
+    return max(4096, int(settings.get("num_ctx", cfg.num_ctx) * 0.75))
+
+
 def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 4096) -> ChatOllama:
     import httpx
     return ChatOllama(
@@ -238,7 +243,7 @@ def generate_cross_document_summary(
         )
 
     try:
-        result = _invoke(_make_llm(settings, temperature=0.3, num_predict=4096), system, human)
+        result = _invoke(_make_llm(settings, temperature=0.3, num_predict=_max_predict(settings)), system, human)
         return result, ""
     except Exception as e:
         logger.error("Cross-document summary failed: %s", e)
@@ -344,7 +349,7 @@ def generate_literature_review(
     )
 
     try:
-        result = _invoke(_make_llm(settings, temperature=0.2, num_predict=6144), system, human)
+        result = _invoke(_make_llm(settings, temperature=0.2, num_predict=_max_predict(settings)), system, human)
         return result, ""
     except Exception as e:
         logger.error("Literature review generation failed: %s", e)
@@ -498,7 +503,7 @@ def compare_sources(
     )
 
     try:
-        result = _invoke(_make_llm(settings, temperature=0.3, num_predict=4096), system, human)
+        result = _invoke(_make_llm(settings, temperature=0.3, num_predict=_max_predict(settings)), system, human)
         return result, ""
     except Exception as e:
         logger.error("Source comparison failed: %s", e)
@@ -710,7 +715,7 @@ def generate_study_comparison(notebook_id: str, settings: dict) -> Tuple[str, st
     )
 
     try:
-        result = _invoke(_make_llm(settings, temperature=0.2, num_predict=4096), system, human)
+        result = _invoke(_make_llm(settings, temperature=0.2, num_predict=_max_predict(settings)), system, human)
         return result, ""
     except Exception as e:
         logger.error("Study comparison table generation failed: %s", e)

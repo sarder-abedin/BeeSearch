@@ -43,6 +43,11 @@ def _get_searcher() -> AcademicSearcher:
     return _searcher
 
 
+def _max_predict(state: SystematicReviewState) -> int:
+    """Reserve 25% of context for the prompt; use the rest for output (min 4096)."""
+    return max(4096, int(state.get("num_ctx", cfg.num_ctx) * 0.75))
+
+
 def _llm(state: SystematicReviewState, temperature: float = 0.2, num_predict: int = 4096) -> ChatOllama:
     import httpx
     return ChatOllama(
@@ -326,7 +331,7 @@ Return ONLY valid JSON.""",
 def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
     """Generate PRISMA flow, narrative synthesis, themes, gaps, and conclusion."""
     logger.info("[SR Node 5] Synthesis")
-    llm = _llm(state, temperature=0.3, num_predict=6000)
+    llm = _llm(state, temperature=0.3, num_predict=_max_predict(state))
 
     rq = state.get("research_question", "")
     evidence_table = state.get("evidence_table", [])
@@ -396,7 +401,9 @@ def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
         f"""You are writing the narrative synthesis section of a systematic review.
 Research question: {rq}
 
-Write 6-8 paragraphs (700-1100 words) synthesising the findings across the included papers.
+Write a comprehensive narrative synthesis of the findings across the included papers.
+Be thorough and detailed — cover all major themes, convergences, contradictions, and evidence quality.
+Do not truncate your response; write until the synthesis is complete.
 - Use inline citations like [citation_key] after each claim.
 - Discuss convergence and contradictions in the evidence.
 - Comment on strength and quality of evidence.
@@ -405,11 +412,11 @@ Write 6-8 paragraphs (700-1100 words) synthesising the findings across the inclu
     )
 
     # ── Call 2: structured fields as compact JSON ──────────────────────────────
-    llm_structured = _llm(state, temperature=0.1, num_predict=1024)
+    llm_structured = _llm(state, temperature=0.1, num_predict=2048)
     raw_structured = _call(
         llm_structured,
         """Return a JSON object with EXACTLY these keys (no other text):
-{"key_themes":["theme1","theme2"],"research_gaps":["gap1","gap2"],"limitations":"3-4 sentences","conclusion":"4-6 sentences"}""",
+{"key_themes":["theme1","theme2"],"research_gaps":["gap1","gap2"],"limitations":"thorough paragraph","conclusion":"thorough paragraph"}""",
         f"Research question: {rq}\n\nEvidence summary:\n{evidence_text[:1800]}",
     )
 

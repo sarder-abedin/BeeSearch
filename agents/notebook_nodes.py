@@ -251,13 +251,18 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
 
 # ── Node 2: Answer ───────────────────────────────────────────────────────────
 
+def _max_predict(state: NotebookState) -> int:
+    """Reserve 25% of context for the prompt; use the rest for output (min 4096)."""
+    return max(4096, int(state.get("num_ctx", cfg.num_ctx) * 0.75))
+
+
 def _llm(state: NotebookState, temperature: float = 0.3) -> ChatOllama:
     import httpx
     return ChatOllama(
         model=state.get("model_name", cfg.ollama_model),
         base_url=cfg.ollama_base_url,
         temperature=temperature,
-        num_predict=4096,
+        num_predict=_max_predict(state),
         num_ctx=state.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(180.0)},
     )
@@ -352,7 +357,7 @@ STRICT RULES:
    You may cite multiple sources like [1][3].
 3. If the sources do not contain enough information to answer, say so plainly:
    "The sources in this notebook don't cover that." Do not guess or invent facts.
-4. Give comprehensive, detailed answers. When the sources contain sufficient information, write 5–8 paragraphs covering all relevant aspects. Do not truncate your response.
+4. Give comprehensive, detailed answers. Cover all relevant aspects the sources support. Do not truncate your response — write until the answer is complete.
 5. Quote short phrases verbatim when precision matters.
 6. Never cite a source number that was not provided.
 7. At the very end, append EXACTLY this JSON on its own line and nothing after it:
