@@ -330,6 +330,143 @@ def cmd_gap(args: argparse.Namespace) -> None:
         print(f"\n✅ Saved to {out.resolve()}")
 
 
+# ── Command: sections ────────────────────────────────────────────────
+
+def cmd_sections(args: argparse.Namespace) -> None:
+    """Section-by-section breakdown of a notebook source with optional expert review."""
+    from agents.notebook_memory import NotebookMemory
+    from agents.section_summary import (
+        detect_sections_hybrid,
+        generate_section_claim_questions,
+        get_doc_chunks,
+        review_section,
+        summarize_section,
+    )
+
+    memory = NotebookMemory()
+    notebook = memory.load(args.notebook_id)
+    if not notebook:
+        print(f"Error: notebook '{args.notebook_id}' not found. Use 'nb --list' to see notebooks.")
+        sys.exit(1)
+
+    sources = notebook.get("sources", [])
+    if not sources:
+        print("Error: this notebook has no sources. Add documents first.")
+        sys.exit(1)
+
+    # Resolve source
+    chosen_doc_id: str = ""
+    chosen_filename: str = ""
+    if args.source:
+        # Match by filename substring (case-insensitive)
+        for s in sources:
+            if args.source.lower() in s["filename"].lower():
+                chosen_doc_id = s["doc_id"]
+                chosen_filename = s["filename"]
+                break
+        if not chosen_doc_id:
+            print(f"Error: no source matching '{args.source}' found.")
+            print("Available sources:")
+            for s in sources:
+                print(f"  {s['filename']}")
+            sys.exit(1)
+    else:
+        if len(sources) == 1:
+            chosen_doc_id = sources[0]["doc_id"]
+            chosen_filename = sources[0]["filename"]
+        else:
+            print("Available sources:")
+            for i, s in enumerate(sources, 1):
+                print(f"  {i}. {s['filename']}")
+            try:
+                idx = int(input("Select source number: ")) - 1
+                chosen_doc_id = sources[idx]["doc_id"]
+                chosen_filename = sources[idx]["filename"]
+            except (ValueError, IndexError):
+                print("Invalid selection.")
+                sys.exit(1)
+
+    _banner(f"Section Breakdown — {chosen_filename}")
+    print(f"Notebook  : {args.notebook_id}")
+    print(f"Level     : {args.level}")
+    print(f"Review    : {'yes' if args.review else 'no'}")
+    print()
+
+    doc_chunks = get_doc_chunks(notebook, chosen_doc_id)
+    if not doc_chunks:
+        print("Error: no chunks found for this source.")
+        sys.exit(1)
+
+    # ── Detect sections
+    print("Detecting sections…")
+    settings_model = args.model
+    settings_ctx = args.num_ctx
+    sections = detect_sections_hybrid(doc_chunks, settings_model, settings_ctx)
+    print(f"Found {len(sections)} section(s).\n")
+
+    lines: list[str] = [f"# Section Breakdown — {chosen_filename}\n"]
+    reviews: list[dict] = []
+
+    # ── Summarise + claim questions
+    for i, (title, sec_chunks) in enumerate(sections, 1):
+        print(f"[{i}/{len(sections)}] Summarising: {title[:60]}…")
+        summary = summarize_section(title, sec_chunks, args.level, settings_model, settings_ctx)
+        claim_qs = generate_section_claim_questions(title, sec_chunks, settings_model, settings_ctx)
+
+        _section(f"{i}. {title}")
+        print(summary)
+        if claim_qs:
+            print(f"\n  Critical Questions:")
+            for q in claim_qs:
+                print(f"    ❓ {q}")
+
+        lines += [
+            f"## {i}. {title}",
+            "",
+            summary,
+            "",
+        ]
+        if claim_qs:
+            lines.append("**Critical Questions:**")
+            for q in claim_qs:
+                lines.append(f"- {q}")
+            lines.append("")
+
+    # ── Expert review (optional)
+    if args.review:
+        print("\nGenerating expert reviews…")
+        lines.append("---\n# Expert Review\n")
+        for i, (title, sec_chunks) in enumerate(sections, 1):
+            print(f"  [{i}/{len(sections)}] Reviewing: {title[:60]}…")
+            rev = review_section(title, sec_chunks, settings_model, settings_ctx)
+            reviews.append(rev)
+
+            _section(f"Expert Review — {title}")
+            print(f"  Strengths   : {rev.get('strengths', '')}")
+            print(f"  Weaknesses  : {rev.get('weaknesses', '')}")
+            print(f"  Limitations : {rev.get('limitations', '')}")
+            print(f"  Improvements: {rev.get('improvements', '')}")
+
+            lines += [
+                f"## {i}. {title}",
+                "",
+                f"**Strengths:** {rev.get('strengths', '')}",
+                "",
+                f"**Weaknesses:** {rev.get('weaknesses', '')}",
+                "",
+                f"**Limitations:** {rev.get('limitations', '')}",
+                "",
+                f"**How to Improve:** {rev.get('improvements', '')}",
+                "",
+            ]
+
+    # ── Save to file
+    if args.output:
+        out = Path(args.output)
+        out.write_text("\n".join(lines), encoding="utf-8")
+        print(f"\n✅ Saved to {out.resolve()}")
+
+
 # ── Command: hyp ────────────────────────────────────────────────────
 
 def cmd_hyp(args: argparse.Namespace) -> None:
@@ -438,6 +575,20 @@ Examples:
     p_gap.add_argument("-o", "--output", metavar="FILE",
                        help="Save gap map to FILE")
 
+    # ─ sections
+    p_sec = sub.add_parser("sections", parents=[parent],
+                           help="Section-by-section breakdown of a notebook source")
+    p_sec.add_argument("notebook_id", help="Notebook ID")
+    p_sec.add_argument("--source", metavar="FILENAME",
+                       help="Filename substring to match (prompts if omitted)")
+    p_sec.add_argument("--level", choices=["novice", "intermediate", "expert"],
+                       default="intermediate",
+                       help="Explanation level (default: intermediate)")
+    p_sec.add_argument("--review", action="store_true",
+                       help="Also generate expert reviewer feedback for each section")
+    p_sec.add_argument("-o", "--output", metavar="FILE",
+                       help="Save section breakdown to FILE (.md)")
+
     # ─ hyp
     p_hyp = sub.add_parser("hyp", parents=[parent],
                            help="Generate testable hypotheses")
@@ -460,6 +611,7 @@ Examples:
         "sr": cmd_sr,
         "nb": cmd_nb,
         "bib": cmd_bib,
+        "sections": cmd_sections,
         "gap": cmd_gap,
         "hyp": cmd_hyp,
     }
