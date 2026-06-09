@@ -787,7 +787,8 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
         help="Agent 3 (Retrieval) uses this query to surface the most relevant chunks. "
              "Leave blank for a broad overview.",
     )
-    query_final, query_ready = render_query_gate(query, key=f"nb_pipeline_query_{active_id}", settings=settings)
+    query_final, query_ready = render_query_gate(query, key=f"nb_pipeline_query_{active_id}", settings=settings,
+                                                  context_hint="research notebook analysis query")
 
     cache_key = f"nb_pipeline_{active_id}"
     col_run, col_clr = st.columns([4, 1])
@@ -1021,7 +1022,8 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
         key=f"nb_rpt_goal_{active_id}",
         placeholder="e.g. 'Summarise key findings on transformer attention mechanisms'",
     )
-    goal_final, goal_ready = render_query_gate(goal, key=f"nb_rpt_goal_{active_id}", settings=settings)
+    goal_final, goal_ready = render_query_gate(goal, key=f"nb_rpt_goal_{active_id}", settings=settings,
+                                               context_hint="research notebook report goal")
     col1, col2 = st.columns(2)
     include_academic = col1.toggle(
         "Search academic sources",
@@ -1220,7 +1222,8 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
         placeholder=f"Ask anything about {nb_name}…",
         key=f"nb_explain_chat_{active_id}",
     )
-    message = render_chat_gate(pending or user_input, key=f"nb_explain_{active_id}", settings=settings)
+    message = render_chat_gate(pending or user_input, key=f"nb_explain_{active_id}", settings=settings,
+                               context_hint="research question about a document section")
     if not message:
         return
 
@@ -1311,7 +1314,8 @@ def _render_cross_notebook_search(memory: NotebookMemory, settings: dict) -> Non
                 placeholder="e.g. transformer attention mechanism",
                 label_visibility="collapsed",
             )
-            query_final, query_ready = render_query_gate(query, key="xns_query", settings=settings)
+            query_final, query_ready = render_query_gate(query, key="xns_query", settings=settings,
+                                                          context_hint="cross-notebook search query")
         with col_n:
             limit = st.number_input(
                 "Max results", min_value=5, max_value=100, value=20, step=5,
@@ -1636,7 +1640,8 @@ for conversational science communication with multiple explanation styles.
             typed = st.chat_input(
                 placeholder="Ask a question about your sources…", key="nb_chat_input",
             )
-            message = render_chat_gate(pending or typed, key="nb_chat", settings=settings)
+            message = render_chat_gate(pending or typed, key="nb_chat", settings=settings,
+                                        context_hint="research notebook chat message")
             if not message:
                 pass  # fall through to other tabs rendering
             else:

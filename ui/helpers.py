@@ -495,10 +495,13 @@ def render_feedback_section(
 
 # ── Grammar check gate (optional pre-submission query correction) ──────────────
 
-def _run_grammar_check(text: str, settings: dict) -> dict:
+def _run_grammar_check(text: str, settings: dict, context_hint: str = "") -> dict:
     from tools.grammar_check import check_and_fix_grammar
     return check_and_fix_grammar(
-        text, model_name=settings.get("model", ""), num_ctx=settings.get("num_ctx", 8192),
+        text,
+        model_name=settings.get("model", ""),
+        num_ctx=settings.get("num_ctx", 8192),
+        context_hint=context_hint,
     )
 
 
@@ -537,25 +540,32 @@ def _render_grammar_suggestion(cached: dict, *, key: str) -> None:
             st.rerun()
 
 
-def render_query_gate(raw_text: str, *, key: str, settings: dict) -> tuple[str, bool]:
+def render_query_gate(
+    raw_text: str,
+    *,
+    key: str,
+    settings: dict,
+    context_hint: str = "",
+) -> tuple[str, bool]:
     """
     Optional grammar-check gate for a text_input/text_area query, paired with a
     "Run"-style action button elsewhere on the page.
 
     Renders a small radio toggle ("Use as typed" / "Check grammar before
-    running"). When checking is enabled, runs a quick LLM grammar/spelling pass
-    the first time it sees this exact text, and shows an inline review with
-    three resolutions: accept the suggestion, keep the original, or hand-edit it.
+    running"). When checking is enabled, runs a conservative LLM spelling/
+    punctuation pass the first time it sees this exact text, and shows an
+    inline review with three resolutions: accept the suggestion, keep the
+    original, or hand-edit it.
 
     Returns ``(text_to_submit, ready)``:
       - ``ready=True``  → safe to proceed; ``text_to_submit`` is what should be
-        processed (the original if checking is off / text unchanged / user kept
-        it, or the user-approved/edited correction otherwise).
-      - ``ready=False`` → a suggestion is awaiting the user's decision; the
-        caller's action should be held off (e.g. show "resolve the suggestion
-        above, then click Run again").
+        processed.
+      - ``ready=False`` → a suggestion is awaiting the user's decision; hold
+        off the downstream action.
 
-    `key` must be unique per field (used to namespace widgets and cached state).
+    ``key`` must be unique per field.  ``context_hint`` is a short phrase
+    describing what the text is (e.g. "systematic review research question")
+    so the LLM avoids mis-correcting domain vocabulary.
     """
     mode = st.radio(
         "Grammar check",
@@ -572,8 +582,8 @@ def render_query_gate(raw_text: str, *, key: str, settings: dict) -> tuple[str, 
     cached = st.session_state.get(state_key)
 
     if cached is None or cached["source"] != raw_text:
-        with st.spinner("Checking grammar…"):
-            result = _run_grammar_check(raw_text, settings)
+        with st.spinner("Checking spelling and punctuation…"):
+            result = _run_grammar_check(raw_text, settings, context_hint=context_hint)
         if not result["changed"]:
             st.session_state[state_key] = {"source": raw_text, "corrected": raw_text, "final": raw_text}
             return raw_text, True
@@ -589,19 +599,27 @@ def render_query_gate(raw_text: str, *, key: str, settings: dict) -> tuple[str, 
     return raw_text, False
 
 
-def render_chat_gate(raw_message: str | None, *, key: str, settings: dict) -> str | None:
+def render_chat_gate(
+    raw_message: str | None,
+    *,
+    key: str,
+    settings: dict,
+    context_hint: str = "",
+) -> str | None:
     """
     Optional grammar-check gate for a chat-style input (st.chat_input / pending
     follow-up question). Renders a small radio toggle once per call; pass it
     whatever the chat input returned (often None).
 
     When checking is enabled and a fresh message arrives, the message is held
-    back, quickly grammar-checked, and shown for the user's approval (accept /
-    keep original / hand-edit) before it is sent into the conversation.
+    back, checked for spelling/punctuation errors, and shown for the user's
+    approval before it is sent into the conversation.
+
+    ``context_hint`` is a short phrase describing the input (e.g. "research
+    notebook chat message") to prevent the LLM from mis-correcting domain terms.
 
     Returns the message that should be processed THIS run, or None if nothing
-    should be sent yet (checking disabled + no message, or a suggestion is still
-    awaiting the user's decision).
+    should be sent yet.
     """
     mode = st.radio(
         "Grammar check",
@@ -634,8 +652,8 @@ def render_chat_gate(raw_message: str | None, *, key: str, settings: dict) -> st
         return final
 
     if cached["corrected"] is None:
-        with st.spinner("Checking grammar…"):
-            result = _run_grammar_check(cached["source"], settings)
+        with st.spinner("Checking spelling and punctuation…"):
+            result = _run_grammar_check(cached["source"], settings, context_hint=context_hint)
         if not result["changed"]:
             st.session_state.pop(state_key, None)
             return cached["source"]
