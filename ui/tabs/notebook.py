@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import streamlit as st
 
@@ -1002,6 +1003,8 @@ def _rebuild_processed_docs(notebook: dict) -> list:
         docs.append(ProcessedDocument(
             doc_id=doc_id,
             filename=filename,
+            file_type=src.get("file_type", Path(filename).suffix.lstrip(".").lower() or "unknown"),
+            total_pages=src.get("total_pages", len(set(c.get("page_num", 0) for c in sorted_chunks))),
             total_chunks=len(doc_chunks),
             chunks=doc_chunks,
             raw_text=raw_text,
@@ -1278,6 +1281,32 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
             return
 
     step_log.empty()
+
+    # Source decision badge
+    source_decision = final.get("source_decision", {})
+    if source_decision:
+        score = source_decision.get("coverage_score", 10)
+        used_online = source_decision.get("used_online", False)
+        online_count = source_decision.get("online_count", 0)
+        sources_searched = source_decision.get("sources_searched", [])
+        reason = source_decision.get("reason", "")
+        if used_online:
+            src_labels = []
+            if "academic" in sources_searched:
+                src_labels.append("arXiv / Semantic Scholar")
+            if "web" in sources_searched:
+                src_labels.append("web")
+            src_str = " + ".join(src_labels) if src_labels else "online"
+            badge = (
+                f"Documents insufficient (coverage {score}/10) — "
+                f"supplemented with {online_count} online source(s) "
+                f"({src_str})"
+            )
+            st.caption(badge)
+            if reason:
+                st.caption(f"Reason: {reason}")
+        else:
+            st.caption(f"Answered from your documents (coverage {score}/10)")
 
     with st.chat_message("assistant"):
         st.markdown(final.get("assistant_response", ""))
