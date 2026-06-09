@@ -1,9 +1,6 @@
 <p align="center">
   <img src="assets/logo.png" alt="BeeSearch logo" width="160">
 </p>
-
-# BeeSearch
-
 Local AI tools for systematic literature review and source-grounded research notebooks — no cloud, no API fees, no data leaving your machine.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
