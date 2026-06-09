@@ -382,6 +382,9 @@ def cmd_sections(args: argparse.Namespace) -> None:
                 idx = int(input("Select source number: ")) - 1
                 chosen_doc_id = sources[idx]["doc_id"]
                 chosen_filename = sources[idx]["filename"]
+            except EOFError:
+                print("No input available (non-interactive mode). Use --source to specify a file.")
+                sys.exit(1)
             except (ValueError, IndexError):
                 print("Invalid selection.")
                 sys.exit(1)
@@ -435,7 +438,7 @@ def cmd_sections(args: argparse.Namespace) -> None:
     # ── Expert review (optional)
     if args.review:
         print("\nGenerating expert reviews…")
-        lines.append("---\n# Expert Review\n")
+        lines += ["---", "", "# Expert Review", ""]
         for i, (title, sec_chunks) in enumerate(sections, 1):
             print(f"  [{i}/{len(sections)}] Reviewing: {title[:60]}…")
             rev = review_section(title, sec_chunks, settings_model, settings_ctx)
