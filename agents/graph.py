@@ -41,6 +41,11 @@ _MAX_WEB_CONTEXT = 2_000
 
 # ── LLM helpers ────────────────────────────────────────────────────────────────
 
+def _max_predict(state: dict) -> int:
+    """Reserve 25% of context for the prompt; use the rest for output (min 4096)."""
+    return max(4096, int(state.get("num_ctx", cfg.num_ctx) * 0.75))
+
+
 def _llm(state: dict, temperature: float = 0.3, num_predict: int = 4096) -> ChatOllama:
     import httpx
     return ChatOllama(
@@ -252,7 +257,7 @@ def _step_report_generation(state: dict) -> dict:
     )
 
     try:
-        report = _invoke(_llm(state, temperature=0.3, num_predict=3000),
+        report = _invoke(_llm(state, temperature=0.3, num_predict=_max_predict(state)),
                          system, f"Research goal: {goal}\n\n{context}")
         state["report"] = report
 
