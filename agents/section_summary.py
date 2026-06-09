@@ -102,8 +102,8 @@ def _is_heading_heuristic(text: str) -> bool:
     t = text.strip()
     if not t or len(t) > 120:
         return False
-    # Headings don't end with sentence-final punctuation
-    if t[-1] in ".,;:!?":
+    # Headings don't end with sentence-final punctuation (colon is allowed — "Methods:")
+    if t[-1] in ".,;!?":
         return False
     lower = t.lower()
     # Direct match against known headings (strip trailing 's' for plurals)
@@ -140,8 +140,10 @@ def detect_sections_heuristic(
         if _is_heading_heuristic(text):
             if current_chunks:
                 sections.append((current_title or "Preamble", current_chunks))
-            current_title = text
-            current_chunks = []
+            # Use only the first line as the title; retain the full chunk so any
+            # body text in the same chunk is not silently discarded.
+            current_title = text.split("\n", 1)[0].strip()
+            current_chunks = [chunk]
         else:
             current_chunks.append(chunk)
 
@@ -185,13 +187,13 @@ def detect_sections_llm(
     try:
         llm = _make_llm(model_name, num_ctx, temperature=0.0, num_predict=512)
         raw = _invoke(llm, system, human)
-        raw = re.sub(r"```[a-z]*\n?", "", raw).strip()
+        raw = re.sub(r"```[a-zA-Z0-9]*\n?", "", raw).strip()
         m = re.search(r"\[.*\]", raw, re.DOTALL)
         if not m:
             raise ValueError("No JSON array in LLM response")
         boundaries: List[Dict[str, Any]] = json.loads(m.group(0))
         boundaries = sorted(
-            [b for b in boundaries if isinstance(b.get("start"), int)],
+            [b for b in boundaries if isinstance(b.get("start"), (int, float))],
             key=lambda b: b["start"],
         )
         if not boundaries:
@@ -385,11 +387,18 @@ Do not be vague or generic. Write as a domain expert."""
     try:
         llm = _make_llm(model_name, num_ctx, temperature=0.1, num_predict=1024)
         raw = _invoke(llm, system, human)
-        raw = re.sub(r"```[a-z]*\n?", "", raw).strip()
+        raw = re.sub(r"```[a-zA-Z0-9]*\n?", "", raw).strip()
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
             raise ValueError("No JSON object in response")
         data = json.loads(m.group(0))
+        # If the LLM wrapped the result in an outer object, dig one level deeper.
+        _keys = {"strengths", "weaknesses", "limitations", "improvements"}
+        if not _keys.intersection(data.keys()):
+            for v in data.values():
+                if isinstance(v, dict) and _keys.intersection(v.keys()):
+                    data = v
+                    break
         return {
             "strengths":    str(data.get("strengths", "")).strip(),
             "weaknesses":   str(data.get("weaknesses", "")).strip(),
@@ -438,12 +447,22 @@ def generate_section_claim_questions(
     try:
         llm = _make_llm(model_name, num_ctx, temperature=0.2, num_predict=512)
         raw = _invoke(llm, system, human)
-        raw = re.sub(r"```[a-z]*\n?", "", raw).strip()
+        raw = re.sub(r"```[a-zA-Z0-9]*\n?", "", raw).strip()
         m = re.search(r"\[.*\]", raw, re.DOTALL)
         if not m:
             raise ValueError("No JSON array in response")
-        questions = json.loads(m.group(0))
-        return [str(q).strip() for q in questions if str(q).strip()][:5]
+        parsed = json.loads(m.group(0))
+        # Flatten if the LLM wrapped questions in objects (e.g. [{"question": "..."}])
+        questions: List[str] = []
+        for item in parsed:
+            if isinstance(item, str):
+                questions.append(item)
+            elif isinstance(item, dict):
+                for v in item.values():
+                    if isinstance(v, str) and v.strip():
+                        questions.append(v)
+                        break
+        return [q.strip() for q in questions if q.strip()][:5]
     except Exception as exc:
         logger.warning("generate_section_claim_questions failed for '%s': %s", title, exc)
         return []

@@ -314,7 +314,16 @@ def _tab_cross_summary(active_id: str, notebook: dict, settings: dict) -> None:
         st.info("Add at least one source to enable section breakdown.")
         return
 
-    src_options = {s["filename"]: s["doc_id"] for s in sources}
+    # Build display-label → doc_id map; deduplicate identical filenames with a suffix.
+    src_options: dict = {}
+    _seen: dict = {}
+    for s in sources:
+        name = s["filename"]
+        count = _seen.get(name, 0)
+        _seen[name] = count + 1
+        label = name if count == 0 else f"{name} ({count + 1})"
+        src_options[label] = s["doc_id"]
+
     chosen_filename = st.selectbox(
         "Select source to break down",
         list(src_options.keys()),
