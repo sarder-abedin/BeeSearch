@@ -44,24 +44,22 @@ def _make_llm(model_name: str, num_ctx: int) -> ChatOllama:
     )
 
 
-def _is_conservative_fix(original: str, corrected: str, max_change_ratio: float = 0.25) -> bool:
-    """Return True if the correction looks like a genuine minor fix, not a rewrite.
+def _is_conservative_fix(original: str, corrected: str) -> bool:
+    """Return True if the correction looks like a genuine spell/punctuation fix.
 
-    Rejects the suggestion when:
-    - word count changed by more than 20 %
-    - more than 25 % of word positions differ
+    Only rejects suggestions where the word *count* changed by more than 30 %,
+    which reliably catches rewrites that add or remove whole phrases.
+
+    Word-position differences are intentionally NOT checked — a sentence with
+    two misspellings out of three words would have 66 % word-position changes,
+    which is a valid spell fix, not a rewrite.
     """
-    orig_words = original.lower().split()
-    corr_words = corrected.lower().split()
+    orig_words = original.split()
+    corr_words = corrected.split()
     if not orig_words:
         return True
-    # Reject if length changed substantially
-    if abs(len(orig_words) - len(corr_words)) / len(orig_words) > 0.20:
-        return False
-    # Count positional word differences
-    min_len = min(len(orig_words), len(corr_words))
-    changes = sum(1 for a, b in zip(orig_words[:min_len], corr_words[:min_len]) if a != b)
-    return (changes / len(orig_words)) <= max_change_ratio
+    length_ratio = len(corr_words) / len(orig_words)
+    return 0.70 <= length_ratio <= 1.30
 
 
 def check_and_fix_grammar(
