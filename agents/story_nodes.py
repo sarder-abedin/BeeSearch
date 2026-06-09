@@ -144,6 +144,140 @@ def context_loader_node(state: StoryState) -> Dict[str, Any]:
     }
 
 
+# ── Node 1.5: Source Router ───────────────────────────────────────────────────
+
+_COVERAGE_THRESHOLD = 6  # Score below this triggers online search (0–10 scale)
+
+
+def source_router_node(state: StoryState) -> Dict[str, Any]:
+    """
+    Assess how well the uploaded documents cover the user's question.
+
+    Uses a fast LLM call (temperature=0, small token budget) to score coverage
+    0-10.  If the score is below _COVERAGE_THRESHOLD, runs an academic search
+    (arXiv + Semantic Scholar + Google Scholar) and a web search (DuckDuckGo)
+    and stores the results in state for the storyteller to cite.
+    """
+    logger.info("[Story Node 2] Source Router")
+
+    question = state.get("user_message", "")
+    doc_context = state.get("document_context", "")
+
+    # No documents at all — skip LLM assessment and go straight to online search
+    if not doc_context.strip():
+        coverage_score = 0
+        reason = "No documents uploaded — searching online for context."
+    else:
+        import httpx
+        router_llm = ChatOllama(
+            model=state.get("model_name", cfg.ollama_model),
+            base_url=cfg.ollama_base_url,
+            temperature=0.0,
+            num_predict=128,
+            num_ctx=min(state.get("num_ctx", cfg.num_ctx), 4096),
+            sync_client_kwargs={"timeout": httpx.Timeout(60.0)},
+        )
+        system = (
+            "You are a document coverage assessor. Score how well the document context "
+            "covers the question. Return ONLY valid JSON: "
+            '{"score": <0-10>, "reason": "<one sentence>"}\n\n'
+            "Scoring guide:\n"
+            "0-3: context has almost nothing relevant\n"
+            "4-5: partial/tangential — online search would significantly help\n"
+            "6-7: covers the topic reasonably well\n"
+            "8-10: directly and thoroughly answers the question"
+        )
+        human = (
+            f"QUESTION: {question}\n\n"
+            f"DOCUMENT CONTEXT (first 1500 chars):\n{doc_context[:1500]}\n\n"
+            "Score how well the document context covers this question. Return only JSON."
+        )
+        try:
+            raw = _call(router_llm, system, human)
+            match = re.search(r"\{.*?\}", raw, re.DOTALL)
+            if match:
+                parsed = json.loads(match.group(0))
+                coverage_score = max(0, min(10, int(parsed.get("score", 7))))
+                reason = parsed.get("reason", "")
+            else:
+                coverage_score = 7
+                reason = "Coverage assessment inconclusive — defaulting to document-only."
+        except Exception as e:
+            logger.warning("Source router LLM call failed: %s", e)
+            coverage_score = 7
+            reason = f"Coverage assessment failed ({e}) — defaulting to document-only."
+
+    online_results: List[Dict[str, Any]] = []
+    sources_searched: List[str] = []
+
+    if coverage_score < _COVERAGE_THRESHOLD:
+        logger.info("  Coverage score %d/10 — triggering online search", coverage_score)
+
+        from tools.search_tools import AcademicSearcher, WebSearcher
+
+        # Academic search (arXiv + Semantic Scholar + Google Scholar)
+        try:
+            papers = AcademicSearcher().search(question, max_per_source=3)[:5]
+            for p in papers:
+                if p.title:
+                    online_results.append({
+                        "type": "academic",
+                        "title": p.title,
+                        "authors": p.citation_key,
+                        "url": p.url or (f"https://doi.org/{p.doi}" if p.doi else ""),
+                        "snippet": (p.abstract or "")[:400],
+                        "source": p.source,
+                        "year": p.year,
+                        "apa": p.to_apa(),
+                    })
+            if papers:
+                sources_searched.append("academic")
+        except Exception as e:
+            logger.warning("Academic search failed in router: %s", e)
+
+        # Web search (DuckDuckGo — white papers, blogs, tutorials, etc.)
+        try:
+            web_hits = WebSearcher().search(question, max_results=4)
+            for w in web_hits:
+                if w.url and w.title:
+                    online_results.append({
+                        "type": "web",
+                        "title": w.title,
+                        "authors": "",
+                        "url": w.url,
+                        "snippet": w.snippet,
+                        "source": "web",
+                        "year": None,
+                        "apa": f"{w.title}. Retrieved from {w.url}",
+                    })
+            if web_hits:
+                sources_searched.append("web")
+        except Exception as e:
+            logger.warning("Web search failed in router: %s", e)
+
+    source_decision = {
+        "coverage_score": coverage_score,
+        "used_docs": bool(doc_context.strip()),
+        "used_online": len(online_results) > 0,
+        "reason": reason,
+        "sources_searched": sources_searched,
+        "online_count": len(online_results),
+    }
+
+    logger.info(
+        "  Source decision: score=%d, online=%s (%d results)",
+        coverage_score, source_decision["used_online"], len(online_results),
+    )
+
+    return {
+        "online_results": online_results,
+        "source_decision": source_decision,
+        "current_step": "source_router",
+        "completed_steps": state.get("completed_steps", []) + ["source_router"],
+        "progress_pct": 40,
+    }
+
+
 # ── Node 2: Storyteller ────────────────────────────────────────────────────────
 
 _STYLE_DESCRIPTIONS = {
@@ -228,6 +362,31 @@ def storyteller_node(state: StoryState) -> Dict[str, Any]:
     if doc_context:
         doc_block = f"\n\nDOCUMENT CONTEXT (quote short passages when relevant):\n{doc_context}"
 
+    # Online results block (when source router fetched supplementary material)
+    online_results: List[Dict[str, Any]] = state.get("online_results", [])
+    online_block = ""
+    citation_rule = ""
+    if online_results:
+        lines = []
+        for i, r in enumerate(online_results, 1):
+            src_label = "Academic" if r.get("type") == "academic" else "Web"
+            authors = f" — {r['authors']}" if r.get("authors") else ""
+            year = f" ({r['year']})" if r.get("year") else ""
+            lines.append(
+                f"[Source {i}] [{src_label}] {r['title']}{authors}{year}\n"
+                f"URL: {r.get('url', '')}\n"
+                f"Excerpt: {r.get('snippet', '')[:350]}"
+            )
+        online_block = "\n\nONLINE SOURCES (use these to supplement the document context):\n" + "\n\n".join(lines)
+        citation_rule = (
+            "\n6b. You have been given online sources because the document context "
+            "does not fully cover this question. Integrate relevant online sources "
+            "naturally. Cite them inline as [Source N] immediately after the claim "
+            "they support. Add a 'References' section at the very end of your "
+            "explanation (before the JSON) listing only the sources you actually cited, "
+            "formatted as: [Source N] Title — URL"
+        )
+
     # Concepts already covered
     covered_block = ""
     if concepts_covered:
@@ -245,15 +404,15 @@ CORE RULES:
 3. AUDIENCE LEVEL — {level_instruction}
 4. Write 3–6 paragraphs only — no lengthy essays. Be concise and memorable.
 5. Build on the previous conversation — reference and connect to what was discussed before.
-6. Quote short passages from the provided document context when they are directly relevant.
-7. At the very end of your response, append EXACTLY this JSON (no other text after it):
+6. Quote short passages from the provided document context when they are directly relevant.{citation_rule}
+7. At the very end of your response (after any References section), append EXACTLY this JSON (no other text after it):
    {{"suggested_questions": ["Question 1?", "Question 2?", "Question 3?"]}}
    The questions should be natural follow-ups a curious reader would want to ask next.
 8. Do NOT start your response with "Certainly!" or "Of course!" or similar filler phrases.
 9. The topic being explored is: {topic}{_clarification_context(state)}"""
 
     human = f"""USER QUESTION: {state.get('user_message', '')}
-{history_block}{doc_block}{covered_block}
+{history_block}{doc_block}{online_block}{covered_block}
 
 Respond in the "{style}" style, calibrated for a "{level}"-level audience.
 Remember to end with the suggested_questions JSON."""

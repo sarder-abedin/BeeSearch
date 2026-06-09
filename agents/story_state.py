@@ -37,6 +37,10 @@ class StoryState(TypedDict, total=False):
     suggested_questions: List[str]   # 2–3 follow-up question suggestions
     new_concepts: List[str]          # Concepts newly introduced in this turn
 
+    # ── Source routing ───────────────────────────────────────
+    online_results: List[Dict]             # Academic + web results fetched when docs insufficient
+    source_decision: Dict                  # {coverage_score, used_docs, used_online, reason, ...}
+
     # ── Quality Evaluation ────────────────────────────────────
     eval_result: Dict[str, Any]            # {clarity, style_adherence, overall, summary}
 
@@ -74,6 +78,8 @@ def create_story_state(
         assistant_response="",
         suggested_questions=[],
         new_concepts=[],
+        online_results=[],
+        source_decision={},
         eval_result={},
         current_step="start",
         completed_steps=[],
