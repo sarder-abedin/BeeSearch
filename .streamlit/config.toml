@@ -5,6 +5,12 @@
 # (Streamlit otherwise auto-detects and falls back to its near-black dark
 # theme). Colors match the palette already used in ui/theme.py.
 
+[server]
+# Open the browser automatically when running locally (streamlit run app.py).
+# Docker overrides this with ENV STREAMLIT_SERVER_HEADLESS=true; scripts/
+# start*.sh poll the health endpoint and open the browser from the host side.
+headless = false
+
 [theme]
 base = "light"
 primaryColor = "#B45309"
