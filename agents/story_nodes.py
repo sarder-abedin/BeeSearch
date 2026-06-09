@@ -456,36 +456,41 @@ Remember to end with the suggested_questions JSON."""
             "progress_pct": 70,
         }
 
-    # Parse out the suggested_questions JSON from the end of the response
+    # Parse suggested_questions from the response.
+    # LLMs emit this in several formats — try each in order of specificity:
+    #   1. {"suggested_questions": [...]}   (ideal full JSON object)
+    #   2. "suggested_questions": [...]     (JSON key without outer braces)
+    #   3. suggested_questions: [...]       (bare key, no quotes, no braces)
+    # In every case strip the matched fragment from main_response so it never
+    # shows as raw text in the chat bubble.
     suggested_questions: List[str] = []
     main_response = raw_response
 
-    json_marker = '{"suggested_questions":'
-    if json_marker in raw_response:
-        split_idx = raw_response.rfind(json_marker)
-        main_response = raw_response[:split_idx].strip()
-        json_fragment = raw_response[split_idx:]
-        try:
-            parsed = json.loads(json_fragment)
-            suggested_questions = parsed.get("suggested_questions", [])[:3]
-        except Exception:
-            # Try extracting with regex if JSON is malformed
-            match = re.search(r'"suggested_questions"\s*:\s*(\[.*\])', json_fragment, re.DOTALL)
-            if match:
-                try:
-                    suggested_questions = json.loads(match.group(1))[:3]
-                except Exception as inner_e:
-                    logger.warning(
-                        "suggested_questions: regex fallback also failed (%s) — "
-                        "returning []. Raw tail: %s",
-                        inner_e, json_fragment[-80:],
-                    )
-            else:
-                logger.warning(
-                    "suggested_questions: JSON marker present but no valid array "
-                    "extracted — returning []. Raw tail: %s",
-                    json_fragment[-80:],
-                )
+    _SQ_PATTERNS = [
+        # Full JSON object  {"suggested_questions": [...]}
+        re.compile(r'\{[^{}]*"suggested_questions"\s*:\s*(\[.*?\])\s*\}', re.DOTALL),
+        # Quoted key without outer braces  "suggested_questions": [...]
+        re.compile(r'"suggested_questions"\s*:\s*(\[.*?\])', re.DOTALL),
+        # Bare key  suggested_questions: [...] or suggested_questions = [...]
+        re.compile(r'suggested_questions\s*[:=]\s*(\[.*?\])', re.DOTALL | re.IGNORECASE),
+    ]
+
+    for pat in _SQ_PATTERNS:
+        m = pat.search(raw_response)
+        if m:
+            try:
+                candidates = json.loads(m.group(1))
+                if isinstance(candidates, list) and candidates:
+                    suggested_questions = [str(q) for q in candidates if q][:3]
+                    # Remove everything from the start of the match to end of response
+                    main_response = raw_response[:m.start()].strip()
+                    break
+            except Exception:
+                continue
+
+    if not suggested_questions:
+        logger.warning("suggested_questions: no parseable block found — raw tail: %s",
+                       raw_response[-120:])
 
     # Second micro LLM call: extract newly explained concept names
     new_concepts: List[str] = []
