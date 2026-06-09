@@ -446,7 +446,10 @@ class WebSearcher:
 
     def search(self, query: str, max_results: int = 5) -> List[WebResult]:
         try:
-            from ddgs import DDGS
+            try:
+                from duckduckgo_search import DDGS  # duckduckgo-search package (pip name)
+            except ImportError:
+                from ddgs import DDGS  # alternate package name in some installs
             with DDGS() as ddgs:
                 raw = list(ddgs.text(query, max_results=max_results))
             return [
