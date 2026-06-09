@@ -328,11 +328,11 @@ def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) 
         m_table.add_column("Model", style="cyan")
         m_table.add_column("Status")
         for m in available:
-            tag = "⭐ recommended" if m == rec.get("model") else ""
+            tag = "recommended" if m == rec.get("model") else ""
             m_table.add_row(m, tag)
         console.print(m_table)
     else:
-        console.print("[yellow]⚠  No models found in Ollama (is it running?).[/yellow]")
+        console.print("[yellow]No models found in Ollama (is it running?).[/yellow]")
 
     if rec["can_run"]:
         console.print(Panel(
@@ -340,10 +340,10 @@ def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) 
             f"[bold green]Recommended num_ctx:[/bold green] {rec['num_ctx']:,}\n\n"
             f"{rec['reasoning']}\n\n"
             f"[dim]{rec['hardware_note']}[/dim]",
-            title="💡 Recommendation", border_style="green",
+            title="Recommendation", border_style="green",
         ))
         if user_model and user_model not in available:
-            console.print(f"[yellow]⚠  --model {user_model!r} is not pulled.\n"
+            console.print(f"[yellow]--model {user_model!r} is not pulled.\n"
                           f"   Run: ollama pull {user_model}[/yellow]")
         elif user_model and user_model != rec["model"]:
             console.print(f"[dim]ℹ  Using --model {user_model!r} (recommended: {rec['model']})[/dim]")
@@ -351,7 +351,7 @@ def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) 
         if rec.get("tight_fit") and rec.get("safe_alternative") and not user_model:
             safe_alt = rec["safe_alternative"]
             console.print(
-                f"\n[bold yellow]⚠  Tight memory fit detected.[/bold yellow]\n"
+                f"\n[bold yellow]Tight memory fit detected.[/bold yellow]\n"
                 f"  [bold cyan]1[/bold cyan]. {rec['model']} — higher capability, uses ≥85% RAM\n"
                 f"  [bold cyan]2[/bold cyan]. {safe_alt['name']} — {safe_alt['ram_gb']} GB, more headroom"
             )
@@ -366,7 +366,7 @@ def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) 
         console.print(Panel(
             f"[yellow]{rec['reasoning']}[/yellow]\n\n{rec['hardware_note']}\n\n"
             + (f"[bold]Pull:[/bold]\n  {rec['pull_command']}" if rec["pull_command"] else ""),
-            title="⚠️  No Compatible Model", border_style="yellow",
+            title="No Compatible Model", border_style="yellow",
         ))
 
     return rec
@@ -435,7 +435,7 @@ def _process_files(files, chunk_size=800, overlap=150, max_raw_chars=0,
     docs = []
     for fp in files:
         if not fp.exists():
-            console.print(f"[red]✗ File not found: {fp}[/red]")
+            console.print(f"[red]File not found: {fp}[/red]")
             continue
         try:
             processor = get_processor(
@@ -448,12 +448,12 @@ def _process_files(files, chunk_size=800, overlap=150, max_raw_chars=0,
             doc = processor.process_file(fp)
             chars = len(doc.raw_text)
             console.print(
-                f"[green]✓[/green] {fp.name} — {doc.total_pages} pages, {chars:,} chars"
+                f"[green]{fp.name} — {doc.total_pages} pages, {chars:,} chars[/green]"
                 + (f" (capped at {max_raw_chars:,})" if max_raw_chars and chars >= max_raw_chars else "")
             )
             docs.append(doc)
         except Exception as e:
-            console.print(f"[red]✗ Failed to process {fp.name}: {e}[/red]")
+            console.print(f"[red]Failed to process {fp.name}: {e}[/red]")
     return docs
 
 
@@ -523,7 +523,7 @@ def _cmd_systematic_review(args) -> None:
         f"Inclusion: {', '.join(inclusion) or '(auto)'}\n"
         f"Exclusion: {', '.join(exclusion) or '(auto)'}\n"
         f"Model: [bold]{args.model}[/bold]",
-        title="📋 PRISMA Systematic Review", border_style="blue",
+        title="PRISMA Systematic Review", border_style="blue",
     ))
 
     initial_state = create_systematic_review_state(
@@ -560,14 +560,14 @@ def _cmd_systematic_review(args) -> None:
         try:
             final_state = run_systematic_review(initial_state, stream_callback=sr_callback)
         except Exception as e:
-            console.print(f"\n[red]✗ Systematic review failed: {e}[/red]")
+            console.print(f"\n[red]Systematic review failed: {e}[/red]")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
             return
 
     elapsed = time.time() - start
-    console.print(f"\n[green]✓ Complete in {elapsed:.1f}s[/green]\n")
+    console.print(f"\n[green]Complete in {elapsed:.1f}s[/green]\n")
 
     # PRISMA flow
     flow = final_state.get("prisma_flow", {})
@@ -642,7 +642,7 @@ def _cmd_systematic_review(args) -> None:
     from ui.tabs.systematic_review import _build_sr_markdown
     md_text = _build_sr_markdown(rq, final_state)
     out_path.write_text(md_text, encoding="utf-8")
-    console.print(f"\n[bold green]✓ Report saved:[/bold green] {out_path}")
+    console.print(f"\n[bold green]Report saved:[/bold green] {out_path}")
 
     # ── Optional post-run tools ───────────────────────────────────────────────
 
@@ -658,7 +658,7 @@ def _cmd_systematic_review(args) -> None:
                     institution=getattr(args, "sr_institution", ""),
                 )
             docx_path.write_bytes(docx_bytes)
-            console.print(f"[bold green]✓ DOCX saved:[/bold green] {docx_path}")
+            console.print(f"[bold green]DOCX saved:[/bold green] {docx_path}")
         except Exception as e:
             console.print(f"[red]DOCX generation failed: {e}[/red]")
 
@@ -674,7 +674,7 @@ def _cmd_systematic_review(args) -> None:
                     institution=getattr(args, "sr_institution", ""),
                 )
             pdf_path.write_bytes(pdf_bytes)
-            console.print(f"[bold green]✓ PDF saved:[/bold green] {pdf_path}")
+            console.print(f"[bold green]PDF saved:[/bold green] {pdf_path}")
         except Exception as e:
             console.print(f"[red]PDF generation failed: {e}[/red]")
 
@@ -696,7 +696,7 @@ def _cmd_systematic_review(args) -> None:
             for fmt_key, text in summaries.items():
                 summary_path = Path(f"./outputs/summary_{fmt_key}_{sid}.txt")
                 summary_path.write_text(text, encoding="utf-8")
-                console.print(f"[bold green]✓ {fmt_key.title()} summary saved:[/bold green] {summary_path}")
+                console.print(f"[bold green]{fmt_key.title()} summary saved:[/bold green] {summary_path}")
                 console.print(Panel(
                     Markdown(text[:800] + ("…" if len(text) > 800 else "")),
                     title=f"Plain-Language Summary ({fmt_key})", border_style="cyan",
@@ -835,7 +835,7 @@ def _cmd_search_notebooks(query: str, limit: int = 20) -> None:
     console.print(Panel(
         f"[bold]{len(hits)}[/bold] matching passage(s) for [cyan]'{query}'[/cyan] "
         f"across [bold]{nb_count}[/bold] notebook(s)",
-        title="🔍 Cross-Notebook Search", border_style="blue",
+        title="Cross-Notebook Search", border_style="blue",
     ))
     for h in hits:
         console.print(
@@ -877,62 +877,62 @@ def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
         with console.status("[bold blue]Generating cross-document summary…[/bold blue]"):
             result, err = generate_cross_document_summary(notebook_id, settings)
         if err:
-            console.print(f"[red]✗ {err}[/red]"); return
+            console.print(f"[red]{err}[/red]"); return
         console.print(Markdown(result))
         p = out_dir / f"summary_{notebook_id}.md"
         p.write_text(result, encoding="utf-8")
-        console.print(f"\n[green]✓ Saved:[/green] {p}")
+        console.print(f"\n[green]Saved:[/green] {p}")
 
     elif feature == "faq":
         from agents.notebook_advanced import generate_faq
         with console.status("[bold blue]Generating FAQ…[/bold blue]"):
             items, err = generate_faq(notebook_id, settings)
         if err:
-            console.print(f"[red]✗ {err}[/red]"); return
+            console.print(f"[red]{err}[/red]"); return
         for i, item in enumerate(items, 1):
             console.print(f"\n[bold cyan]Q{i}: {item.get('question', '')}[/bold cyan]")
             console.print(Markdown(item.get("answer", "")))
         md = "\n\n".join(f"### {it.get('question','')}\n{it.get('answer','')}" for it in items)
         p = out_dir / f"faq_{notebook_id}.md"
         p.write_text(md, encoding="utf-8")
-        console.print(f"\n[green]✓ Saved:[/green] {p}")
+        console.print(f"\n[green]Saved:[/green] {p}")
 
     elif feature == "review":
         from agents.notebook_advanced import generate_literature_review
         with console.status("[bold blue]Generating literature review…[/bold blue]"):
             result, err = generate_literature_review(notebook_id, settings)
         if err:
-            console.print(f"[red]✗ {err}[/red]"); return
+            console.print(f"[red]{err}[/red]"); return
         console.print(Markdown(result))
         p = out_dir / f"literature_review_{notebook_id}.md"
         p.write_text(result, encoding="utf-8")
-        console.print(f"\n[green]✓ Saved:[/green] {p}")
+        console.print(f"\n[green]Saved:[/green] {p}")
 
     elif feature == "audio":
         from agents.notebook_advanced import generate_audio_summary, synthesize_speech
         with console.status("[bold blue]Generating audio summary script…[/bold blue]"):
             result, err = generate_audio_summary(notebook_id, settings)
         if err:
-            console.print(f"[red]✗ {err}[/red]"); return
-        console.print(Panel(result, title="🔊 Audio Summary Script", border_style="cyan"))
+            console.print(f"[red]{err}[/red]"); return
+        console.print(Panel(result, title="Audio Summary Script", border_style="cyan"))
         txt_path = out_dir / f"audio_summary_{notebook_id}.txt"
         txt_path.write_text(result, encoding="utf-8")
-        console.print(f"[green]✓ Script saved:[/green] {txt_path}")
+        console.print(f"[green]Script saved:[/green] {txt_path}")
         with console.status("[bold blue]Synthesizing speech (~30 s)…[/bold blue]"):
             wav_bytes, wav_err = synthesize_speech(result)
         if wav_err:
-            console.print(f"[yellow]⚠ WAV synthesis unavailable: {wav_err}[/yellow]")
+            console.print(f"[yellow]WAV synthesis unavailable: {wav_err}[/yellow]")
         else:
             wav_path = out_dir / f"audio_summary_{notebook_id}.wav"
             wav_path.write_bytes(wav_bytes)
-            console.print(f"[green]✓ Audio saved:[/green] {wav_path}")
+            console.print(f"[green]Audio saved:[/green] {wav_path}")
 
     elif feature == "timeline":
         from agents.notebook_advanced import extract_timeline
         with console.status("[bold blue]Extracting timeline…[/bold blue]"):
             items, err = extract_timeline(notebook_id, settings)
         if err:
-            console.print(f"[red]✗ {err}[/red]"); return
+            console.print(f"[red]{err}[/red]"); return
         src_names = [s["filename"] for s in notebook.get("sources", [])]
         table = Table(title=f"Timeline — {nb_name}", border_style="blue")
         table.add_column("Year", no_wrap=True)
@@ -955,18 +955,18 @@ def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
                             f"{item.get('significance','')} | {src_label} |")
         p = out_dir / f"timeline_{notebook_id}.md"
         p.write_text("\n".join(md_lines), encoding="utf-8")
-        console.print(f"\n[green]✓ Saved:[/green] {p}")
+        console.print(f"\n[green]Saved:[/green] {p}")
 
     elif feature == "study-table":
         from agents.notebook_advanced import generate_study_comparison
         with console.status("[bold blue]Generating study comparison table…[/bold blue]"):
             result, err = generate_study_comparison(notebook_id, settings)
         if err:
-            console.print(f"[red]✗ {err}[/red]"); return
+            console.print(f"[red]{err}[/red]"); return
         console.print(Markdown(result))
         p = out_dir / f"study_comparison_{notebook_id}.md"
         p.write_text(result, encoding="utf-8")
-        console.print(f"\n[green]✓ Saved:[/green] {p}")
+        console.print(f"\n[green]Saved:[/green] {p}")
 
     elif feature in ("mindmap", "graph"):
         if feature == "mindmap":
@@ -980,18 +980,18 @@ def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
         with console.status(f"[bold blue]{status_msg}[/bold blue]"):
             dot, err = _gen(notebook_id, settings)
         if err:
-            console.print(f"[red]✗ {err}[/red]"); return
+            console.print(f"[red]{err}[/red]"); return
         base = out_dir / base_name
         base.with_suffix(".dot").write_text(dot, encoding="utf-8")
-        console.print(f"[green]✓[/green] DOT: {base.with_suffix('.dot')}")
+        console.print(f"[green]DOT: {base.with_suffix('.dot')}[/green]")
         print(dot)
         for fmt in ("png", "svg"):
             img, img_err = render_dot_bytes(dot, fmt)
             if img:
                 base.with_suffix(f".{fmt}").write_bytes(img)
-                console.print(f"[green]✓[/green] {fmt.upper()}: {base.with_suffix(f'.{fmt}')}")
+                console.print(f"[green]{fmt.upper()}: {base.with_suffix(f'.{fmt}')}[/green]")
             else:
-                console.print(f"[yellow]⚠ {fmt.upper()} render unavailable: {img_err}[/yellow]")
+                console.print(f"[yellow]{fmt.upper()} render unavailable: {img_err}[/yellow]")
 
     elif feature == "compare":
         compare_docs = getattr(args, "compare_docs", [])
@@ -1006,11 +1006,11 @@ def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
         with console.status("[bold blue]Comparing sources…[/bold blue]"):
             result, err = compare_sources(notebook_id, doc_a, doc_b, settings)
         if err:
-            console.print(f"[red]✗ {err}[/red]"); return
+            console.print(f"[red]{err}[/red]"); return
         console.print(Markdown(result))
         p = out_dir / f"comparison_{notebook_id}.md"
         p.write_text(result, encoding="utf-8")
-        console.print(f"\n[green]✓ Saved:[/green] {p}")
+        console.print(f"\n[green]Saved:[/green] {p}")
 
 
 def _cmd_notebook_pipeline(notebook_id: str, args) -> None:
@@ -1050,7 +1050,7 @@ def _cmd_notebook_pipeline(notebook_id: str, args) -> None:
     }
 
     def _cb(node_name: str, partial: dict) -> None:
-        console.print(f"  [green]✓[/green] {_LABELS.get(node_name, node_name)} ({partial.get('progress_pct', 0)}%)")
+        console.print(f"  [green]{_LABELS.get(node_name, node_name)} ({partial.get('progress_pct', 0)}%)[/green]")
 
     try:
         final = run_notebook_pipeline(initial, stream_callback=_cb)
@@ -1069,47 +1069,47 @@ def _cmd_notebook_pipeline(notebook_id: str, args) -> None:
     if final.get("cross_summary"):
         p = out_dir / f"pipeline_summary_{safe_name}.md"
         p.write_text(final["cross_summary"], encoding="utf-8")
-        console.print(f"  [green]✓[/green] Summary:          {p}")
+        console.print(f"  [green]Summary:          {p}[/green]")
 
     if final.get("citation_report"):
         p = out_dir / f"pipeline_citations_{safe_name}.md"
         p.write_text(final["citation_report"], encoding="utf-8")
-        console.print(f"  [green]✓[/green] Citation report:  {p}")
+        console.print(f"  [green]Citation report:  {p}[/green]")
 
     if final.get("knowledge_graph_dot"):
         dot = final["knowledge_graph_dot"]
         base = out_dir / f"pipeline_kg_{safe_name}"
         base.with_suffix(".dot").write_text(dot, encoding="utf-8")
-        console.print(f"  [green]✓[/green] KG DOT:           {base.with_suffix('.dot')}")
+        console.print(f"  [green]KG DOT:           {base.with_suffix('.dot')}[/green]")
         from agents.notebook_advanced import render_dot_bytes
         for fmt in ("png", "svg"):
             img, img_err = render_dot_bytes(dot, fmt)
             if img:
                 base.with_suffix(f".{fmt}").write_bytes(img)
-                console.print(f"  [green]✓[/green] KG {fmt.upper()}:          {base.with_suffix(f'.{fmt}')}")
+                console.print(f"  [green]KG {fmt.upper()}:          {base.with_suffix(f'.{fmt}')}[/green]")
             else:
-                console.print(f"  [yellow]⚠ KG {fmt.upper()} unavailable: {img_err}[/yellow]")
+                console.print(f"  [yellow]KG {fmt.upper()} unavailable: {img_err}[/yellow]")
 
     if final.get("study_guide"):
         guide = final["study_guide"]
         p = out_dir / f"pipeline_study_guide_{safe_name}.md"
         p.write_text(guide, encoding="utf-8")
-        console.print(f"  [green]✓[/green] Study guide (.md): {p}")
+        console.print(f"  [green]Study guide (.md): {p}[/green]")
         try:
             from tools.export_tools import build_docx, build_pdf
             docx_p = out_dir / f"pipeline_study_guide_{safe_name}.docx"
             docx_p.write_bytes(build_docx(guide, []))
-            console.print(f"  [green]✓[/green] Study guide (.docx): {docx_p}")
+            console.print(f"  [green]Study guide (.docx): {docx_p}[/green]")
             pdf_p = out_dir / f"pipeline_study_guide_{safe_name}.pdf"
             pdf_p.write_bytes(build_pdf(guide, []))
-            console.print(f"  [green]✓[/green] Study guide (.pdf): {pdf_p}")
+            console.print(f"  [green]Study guide (.pdf): {pdf_p}[/green]")
         except Exception as exc:
-            console.print(f"  [yellow]⚠ DOCX/PDF export: {exc}[/yellow]")
+            console.print(f"  [yellow]DOCX/PDF export: {exc}[/yellow]")
 
     if final.get("podcast_script"):
         p = out_dir / f"pipeline_podcast_{safe_name}.txt"
         p.write_text(final["podcast_script"], encoding="utf-8")
-        console.print(f"  [green]✓[/green] Podcast script:   {p}")
+        console.print(f"  [green]Podcast script:   {p}[/green]")
 
     console.print("\n[bold green]Pipeline complete.[/bold green]")
 
@@ -1119,7 +1119,7 @@ def _cmd_notebook_pipeline(notebook_id: str, args) -> None:
         if refined != final["study_guide"]:
             refined_p = out_dir / f"pipeline_study_guide_{safe_name}_refined.md"
             refined_p.write_text(refined, encoding="utf-8")
-            console.print(f"  [green]✓[/green] Refined study guide: {refined_p}")
+            console.print(f"  [green]Refined study guide: {refined_p}[/green]")
 
 
 def _cmd_notebook(args) -> None:
@@ -1160,7 +1160,7 @@ def _cmd_notebook(args) -> None:
         if not notebook_id:
             nb_name = getattr(args, "notebook_name", "") or Prompt.ask("Notebook name")
             notebook_id = memory.new_notebook(nb_name.strip() or "Untitled Notebook")
-            console.print(f"[green]✓ Created notebook:[/green] {notebook_id}")
+            console.print(f"[green]Created notebook:[/green] {notebook_id}")
 
     notebook = memory.load(notebook_id)
     if not notebook:
@@ -1187,10 +1187,10 @@ def _cmd_notebook(args) -> None:
             try:
                 store.add_documents(processed)
             except RuntimeError as e:
-                console.print(f"[yellow]⚠ Embedding model unavailable: {e}[/yellow]")
+                console.print(f"[yellow]Embedding model unavailable: {e}[/yellow]")
             for doc in processed:
                 if memory.add_source(notebook_id, doc, source_type="file"):
-                    console.print(f"[green]✓ Added:[/green] {doc.filename}")
+                    console.print(f"[green]Added:[/green] {doc.filename}")
             notebook = memory.load(notebook_id)
 
     console.rule("[bold blue]Research Notebook[/bold blue]")
@@ -1202,7 +1202,7 @@ def _cmd_notebook(args) -> None:
         f"Turns:    {len(notebook.get('conversation', []))}"
         + (("\nFiles:  " + ", ".join(s['filename'][:25] for s in sources[:4])
             + (" …" if len(sources) > 4 else "")) if sources else ""),
-        title="📓 Session Info", border_style="blue",
+        title="Session Info", border_style="blue",
     ))
     console.print(
         "[dim]Type your question, or use a slash command:\n"
@@ -1272,8 +1272,8 @@ def _cmd_notebook(args) -> None:
                 srcs = nb.get("sources", []) if nb else []
                 if srcs:
                     for s in srcs:
-                        icon = "🔗" if s.get("source_type") == "url" else "📄"
-                        console.print(f"  {icon} {s['filename']} ({s.get('total_chunks',0)} chunks)")
+                        src_tag = "[url]" if s.get("source_type") == "url" else "[file]"
+                        console.print(f"  {src_tag} {s['filename']} ({s.get('total_chunks',0)} chunks)")
                 else:
                     console.print("[yellow]No sources yet.[/yellow]")
 
@@ -1298,10 +1298,10 @@ def _cmd_notebook(args) -> None:
                     try:
                         store.add_documents(docs)
                     except RuntimeError as e:
-                        console.print(f"[yellow]⚠ Embedding unavailable: {e}[/yellow]")
+                        console.print(f"[yellow]Embedding unavailable: {e}[/yellow]")
                     for doc in docs:
                         if memory.add_source(notebook_id, doc, source_type="file"):
-                            console.print(f"[green]✓ Added:[/green] {doc.filename}")
+                            console.print(f"[green]Added:[/green] {doc.filename}")
 
             elif cmd == "/url":
                 url = arg.strip() or Prompt.ask("URL")
@@ -1312,7 +1312,7 @@ def _cmd_notebook(args) -> None:
                 with console.status("Fetching…"):
                     doc, err = load_url_as_document(url, processor)
                 if err:
-                    console.print(f"[red]✗ {err}[/red]")
+                    console.print(f"[red]{err}[/red]")
                 else:
                     from tools.hybrid_store import get_or_create_store
                     store = get_or_create_store(
@@ -1324,9 +1324,9 @@ def _cmd_notebook(args) -> None:
                     try:
                         store.add_documents([doc])
                     except RuntimeError as e:
-                        console.print(f"[yellow]⚠ Embedding unavailable: {e}[/yellow]")
+                        console.print(f"[yellow]Embedding unavailable: {e}[/yellow]")
                     if memory.add_source(notebook_id, doc, source_type="url", url=url):
-                        console.print(f"[green]✓ Added:[/green] {doc.filename}")
+                        console.print(f"[green]Added:[/green] {doc.filename}")
 
             elif cmd in ("/summary", "/faq", "/review", "/audio", "/mindmap",
                          "/graph", "/timeline", "/study-table"):
@@ -1398,7 +1398,7 @@ def _cmd_notebook(args) -> None:
             try:
                 final = run_notebook_turn(state)
             except Exception as e:
-                console.print(f"[red]✗ Error: {e}[/red]")
+                console.print(f"[red]Error: {e}[/red]")
                 if getattr(args, "verbose", False):
                     import traceback; traceback.print_exc()
                 continue
@@ -1421,7 +1421,7 @@ def _cmd_notebook(args) -> None:
                 console.print(f"  [dim]{i}. {q}[/dim]")
 
         for err in final.get("errors", []):
-            console.print(f"[yellow]⚠ {err}[/yellow]")
+            console.print(f"[yellow]{err}[/yellow]")
         console.print()
 
 

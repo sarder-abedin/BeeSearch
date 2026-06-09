@@ -13,7 +13,7 @@ from pathlib import Path
 import streamlit as st
 
 _LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"
-_logo = str(_LOGO_PATH) if _LOGO_PATH.exists() else "🐝"
+_logo = str(_LOGO_PATH) if _LOGO_PATH.exists() else "BeeSearch"
 
 st.set_page_config(
     page_title="BeeSearch",

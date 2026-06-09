@@ -582,7 +582,7 @@ def _tab_audio(active_id: str, notebook: dict, settings: dict) -> None:
         )
 
         # Browser TTS via Web Speech API
-        if play_col.button("▶ Play in browser", key=f"nb_play_{active_id}"):
+        if play_col.button("Play in browser", key=f"nb_play_{active_id}"):
             import json as _json
             st.components.v1.html(
                 f"""<script>
@@ -1498,7 +1498,7 @@ for conversational science communication with multiple explanation styles.
                             "Check that the file is readable and not password-protected."
                         )
                 else:
-                    st.caption(f"📎 {len(valid_files)} file(s) indexed and ready.")
+                    st.caption(f"{len(valid_files)} file(s) indexed and ready.")
 
             # ── Add a web page (optional) ─────────────────────
             with st.expander("Add a specific web page (optional)"):

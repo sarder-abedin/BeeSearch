@@ -505,7 +505,7 @@ def _run_grammar_check(text: str, settings: dict) -> dict:
 def _render_grammar_suggestion(cached: dict, *, key: str) -> None:
     """Renders the original-vs-suggested comparison and Accept / Keep / Edit controls.
     Mutates `cached["final"]` in st.session_state and reruns once the user decides."""
-    st.info("✏️ **Suggested grammar fixes** — review below, then choose how to proceed.")
+    st.info("**Suggested grammar fixes** — review below, then choose how to proceed.")
     c1, c2 = st.columns(2)
     with c1:
         st.caption("Your version")
@@ -516,7 +516,7 @@ def _render_grammar_suggestion(cached: dict, *, key: str) -> None:
 
     edit_flag = f"_gc_editing_{key}"
     b1, b2, b3 = st.columns(3)
-    if b1.button("✓ Use suggested", key=f"_gc_accept_{key}", use_container_width=True):
+    if b1.button("Use suggested", key=f"_gc_accept_{key}", use_container_width=True):
         cached["final"] = cached["corrected"]
         st.session_state.pop(edit_flag, None)
         st.rerun()
@@ -524,7 +524,7 @@ def _render_grammar_suggestion(cached: dict, *, key: str) -> None:
         cached["final"] = cached["source"]
         st.session_state.pop(edit_flag, None)
         st.rerun()
-    if b3.button("✏️ Edit it myself", key=f"_gc_editbtn_{key}", use_container_width=True):
+    if b3.button("Edit it myself", key=f"_gc_editbtn_{key}", use_container_width=True):
         st.session_state[edit_flag] = True
 
     if st.session_state.get(edit_flag):
@@ -560,7 +560,7 @@ def render_query_gate(raw_text: str, *, key: str, settings: dict) -> tuple[str, 
     mode = st.radio(
         "Grammar check",
         options=["as_typed", "check_fix"],
-        format_func=lambda m: "Use as typed" if m == "as_typed" else "✓ Check grammar before running",
+        format_func=lambda m: "Use as typed" if m == "as_typed" else "Check grammar before running",
         horizontal=True,
         label_visibility="collapsed",
         key=f"_gc_mode_{key}",
@@ -582,7 +582,7 @@ def render_query_gate(raw_text: str, *, key: str, settings: dict) -> tuple[str, 
 
     if cached["final"] is not None:
         if cached["final"] != cached["source"]:
-            st.caption(f"✓ Using corrected version: _{cached['final'][:140]}{'…' if len(cached['final']) > 140 else ''}_")
+            st.caption(f"Using corrected version: _{cached['final'][:140]}{'…' if len(cached['final']) > 140 else ''}_")
         return cached["final"], True
 
     _render_grammar_suggestion(cached, key=key)
@@ -606,7 +606,7 @@ def render_chat_gate(raw_message: str | None, *, key: str, settings: dict) -> st
     mode = st.radio(
         "Grammar check",
         options=["as_typed", "check_fix"],
-        format_func=lambda m: "Send as typed" if m == "as_typed" else "✓ Check grammar before sending",
+        format_func=lambda m: "Send as typed" if m == "as_typed" else "Check grammar before sending",
         horizontal=True,
         label_visibility="collapsed",
         key=f"_gc_mode_{key}",
