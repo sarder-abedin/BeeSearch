@@ -151,7 +151,7 @@ def _render_abstract_screener(final_state: dict, settings: dict) -> None:
             score = r.get("score", 0)
             verdict = r.get("verdict", "")
             rationale = r.get("rationale", "")
-            color = {"include": "🟢", "uncertain": "🟡", "exclude": "🔴"}.get(verdict, "⚪")
+            color = {"include": "I", "uncertain": "U", "exclude": "E"}.get(verdict, "⚪")
             with st.expander(f"{color} [{score}/100] {paper.get('title','')[:70]}"):
                 st.markdown(f"**Verdict:** {verdict.upper()}  |  **Score:** {score}/100")
                 st.markdown(f"**Rationale:** {rationale}")
@@ -248,7 +248,7 @@ def _render_preprint_tracking(tracking: list) -> None:
     c1.metric("Journal", summary.get("journal", 0))
     c2.metric("Published (was preprint)", summary.get("published", 0))
     c3.metric("Preprint only", summary.get("preprint", 0))
-    c4.metric("Retracted ⚠️", summary.get("retracted", 0))
+    c4.metric("Retracted", summary.get("retracted", 0))
     st.divider()
     for r in tracking:
         paper = r.get("paper", {})
