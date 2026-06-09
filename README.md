@@ -17,8 +17,8 @@ Local AI tools for systematic literature review and source-grounded research not
 
 | Mode | What it does |
 |------|-------------|
-| **1 — Systematic Literature Review** | Full PRISMA ((**P**referred **R**eporting **I**tems for **S**ystematic reviews and **M**eta-**A**nalyses)) pipeline: search Google Scholar + arXiv + Semantic Scholar + CrossRef, LLM abstract screener, inclusion/exclusion screening, evidence extraction, narrative synthesis. Generates DOCX/PDF reports, plain-language summaries, citation networks, preprint tracking, trend analysis, evidence maps, and concept drift detection. |
-| **2 — Research Notebook** | NotebookLM-style workspace: upload PDFs, DOCX, TXT, or web pages; chat with grounded citations from your sources; run a 7-agent analysis pipeline (summary, citation verification, knowledge graph, study guide, podcast script); advanced tools: FAQ, literature review, mind map, timeline, study comparison table. |
+| **1 — Systematic Literature Review** | Full PRISMA pipeline: search Google Scholar + arXiv + Semantic Scholar + CrossRef, LLM abstract screener, inclusion/exclusion screening, evidence extraction, narrative synthesis. Generates DOCX/PDF reports, plain-language summaries, citation networks, preprint tracking, trend analysis, evidence maps, and concept drift detection. |
+| **2 — Research Notebook** | NotebookLM-style workspace: upload PDFs, DOCX, TXT, or web pages; chat with grounded citations; run a 7-agent analysis pipeline; section-by-section breakdown with audience-level explanations, expert reviewer critique, and claim-based Q&A per section. |
 
 ---
 
@@ -36,42 +36,125 @@ Local AI tools for systematic literature review and source-grounded research not
 - **Hybrid RAG** — FAISS dense + BM25 sparse, fused with Reciprocal Rank Fusion
 - **Self-Reflective RAG** — post-retrieval LLM grader removes irrelevant papers/chunks
 - **7-agent Notebook Pipeline** — ingest → summarize → retrieve → verify_citations → build_kg → study_guide → podcast
-- **Adaptive PDF parsing** — Docling (layout-aware, table extraction) for normal documents; pdfplumber streaming fallback for large PDFs to avoid RAM spikes on constrained machines
+- **Section-by-Section Breakdown** — auto-detects document structure (heuristic + LLM fallback); summarises each section at novice / intermediate / expert level; generates claim-based critical questions per section; interactive Q&A anchored to each section
+- **Expert Reviewer Mode** — per-section critique modelled on top journal/conference reviews: strengths, weaknesses, limitations, and actionable improvement guidance
+- **Adaptive PDF parsing** — Docling (layout-aware, table extraction) with pdfplumber streaming fallback for large PDFs
 - **Long-term memory** — all notebooks and SR sessions persist across restarts
 - **Quality scores** — every output self-evaluated with per-dimension scores (1–5)
-- **Both UI and CLI** — Streamlit web app (`streamlit run app.py`) and `main.py` CLI
+- **Both UI and CLI** — Streamlit web app (`streamlit run app.py`) and `main.py` / `cli.py`
 
 ---
 
-## Quick start
+## Installation
 
-### Option A — Local Python
+### Prerequisites
+
+1. **Install [Ollama](https://ollama.ai)** and pull a model:
+
+   ```bash
+   ollama pull llama3.1:8b
+   ollama pull nomic-embed-text   # required for Hybrid RAG in Research Notebook
+   ```
+
+2. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/sarder-abedin/BeeSearch.git
+   cd BeeSearch
+   ```
+
+3. **Copy the environment file:**
+
+   ```bash
+   cp .env.example .env
+   # Edit .env with your preferred model and settings
+   ```
+
+---
+
+### Option A — Virtual Environment
+
+#### macOS / Linux
 
 ```bash
-# 1. Install Ollama and pull a model
-ollama pull llama3.1:8b
-ollama pull nomic-embed-text   # for Hybrid RAG (Research Notebook)
+# Create and activate the virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
-# 2. Clone and install
-git clone https://github.com/sarder-abedin/BeeSearch.git
-cd BeeSearch
+# Install dependencies
 pip install -r requirements.txt
 
-# 3. Launch the UI
+# Launch the Streamlit UI
 streamlit run app.py
 
-# 4. Or use the CLI
+# Or use the CLI
 python main.py --check-system
-python main.py --systematic-review --goal "Effect of sleep deprivation on working memory"
 python main.py --notebook --notebook-name "My Sources"
 ```
 
+#### Windows — Command Prompt
+
+```cmd
+python -m venv .venv
+.venv\Scripts\activate.bat
+
+pip install -r requirements.txt
+
+streamlit run app.py
+```
+
+#### Windows — PowerShell
+
+```powershell
+python -m venv .venv
+
+# If you see an execution-policy error, run this once (then re-open PowerShell):
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+.venv\Scripts\Activate.ps1
+
+pip install -r requirements.txt
+
+streamlit run app.py
+```
+
+---
+
 ### Option B — Docker
 
+Make sure Ollama is running on your host machine **before** starting the container. The container needs to reach it over the Docker bridge network.
+
+#### macOS
+
 ```bash
+# Ollama listens on host.docker.internal automatically on Mac
+docker compose -f docker-compose.mac.yml up --build
+# Open http://localhost:8501
+```
+
+#### Linux (CPU)
+
+```bash
+# Use the host gateway IP so the container can reach Ollama on the host
+OLLAMA_BASE_URL=http://172.17.0.1:11434 docker compose up --build
+# Open http://localhost:8501
+```
+
+#### Linux (GPU — NVIDIA)
+
+```bash
+OLLAMA_BASE_URL=http://172.17.0.1:11434 docker compose -f docker-compose.gpu.yml up --build
+```
+
+#### Windows
+
+```powershell
+# On Windows, Docker Desktop uses host.docker.internal just like macOS
 docker compose up --build
 # Open http://localhost:8501
 ```
+
+> **Tip — finding the bridge IP on Linux:** Run `ip route show default | awk '{print $3}'` or `docker network inspect bridge | grep Gateway`. Common value is `172.17.0.1`. You can also set `network_mode: host` in `docker-compose.yml` so the container shares the host network directly.
 
 ---
 
@@ -146,6 +229,35 @@ python main.py --notebook-pipeline <id>
 python main.py --notebook-pipeline <id> --pipeline-query "What are the main findings?"
 ```
 
+### Section-by-Section Breakdown (CLI)
+
+```bash
+# Basic — intermediate-level breakdown of a source in a notebook
+python cli.py sections <notebook-id> --source paper.pdf
+
+# Choose explanation level
+python cli.py sections <notebook-id> --source paper.pdf --level novice
+python cli.py sections <notebook-id> --source paper.pdf --level expert
+
+# Include expert reviewer critique (strengths / weaknesses / limitations / improvements)
+python cli.py sections <notebook-id> --source paper.pdf --review
+
+# Save the full breakdown to a Markdown file
+python cli.py sections <notebook-id> --source paper.pdf --review -o breakdown.md
+
+# Interactive: prompts for source selection if --source is omitted
+python cli.py sections <notebook-id>
+```
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--source FILENAME` | interactive | Filename substring to match against notebook sources |
+| `--level {novice,intermediate,expert}` | `intermediate` | Explanation depth |
+| `--review` | off | Add expert reviewer critique per section |
+| `-o / --output FILE` | none | Save Markdown output to this file |
+
 ### Interactive notebook slash commands
 
 Once in `--notebook` mode, type:
@@ -165,6 +277,23 @@ Once in `--notebook` mode, type:
 /study-table    Study comparison table
 /quit           Exit
 ```
+
+---
+
+## Research Notebook — UI features
+
+| Tab | What it does |
+|-----|-------------|
+| **Chat** | Source-grounded conversation with inline citations |
+| **Sources** | Upload / manage PDFs, DOCX, TXT, web pages |
+| **Summary** | Cross-document synthesis + **Section-by-Section Breakdown** (per-source drill-down at novice / intermediate / expert level, expert reviewer critique, claim-based questions, interactive per-section Q&A) |
+| **FAQ** | Auto-generated Q&A pairs across all sources |
+| **Literature Review** | Academic-style narrative synthesis |
+| **Mind Map** | Visual concept map (DOT + PNG + SVG) |
+| **Knowledge Graph** | Entity-relationship graph |
+| **Timeline** | Chronological event extraction |
+| **Study Comparison** | Side-by-side study table |
+| **Pipeline** | 7-agent automated analysis |
 
 ---
 
@@ -214,6 +343,7 @@ All outputs are saved to `outputs/`:
 | `knowledge_graph_<id>.dot/png/svg` | Knowledge graph |
 | `mindmap_<id>.dot/png/svg` | Mind map |
 | `timeline_<id>.md` | Chronological timeline |
+| `<name>_sections_<id>.md` | Section-by-section breakdown (CLI `--output`) |
 
 ---
 

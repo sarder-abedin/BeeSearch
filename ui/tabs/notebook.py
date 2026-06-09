@@ -159,6 +159,122 @@ def _dot_export_buttons(dot_string: str, base_name: str, key_prefix: str) -> Non
         c3.caption("SVG unavailable")
 
 
+def _render_section_qa(
+    active_id: str, doc_id: str, section_idx: int,
+    section_title: str, section_chunks: list, level: str, settings: dict,
+) -> None:
+    """Q&A interface scoped to a single section, inside an expander."""
+    from agents.section_summary import answer_section_question
+    qa_hist_key = f"nb_sec_qa_{active_id}_{doc_id}_{section_idx}"
+    qa_history = st.session_state.get(qa_hist_key, [])
+
+    st.caption("Ask a follow-up question about this section:")
+    for turn in qa_history:
+        with st.chat_message(turn["role"]):
+            st.markdown(turn["content"])
+
+    q_key = f"nb_sec_q_{active_id}_{doc_id}_{section_idx}_{len(qa_history)}"
+    q_input = st.text_input(
+        "Question",
+        key=q_key,
+        placeholder=f"Ask about '{section_title[:40]}'…",
+        label_visibility="collapsed",
+    )
+    if st.button("Ask", key=f"nb_sec_ask_{active_id}_{doc_id}_{section_idx}",
+                 type="secondary"):
+        if q_input.strip():
+            with st.spinner("Thinking…"):
+                answer = answer_section_question(
+                    section_title, section_chunks, q_input.strip(), level,
+                    qa_history,
+                    settings.get("model", cfg.ollama_model),
+                    settings.get("num_ctx", cfg.num_ctx),
+                )
+            st.session_state[qa_hist_key] = qa_history + [
+                {"role": "user", "content": q_input.strip()},
+                {"role": "assistant", "content": answer},
+            ]
+            st.session_state[f"nb_sec_last_qa_{active_id}_{doc_id}"] = section_idx
+            st.rerun()
+
+
+def _render_section_breakdown(
+    active_id: str, doc_id: str, level: str,
+    breakdown: list, review: list | None, settings: dict,
+) -> None:
+    """Render per-section expanders: summary, claim questions, Q&A, expert review."""
+    last_qa_idx = st.session_state.get(f"nb_sec_last_qa_{active_id}_{doc_id}")
+    n = len(breakdown)
+    st.caption(
+        f"{n} section{'s' if n != 1 else ''} detected · "
+        f"{level.title()} level"
+        + (" · Expert review available" if review else "")
+    )
+
+    for idx, sec in enumerate(breakdown):
+        title = sec["title"]
+        summary = sec["summary"]
+        claim_questions = sec.get("claim_questions", [])
+        sec_chunks = sec["chunks"]
+        expanded = (idx == 0) or (idx == last_qa_idx)
+
+        with st.expander(f"**{title}**", expanded=expanded):
+            # ── Plain-language summary ────────────────────────────────────
+            st.markdown(summary)
+
+            # ── Claim questions (auto-generated) ─────────────────────────
+            if claim_questions:
+                st.divider()
+                st.markdown("**Critical Questions — unclear or unsupported claims:**")
+                qa_hist_key = f"nb_sec_qa_{active_id}_{doc_id}_{idx}"
+                from agents.section_summary import answer_section_question
+                for qi, q in enumerate(claim_questions):
+                    if st.button(
+                        q,
+                        key=f"nb_sec_cq_{active_id}_{doc_id}_{idx}_{qi}",
+                        use_container_width=True,
+                    ):
+                        qa_history = st.session_state.get(qa_hist_key, [])
+                        with st.spinner("Answering…"):
+                            answer = answer_section_question(
+                                title, sec_chunks, q, level, qa_history,
+                                settings.get("model", cfg.ollama_model),
+                                settings.get("num_ctx", cfg.num_ctx),
+                            )
+                        st.session_state[qa_hist_key] = qa_history + [
+                            {"role": "user", "content": q},
+                            {"role": "assistant", "content": answer},
+                        ]
+                        st.session_state[f"nb_sec_last_qa_{active_id}_{doc_id}"] = idx
+                        st.rerun()
+
+            # ── Expert review ─────────────────────────────────────────────
+            if review and idx < len(review):
+                rev = review[idx]
+                st.divider()
+                st.markdown("**Expert Review**")
+                col_s, col_w = st.columns(2)
+                with col_s:
+                    st.markdown("**Strengths**")
+                    st.markdown(rev.get("strengths") or "—")
+                with col_w:
+                    st.markdown("**Weaknesses**")
+                    st.markdown(rev.get("weaknesses") or "—")
+                col_l, col_i = st.columns(2)
+                with col_l:
+                    st.markdown("**Limitations**")
+                    st.markdown(rev.get("limitations") or "—")
+                with col_i:
+                    st.markdown("**How to Improve**")
+                    st.markdown(rev.get("improvements") or "—")
+
+            # ── User Q&A ──────────────────────────────────────────────────
+            st.divider()
+            _render_section_qa(
+                active_id, doc_id, idx, title, sec_chunks, level, settings,
+            )
+
+
 def _tab_cross_summary(active_id: str, notebook: dict, settings: dict) -> None:
     from agents.notebook_advanced import generate_cross_document_summary
     st.markdown(
@@ -182,6 +298,145 @@ def _tab_cross_summary(active_id: str, notebook: dict, settings: dict) -> None:
             key=f"nb_dl_summary_{active_id}",
         )
         _docx_pdf_buttons(result, f"summary_{nb_name}", f"nb_summary_{active_id}")
+
+    # ── Section-by-Section Breakdown ─────────────────────────────────────────
+    st.divider()
+    st.markdown("#### Section-by-Section Breakdown")
+    st.caption(
+        "Select one source to drill into its structure section by section. "
+        "Each section gets a plain-language summary, auto-generated critical "
+        "questions about unclear or unsupported claims, an interactive Q&A, "
+        "and optional expert reviewer feedback."
+    )
+
+    sources = notebook.get("sources", [])
+    if not sources:
+        st.info("Add at least one source to enable section breakdown.")
+        return
+
+    src_options = {s["filename"]: s["doc_id"] for s in sources}
+    chosen_filename = st.selectbox(
+        "Select source to break down",
+        list(src_options.keys()),
+        key=f"nb_sec_src_{active_id}",
+    )
+    chosen_doc_id = src_options[chosen_filename]
+
+    level = st.radio(
+        "Explanation level",
+        options=["novice", "intermediate", "expert"],
+        format_func=lambda x: {
+            "novice": "Novice",
+            "intermediate": "Intermediate",
+            "expert": "Expert",
+        }[x],
+        index=1,
+        horizontal=True,
+        key=f"nb_sec_level_{active_id}",
+    )
+
+    breakdown_key = f"nb_sec_{active_id}_{chosen_doc_id}_{level}"
+    review_key = f"nb_sec_rev_{active_id}_{chosen_doc_id}"
+    breakdown = st.session_state.get(breakdown_key)
+    review = st.session_state.get(review_key)
+
+    col_gen, col_rev, col_clr = st.columns([3, 3, 1])
+
+    # ── Generate / regenerate section breakdown ───────────────────────────────
+    if col_gen.button(
+        "Regenerate Breakdown" if breakdown else "Generate Section Breakdown",
+        key=f"nb_sec_gen_{active_id}",
+        type="primary",
+        use_container_width=True,
+    ):
+        st.session_state.pop(breakdown_key, None)
+        st.session_state.pop(review_key, None)
+
+        from agents.section_summary import (
+            detect_sections_hybrid,
+            generate_section_claim_questions,
+            get_doc_chunks,
+            summarize_section,
+        )
+        doc_chunks = get_doc_chunks(notebook, chosen_doc_id)
+        if not doc_chunks:
+            st.warning("No content found for this source.")
+        else:
+            with st.spinner("Detecting document sections…"):
+                sections = detect_sections_hybrid(
+                    doc_chunks,
+                    model_name=settings.get("model", cfg.ollama_model),
+                    num_ctx=settings.get("num_ctx", cfg.num_ctx),
+                )
+
+            result = []
+            progress = st.progress(0, text="Analysing sections…")
+            n_sec = len(sections)
+            for i, (title, sec_chunks) in enumerate(sections):
+                frac = (i + 1) / n_sec
+                progress.progress(frac, text=f"[{i+1}/{n_sec}] {title[:50]}…")
+                summary = summarize_section(
+                    title, sec_chunks, level,
+                    settings.get("model", cfg.ollama_model),
+                    settings.get("num_ctx", cfg.num_ctx),
+                )
+                claim_qs = generate_section_claim_questions(
+                    title, sec_chunks,
+                    settings.get("model", cfg.ollama_model),
+                    settings.get("num_ctx", cfg.num_ctx),
+                )
+                result.append({
+                    "title": title,
+                    "summary": summary,
+                    "claim_questions": claim_qs,
+                    "chunks": sec_chunks,
+                })
+            progress.empty()
+            st.session_state[breakdown_key] = result
+            st.rerun()
+
+    # ── Generate / regenerate expert review ───────────────────────────────────
+    rev_disabled = breakdown is None
+    if col_rev.button(
+        "Regenerate Expert Review" if review else "Generate Expert Review",
+        key=f"nb_sec_rev_gen_{active_id}",
+        use_container_width=True,
+        disabled=rev_disabled,
+        help="Generate section breakdown first, then expert review becomes available.",
+    ):
+        st.session_state.pop(review_key, None)
+        current_breakdown = st.session_state.get(breakdown_key, [])
+        from agents.section_summary import review_section
+        review_result = []
+        progress = st.progress(0, text="Generating expert reviews…")
+        n_sec = len(current_breakdown)
+        for i, sec in enumerate(current_breakdown):
+            progress.progress(
+                (i + 1) / n_sec,
+                text=f"[{i+1}/{n_sec}] Reviewing: {sec['title'][:50]}…",
+            )
+            rev = review_section(
+                sec["title"], sec["chunks"],
+                settings.get("model", cfg.ollama_model),
+                settings.get("num_ctx", cfg.num_ctx),
+            )
+            review_result.append(rev)
+        progress.empty()
+        st.session_state[review_key] = review_result
+        st.rerun()
+
+    if col_clr.button("Clear", key=f"nb_sec_clr_{active_id}"):
+        st.session_state.pop(breakdown_key, None)
+        st.session_state.pop(review_key, None)
+        st.rerun()
+
+    # ── Render results ────────────────────────────────────────────────────────
+    breakdown = st.session_state.get(breakdown_key)
+    review = st.session_state.get(review_key)
+    if breakdown:
+        _render_section_breakdown(
+            active_id, chosen_doc_id, level, breakdown, review, settings,
+        )
 
 
 def _tab_faq(active_id: str, notebook: dict, settings: dict) -> None:
