@@ -87,7 +87,7 @@ A: The report is generated in both DOCX (via python-docx) and PDF (via reportlab
 
 **Q: What are the three plain-language summary formats?**
 A: After synthesis, you can generate up to three plain-language summaries:
-- **Patient** — written at an 8th-grade reading level (~350 words) with no jargon, for patients or the general public
+- **Public** — written at an 8th-grade reading level (~350 words) with no jargon, for patients or the general public
 - **Policy** — a one-page Markdown brief with a policy context, key evidence points, and recommendations for policy-makers
 - **Press** — an inverted-pyramid press release with a headline, a lede, body paragraphs, and a closing quote, for journalists
 
