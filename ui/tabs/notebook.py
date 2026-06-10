@@ -1204,7 +1204,7 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
         if concepts:
             st.caption("Concepts covered: " + ", ".join(concepts[:8]))
         st.divider()
-        for turn in session_data.get("conversation", []):
+        for turn_idx, turn in enumerate(session_data.get("conversation", [])):
             role = turn.get("role", "user")
             with st.chat_message(role):
                 st.markdown(turn.get("content", ""))
@@ -1212,8 +1212,8 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
                     qs = turn.get("suggested_questions") or []
                     if qs:
                         st.markdown("**Follow-up questions:**")
-                        for q in qs:
-                            if st.button(q, key=f"nb_exp_sq_{hash(q + turn.get('content', '')[:20])}_{active_id}"):
+                        for q_idx, q in enumerate(qs):
+                            if st.button(q, key=f"nb_exp_sq_{active_id}_{turn_idx}_{q_idx}"):
                                 st.session_state[f"nb_explain_pending_{active_id}"] = q
                                 st.rerun()
     else:
@@ -1310,8 +1310,8 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
 
     with st.chat_message("assistant"):
         st.markdown(final.get("assistant_response", ""))
-        for q in final.get("suggested_questions", []):
-            if st.button(q, key=f"nb_exp_newsq_{hash(q + message[:20])}_{active_id}"):
+        for q_idx, q in enumerate(final.get("suggested_questions", [])):
+            if st.button(q, key=f"nb_exp_newsq_{active_id}_{q_idx}"):
                 st.session_state[f"nb_explain_pending_{active_id}"] = q
                 st.rerun()
 
@@ -1653,15 +1653,15 @@ for conversational science communication with multiple explanation styles.
 
         # ── Tab 1: Chat ───────────────────────────────────────
         with tab_chat:
-            for turn in notebook.get("conversation", []):
+            for turn_idx, turn in enumerate(notebook.get("conversation", [])):
                 role = turn.get("role", "user")
                 with st.chat_message(role):
                     st.markdown(turn.get("content", ""))
                     if role == "assistant":
                         _render_citations(turn.get("citations") or [])
                         qs = turn.get("suggested_questions") or []
-                        for q in qs:
-                            if st.button(q, key=f"nb_sq_{hash(q + turn.get('content','')[:20])}"):
+                        for q_idx, q in enumerate(qs):
+                            if st.button(q, key=f"nb_sq_{active_id}_{turn_idx}_{q_idx}"):
                                 st.session_state["nb_pending_q"] = q
                                 st.rerun()
 
@@ -1722,8 +1722,8 @@ for conversational science communication with multiple explanation styles.
                     with st.chat_message("assistant"):
                         st.markdown(final.get("assistant_response", ""))
                         _render_citations(final.get("citations", []))
-                        for q in final.get("suggested_questions", []):
-                            if st.button(q, key=f"nb_newsq_{hash(q + message[:20])}"):
+                        for q_idx, q in enumerate(final.get("suggested_questions", [])):
+                            if st.button(q, key=f"nb_newsq_{active_id}_{q_idx}"):
                                 st.session_state["nb_pending_q"] = q
                                 st.rerun()
 
