@@ -56,7 +56,7 @@ docker compose up --build
 6. Explore the 5 result tabs:
    - **Synthesis** — narrative synthesis, key themes, research gaps, conclusion, PRISMA flow counts
    - **Evidence Table** — structured table of included papers with quality ratings
-   - **Discovery** — abstract screener scores, citation network builder, preprint tracker
+   - **Discovery** — abstract screener scores, citation network builder (with isolated-paper and gap-finder insights), preprint tracker
    - **Trends & Analysis** — publication trend chart, evidence map, concept drift
    - **Export & Reports** — Markdown download, DOCX/PDF generation, plain-language summaries
 

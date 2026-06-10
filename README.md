@@ -26,7 +26,7 @@ Local AI tools for systematic literature review and source-grounded research not
 - **Abstract Screener** — LLM scores each paper 0–100 before formal screening
 - **PRISMA 2020 reports** — DOCX and PDF with full Methods → Results → Discussion scaffold
 - **Plain-language summaries** — general public, policy brief, press release
-- **Citation Network** — interactive Pyvis HTML graph of links between included papers
+- **Citation Network** — interactive Pyvis HTML graph of links between included papers, with isolated-paper detection and "gap-finder" suggestions for frequently co-cited papers worth screening
 - **Trend Analysis** — CrossRef field-wide year-by-year publication counts + growing/declining classification
 - **Evidence Map** — Plotly Population × Intervention bubble chart
 - **Concept Drift** — TF-IDF vocabulary shift across 5-year buckets, pure stdlib

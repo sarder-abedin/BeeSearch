@@ -96,7 +96,7 @@ query_generation → literature_search → screening → evidence_extraction →
 | Tool | File | What it produces |
 |------|------|-----------------|
 | Abstract Screener | `tools/abstract_screener.py` | 0–100 relevance score + include/uncertain/exclude verdict per paper |
-| Citation Network | `tools/citation_network.py` | Pyvis HTML ego-only graph of citation links between included papers |
+| Citation Network | `tools/citation_network.py` | Pyvis HTML ego-only graph of citation links between included papers, plus an isolated-paper list and gap-finder suggestions for frequently co-cited external papers |
 | Preprint Tracker | `tools/preprint_tracker.py` | Status per paper: journal / published / preprint / retracted |
 | PRISMA Report | `tools/prisma_report.py` | DOCX + PDF with Methods → Results → Discussion scaffold |
 | Plain-Language | `tools/plain_language.py` | Patient summary · Policy brief · Press release |

@@ -185,12 +185,14 @@ def _render_citation_network_section(final_state: dict, settings: dict) -> None:
                     build_citation_network,
                     network_to_pyvis_html,
                     network_stats,
+                    find_gap_candidates,
                 )
-                G, meta = build_citation_network(included, max_papers=25)
+                G, meta, external_counts = build_citation_network(included, max_papers=25)
                 html = network_to_pyvis_html(G, meta)
                 stats = network_stats(G)
                 st.session_state["_cn_html"] = html
                 st.session_state["_cn_stats"] = stats
+                st.session_state["_cn_gaps"] = find_gap_candidates(external_counts)
                 st.success(
                     f"Network built: {stats['nodes']} nodes, "
                     f"{stats['edges']} citation edges, "
@@ -206,6 +208,30 @@ def _render_citation_network_section(final_state: dict, settings: dict) -> None:
             st.markdown("**Most cited within corpus:**")
             for node, deg in stats["most_cited"]:
                 st.markdown(f"- {node} — cited by {deg} included paper(s)")
+
+        isolated_papers = stats.get("isolated_papers") or []
+        if isolated_papers:
+            with st.expander(
+                f"Isolated papers ({len(isolated_papers)}) — no citation links to the rest of the corpus"
+            ):
+                for node in isolated_papers:
+                    st.markdown(f"- {node}")
+
+        gaps = st.session_state.get("_cn_gaps") or []
+        if gaps:
+            st.markdown(
+                "**Frequently cited but not in your review — consider screening:**",
+                help="Papers cited by 2+ of your included papers, but not themselves included.",
+            )
+            for g in gaps:
+                label = g["title"]
+                if g.get("year"):
+                    label += f" ({g['year']})"
+                if g.get("venue"):
+                    label += f" — {g['venue']}"
+                if g.get("url"):
+                    label = f"[{label}]({g['url']})"
+                st.markdown(f"- {label} — cited by {g['cited_by_count']} included paper(s)")
 
 
 def _render_preprint_status_section(final_state: dict, settings: dict) -> None:

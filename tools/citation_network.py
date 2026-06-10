@@ -6,6 +6,11 @@ Ego citation network for a set of included papers (ego-only scope).
 Checks edges *between* the included papers themselves: does paper A cite
 paper B? Uses Semantic Scholar /paper/search + /paper/{id}/references.
 
+Also tracks citations to papers *outside* the included set
+(``external_counts``) so ``find_gap_candidates`` can surface papers that are
+frequently cited by the corpus but were not themselves screened in — useful
+for spotting gaps in a systematic review's coverage.
+
 Returns a networkx DiGraph and a Pyvis HTML string for Streamlit.
 """
 
@@ -81,16 +86,37 @@ def _get_references(s2_id: str) -> List[str]:
         return []
 
 
+def _get_paper_metadata(s2_id: str) -> Optional[Dict]:
+    """Fetch title/year/venue/url for a single Semantic Scholar paper ID."""
+    try:
+        resp = requests.get(
+            f"{_S2_BASE}/paper/{s2_id}",
+            params={"fields": "title,year,venue,url,externalIds"},
+            headers=_headers(),
+            timeout=10,
+        )
+        if resp.status_code == 429:
+            time.sleep(3)
+            return None
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.debug("S2 metadata lookup failed for %s: %s", s2_id, e)
+        return None
+
+
 def build_citation_network(
     papers: List[Dict],
     max_papers: int = 30,
-) -> Tuple[object, Dict[str, Dict]]:
+) -> Tuple[object, Dict[str, Dict], Dict[str, int]]:
     """
     Build an ego citation network from a list of included papers.
 
-    Returns (nx.DiGraph, node_metadata):
+    Returns (nx.DiGraph, node_metadata, external_counts):
       DiGraph nodes are citation_keys; edges are directed citations (A→B = A cites B)
       node_metadata maps citation_key → {title, year, quality, journal, s2_id}
+      external_counts maps S2 paper IDs *outside* the included set to the
+      number of included papers that cite them (gap-finder candidates)
     """
     try:
         import networkx as nx
@@ -125,16 +151,60 @@ def build_citation_network(
         time.sleep(0.4)
 
     s2_to_ck = {v: k for k, v in ck_to_s2.items()}
+    external_counts: Dict[str, int] = {}
 
     for ck_a, s2_a in ck_to_s2.items():
         for ref_id in _get_references(s2_a):
+            if ref_id == s2_a:
+                continue
             ck_b = s2_to_ck.get(ref_id)
-            if ck_b and ck_b != ck_a:
-                G.add_edge(ck_a, ck_b, relation="cites")
+            if ck_b:
+                if ck_b != ck_a:
+                    G.add_edge(ck_a, ck_b, relation="cites")
+            else:
+                external_counts[ref_id] = external_counts.get(ref_id, 0) + 1
         time.sleep(0.4)
 
-    logger.info("Citation network: %d nodes, %d edges", G.number_of_nodes(), G.number_of_edges())
-    return G, node_meta
+    logger.info(
+        "Citation network: %d nodes, %d edges, %d external papers referenced",
+        G.number_of_nodes(), G.number_of_edges(), len(external_counts),
+    )
+    return G, node_meta, external_counts
+
+
+def find_gap_candidates(
+    external_counts: Dict[str, int],
+    min_citations: int = 2,
+    max_candidates: int = 8,
+) -> List[Dict]:
+    """
+    Identify papers frequently cited by the included set but not themselves
+    included — candidates for a second screening pass.
+
+    Returns a list of dicts sorted by ``cited_by_count`` descending, each:
+      {s2_id, title, year, venue, url, cited_by_count}
+    """
+    candidates = sorted(
+        (item for item in external_counts.items() if item[1] >= min_citations),
+        key=lambda item: -item[1],
+    )[:max_candidates]
+
+    results: List[Dict] = []
+    for s2_id, count in candidates:
+        meta = _get_paper_metadata(s2_id)
+        if not meta:
+            continue
+        results.append({
+            "s2_id": s2_id,
+            "title": meta.get("title") or "Unknown title",
+            "year": meta.get("year"),
+            "venue": meta.get("venue") or "",
+            "url": meta.get("url") or "",
+            "cited_by_count": count,
+        })
+        time.sleep(0.4)
+
+    return results
 
 
 def network_to_pyvis_html(G: object, node_meta: Dict[str, Dict]) -> str:
@@ -164,13 +234,22 @@ def network_to_pyvis_html(G: object, node_meta: Dict[str, Dict]) -> str:
 def network_stats(G: object) -> Dict[str, object]:
     """Return basic graph statistics."""
     if G.number_of_nodes() == 0:
-        return {"nodes": 0, "edges": 0, "most_cited": [], "most_citing": [], "isolated": 0}
+        return {
+            "nodes": 0,
+            "edges": 0,
+            "most_cited": [],
+            "most_citing": [],
+            "isolated": 0,
+            "isolated_papers": [],
+        }
     in_deg = sorted(G.in_degree(), key=lambda x: -x[1])
     out_deg = sorted(G.out_degree(), key=lambda x: -x[1])
+    isolated_papers = [n for n in G.nodes() if G.degree(n) == 0]
     return {
         "nodes": G.number_of_nodes(),
         "edges": G.number_of_edges(),
         "most_cited": [(n, d) for n, d in in_deg[:5] if d > 0],
         "most_citing": [(n, d) for n, d in out_deg[:5] if d > 0],
-        "isolated": sum(1 for n in G.nodes() if G.degree(n) == 0),
+        "isolated": len(isolated_papers),
+        "isolated_papers": isolated_papers,
     }
