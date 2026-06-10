@@ -95,7 +95,9 @@ GLOSSARY: Dict[str, str] = {
     ),
     "Citation network": (
         "A graph of how the included papers cite one another — useful for "
-        "spotting influential works and clusters of closely related research."
+        "spotting influential works, clusters of closely related research, "
+        "isolated papers with no links to the rest of the corpus, and "
+        "frequently co-cited papers that may be worth screening."
     ),
     "Concept drift": (
         "How a field's dominant topics and vocabulary shift over time — "

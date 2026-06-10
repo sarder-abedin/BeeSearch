@@ -23,6 +23,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "build_citation_network":  ("tools.citation_network",   "build_citation_network"),
     "network_to_pyvis_html":   ("tools.citation_network",   "network_to_pyvis_html"),
     "network_stats":           ("tools.citation_network",   "network_stats"),
+    "find_gap_candidates":     ("tools.citation_network",   "find_gap_candidates"),
     "track_preprints":         ("tools.preprint_tracker",   "track_preprints"),
     "preprint_summary":        ("tools.preprint_tracker",   "preprint_summary"),
     # ── SR: PRISMA Report ────────────────────────────────────────────────────

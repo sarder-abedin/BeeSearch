@@ -56,7 +56,7 @@ A: Before formal inclusion/exclusion screening, the Abstract Screener sends each
 ---
 
 **Q: What is the Citation Network and how is it built?**
-A: The Citation Network is an ego-only graph that shows which of your included papers cite each other. After synthesis, you can trigger it from the Discovery tab. It queries the Semantic Scholar API for the references of each included paper, then draws edges between pairs where one included paper cites another. It uses networkx for the graph and Pyvis for an interactive HTML visualisation. No external papers are added — the scope is limited to your included set.
+A: The Citation Network is an ego-only graph that shows which of your included papers cite each other. After synthesis, you can trigger it from the Discovery tab. It queries the Semantic Scholar API for the references of each included paper, then draws edges between pairs where one included paper cites another. It uses networkx for the graph and Pyvis for an interactive HTML visualisation. The graph itself stays ego-only — no external papers are added as nodes — but two extra panels help with screening: an **Isolated papers** list names any included papers with no citation links to the rest of your corpus, and a **"Frequently cited but not in your review"** list surfaces papers cited by 2+ of your included papers but not themselves included, as candidates for a second screening pass.
 
 ---
 

@@ -139,6 +139,9 @@ Triggered from the UI (button click) or CLI flags. All are independent and non-b
   │  • Builds ego networkx DiGraph (nodes = included papers; edges = citations
   │    between them — ego-only scope, no external expansion)
   │  • Renders interactive Pyvis HTML for the UI
+  │  • network_stats() names isolated papers (no in-corpus citation links)
+  │  • find_gap_candidates() surfaces external papers cited by 2+ included
+  │    papers but not themselves screened in (gap-finder for screening)
 
 [preprint_tracker]           tools/preprint_tracker.py
   │  • CrossRef title search per included paper
@@ -570,6 +573,9 @@ BeeSearch/
 │   ├── prisma_report_<id>.docx
 │   ├── prisma_report_<id>.pdf
 │   └── pipeline_study_guide_<name>.md/docx/pdf
+│
+├── tests/
+│   └── test_citation_network.py  ← Unit tests: gap-finder + isolated papers
 │
 ├── docker-compose.yml
 ├── .env.example
