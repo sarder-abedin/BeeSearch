@@ -37,6 +37,7 @@ from agents.notebook_memory import NotebookMemory
 from agents.notebook_state import NotebookState
 from config.settings import get_settings
 from tools.hybrid_store import get_or_create_store
+from tools.text_parsing import extract_suggested_questions
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -387,7 +388,7 @@ Answer using only the sources above, with inline [n] citations. End with the sug
             "progress_pct": 80,
         }
 
-    main_response, suggested_questions = _split_suggested_questions(raw)
+    main_response, suggested_questions = extract_suggested_questions(raw)
     citations = _extract_citations(main_response, chunks)
 
     return {
@@ -398,33 +399,6 @@ Answer using only the sources above, with inline [n] citations. End with the sug
         "completed_steps": state.get("completed_steps", []) + ["answer"],
         "progress_pct": 80,
     }
-
-
-_SQ_PATTERNS = [
-    # Full JSON object  {"suggested_questions": [...]}
-    re.compile(r'\{[^{}]*"suggested_questions"\s*:\s*(\[.*?\])\s*\}', re.DOTALL),
-    # Quoted key without outer braces  "suggested_questions": [...]
-    re.compile(r'"suggested_questions"\s*:\s*(\[.*?\])', re.DOTALL),
-    # Bare key  suggested_questions: [...] or suggested_questions = [...]
-    re.compile(r'suggested_questions\s*[:=]\s*(\[.*?\])', re.DOTALL | re.IGNORECASE),
-]
-
-
-def _split_suggested_questions(raw: str) -> tuple[str, List[str]]:
-    """Extract suggested_questions from any format the LLM may emit, strip from body."""
-    for pat in _SQ_PATTERNS:
-        m = pat.search(raw)
-        if m:
-            try:
-                candidates = json.loads(m.group(1))
-                if isinstance(candidates, list) and candidates:
-                    questions = [str(q) for q in candidates if q][:3]
-                    body = raw[:m.start()].strip()
-                    return body, questions
-            except Exception:
-                continue
-    logger.warning("Could not parse suggested_questions — raw tail: %s", raw[-120:])
-    return raw, []
 
 
 def _extract_citations(answer: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
