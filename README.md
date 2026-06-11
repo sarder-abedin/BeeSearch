@@ -139,11 +139,11 @@ Add `--build` to force a full image rebuild:
 ```
 The browser opens at `http://localhost:8501` once the container is healthy (~30–60 s on first run while Docker downloads images and builds layers). On Ctrl-C the script shuts the containers down cleanly.
 
-Alternatively, run the Docker container without automatic Streamit running on the default browser with full build (this is the example of macOS. but check the .yml file in the repo for other systems):
+Alternatively, run the Docker container without automatic Streamit running on the default browser with full build (this is the example of macOS. But, check the .yml file in the repo for other systems):
 ```bash
 docker compose -f docker-compose.mac.yml up --build   
 ```
-After that copy the URL and paste it to the browser to run the Streamit web-app.  
+After that, copy the URL and paste it to the browser to run the Streamit web-app.  
 
 ---
 
