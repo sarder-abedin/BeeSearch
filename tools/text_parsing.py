@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 _SQ_PATTERNS = [
     # Full JSON object  {"suggested_questions": [...]}
@@ -67,12 +67,55 @@ def extract_suggested_questions(raw: str, max_questions: int = 3) -> Tuple[str, 
 
 
 # Bibliography sections always start with one of these headings, alone on
-# their own line (optionally followed by a colon). Requiring end-of-line
-# avoids false positives like "...the actual bibliography entry follows".
+# their own line (optionally followed by a colon and/or a page number).
+# Requiring end-of-line avoids false positives like "...the actual
+# bibliography entry follows".
 _REFERENCES_HEADING = re.compile(
-    r'\b(references|bibliography|works\s+cited|literature\s+cited)\b[ \t]*:?[ \t]*(?=\n|$)',
+    r'\b(references|bibliography|works\s+cited|literature\s+cited)\b'
+    r'[ \t]*:?[ \t]*\d{0,4}[ \t]*(?=\n|$)',
     re.IGNORECASE,
 )
+
+# Standard numbered-bibliography entry marker, e.g. "[1] A. Author, ...",
+# anchored to the start of a line. Used as a fallback when no heading
+# matches (PDF text extraction sometimes mangles letter-spaced headings
+# like "R E F E R E N C E S" into something extract_references_section
+# can no longer recognize as a word).
+_BRACKET_NUM = re.compile(r'(?:^|\n)[ \t]*\[(\d{1,3})\][ \t]+\S')
+
+# Minimum run of consecutive [1], [2], [3]... markers required before the
+# fallback trusts that it has found a real reference list (rather than,
+# say, a short numbered list of contributions in the introduction).
+_MIN_BRACKET_RUN = 5
+
+
+def _numbered_bibliography_start(text: str) -> int:
+    """
+    Find the start of a run of >= _MIN_BRACKET_RUN consecutive [1] [2] [3]...
+    markers, each beginning a line, and return the character offset of the
+    "[1]" that starts the run -- or -1 if no such run exists.
+
+    Like extract_references_section()'s heading search, candidates in the
+    first 40% of the document are ignored unless nothing later qualifies.
+    """
+    by_num: Dict[int, List[int]] = {}
+    for m in _BRACKET_NUM.finditer(text):
+        by_num.setdefault(int(m.group(1)), []).append(m.start())
+
+    cutoff = len(text) * 0.4
+    ones = [p for p in by_num.get(1, []) if p >= cutoff] or by_num.get(1, [])
+    for start_pos in reversed(ones):
+        cursor = start_pos
+        run_len = 1
+        for target in range(2, _MIN_BRACKET_RUN + 3):
+            later = [p for p in by_num.get(target, []) if p > cursor]
+            if not later:
+                break
+            cursor = min(later)
+            run_len += 1
+        if run_len >= _MIN_BRACKET_RUN:
+            return start_pos
+    return -1
 
 
 def extract_references_section(text: str) -> str:
@@ -84,10 +127,24 @@ def extract_references_section(text: str) -> str:
     document's bibliography from its body text. Heading matches in the
     first 40% of the document (e.g. a table-of-contents entry or an
     in-text mention) are ignored unless nothing later qualifies.
+
+    If no heading can be matched at all (or it only yields a tiny
+    fragment), falls back to _numbered_bibliography_start() in case the
+    heading itself was mangled by PDF text extraction but the reference
+    list still uses standard "[1] ... [2] ..." numbering.
     """
+    section = ""
     matches = list(_REFERENCES_HEADING.finditer(text))
-    if not matches:
-        return ""
-    cutoff = len(text) * 0.4
-    candidates = [m for m in matches if m.start() >= cutoff] or matches
-    return text[candidates[-1].end():].strip()
+    if matches:
+        cutoff = len(text) * 0.4
+        candidates = [m for m in matches if m.start() >= cutoff] or matches
+        section = text[candidates[-1].end():].strip()
+
+    if len(section) < 200:
+        start = _numbered_bibliography_start(text)
+        if start >= 0:
+            fallback = text[start:].strip()
+            if len(fallback) > len(section):
+                section = fallback
+
+    return section

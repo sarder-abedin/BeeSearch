@@ -173,3 +173,55 @@ def test_heading_with_trailing_colon():
     text = ("Body text. " * 50) + "\n\nReferences:\n[1] Author (2023). Title."
     section = extract_references_section(text)
     assert section == "[1] Author (2023). Title."
+
+
+def test_heading_with_trailing_page_number():
+    # PDF extraction sometimes leaves a running-footer page number on the
+    # same line as the heading: "References  12".
+    text = ("Body text. " * 50) + "\n\nReferences  12\n[1] Author (2024). Title."
+    section = extract_references_section(text)
+    assert section == "[1] Author (2024). Title."
+
+
+def test_heading_at_chunk_boundary_recovered_via_paragraph_join():
+    # Simulates two notebook chunks: the first ends right at the "References"
+    # heading (chunk text is .strip()'d, so the trailing newline is gone),
+    # and the second begins with the first bibliography entry. Joining with
+    # "\n\n" (as agents.notebook_advanced.extract_citation_timeline does)
+    # restores the line break the heading regex needs.
+    chunk_a = ("Body discussing prior work. " * 30) + "\n\nReferences"
+    chunk_b = "[1] Author A (2018). Title One.\n[2] Author B (2019). Title Two."
+    combined = "\n\n".join([chunk_a, chunk_b])
+    section = extract_references_section(combined)
+    assert section == "[1] Author A (2018). Title One.\n[2] Author B (2019). Title Two."
+
+
+def test_numbered_bibliography_fallback_when_heading_unrecognizable():
+    # PDF extraction sometimes mangles a letter-spaced "REFERENCES" heading
+    # into something that no longer contains "references" as a word. Fall
+    # back to recognizing the standard [1] [2] [3]... numbered list.
+    text = (
+        ("Body text discussing the topic in depth. " * 40) + "\n\n"
+        "R E F E R E N C E S\n"
+        "[1] A. Author (2018). First paper.\n"
+        "[2] B. Author (2019). Second paper.\n"
+        "[3] C. Author (2020). Third paper.\n"
+        "[4] D. Author (2021). Fourth paper.\n"
+        "[5] E. Author (2022). Fifth paper."
+    )
+    section = extract_references_section(text)
+    assert section.startswith("[1] A. Author (2018)")
+    assert "[5] E. Author (2022)" in section
+    assert "REFERENCES" not in section
+
+
+def test_numbered_fallback_requires_minimum_run_length():
+    # A short numbered list (e.g. "our contributions") with no References/
+    # Bibliography heading should NOT be mistaken for a bibliography.
+    text = (
+        ("Body text. " * 50) + "\n\n"
+        "Our contributions are:\n"
+        "[1] We propose a new method.\n"
+        "[2] We evaluate it extensively."
+    )
+    assert extract_references_section(text) == ""

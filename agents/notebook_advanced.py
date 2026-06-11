@@ -669,7 +669,10 @@ def extract_citation_timeline(
 
     refs_by_source: List[List[Dict[str, Any]]] = []
     for i, src in enumerate(sources, 1):
-        combined = " ".join(by_doc.get(src["doc_id"], []))
+        # Joined with paragraph breaks (not spaces) so a "References" heading
+        # that lands at the end of one chunk still has a line break after it
+        # for extract_references_section()'s heading regex to match.
+        combined = "\n\n".join(by_doc.get(src["doc_id"], []))
         refs_section = extract_references_section(combined)[:_REFERENCES_MAX_CHARS]
         if not refs_section:
             continue
