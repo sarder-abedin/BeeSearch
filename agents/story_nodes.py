@@ -33,6 +33,7 @@ from langchain_ollama import ChatOllama
 from agents.story_memory import StorytellerMemory
 from agents.story_state import StoryState
 from config.settings import get_settings
+from tools.text_parsing import extract_suggested_questions
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -456,37 +457,9 @@ Remember to end with the suggested_questions JSON."""
             "progress_pct": 70,
         }
 
-    # Parse suggested_questions from the response.
-    # LLMs emit this in several formats — try each in order of specificity:
-    #   1. {"suggested_questions": [...]}   (ideal full JSON object)
-    #   2. "suggested_questions": [...]     (JSON key without outer braces)
-    #   3. suggested_questions: [...]       (bare key, no quotes, no braces)
-    # In every case strip the matched fragment from main_response so it never
-    # shows as raw text in the chat bubble.
-    suggested_questions: List[str] = []
-    main_response = raw_response
-
-    _SQ_PATTERNS = [
-        # Full JSON object  {"suggested_questions": [...]}
-        re.compile(r'\{[^{}]*"suggested_questions"\s*:\s*(\[.*?\])\s*\}', re.DOTALL),
-        # Quoted key without outer braces  "suggested_questions": [...]
-        re.compile(r'"suggested_questions"\s*:\s*(\[.*?\])', re.DOTALL),
-        # Bare key  suggested_questions: [...] or suggested_questions = [...]
-        re.compile(r'suggested_questions\s*[:=]\s*(\[.*?\])', re.DOTALL | re.IGNORECASE),
-    ]
-
-    for pat in _SQ_PATTERNS:
-        m = pat.search(raw_response)
-        if m:
-            try:
-                candidates = json.loads(m.group(1))
-                if isinstance(candidates, list) and candidates:
-                    suggested_questions = [str(q) for q in candidates if q][:3]
-                    # Remove everything from the start of the match to end of response
-                    main_response = raw_response[:m.start()].strip()
-                    break
-            except Exception:
-                continue
+    # Parse the trailing suggested_questions block (handles markdown-bolded
+    # keys, smart quotes, and trailing commas — see tools/text_parsing).
+    main_response, suggested_questions = extract_suggested_questions(raw_response)
 
     if not suggested_questions:
         logger.warning("suggested_questions: no parseable block found — raw tail: %s",
