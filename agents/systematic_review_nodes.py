@@ -119,10 +119,12 @@ def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
 
     all_papers: List[Dict] = []
     seen_titles: set = set()
+    max_per_source = state.get("max_results", 8)
+    include_crossref = state.get("include_crossref", True)
 
     for query in queries:
         try:
-            papers = searcher.search(query, max_per_source=8)
+            papers = searcher.search(query, max_per_source=max_per_source, include_crossref=include_crossref)
             for p in papers:
                 key = re.sub(r"\W+", "", p.title.lower())[:60]
                 if key and key not in seen_titles:
@@ -199,7 +201,8 @@ def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
         "completed_steps": state.get("completed_steps", []) + ["literature_search"],
         "progress_pct": 30,
         "status_detail": (
-            f"Found {len(all_papers)} papers via Google Scholar · arXiv · Semantic Scholar · CrossRef"
+            f"Found {len(all_papers)} papers via Google Scholar · arXiv · Semantic Scholar"
+            + (" · CrossRef" if include_crossref else "")
         ),
     }
 

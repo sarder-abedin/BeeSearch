@@ -995,6 +995,8 @@ def tab_systematic_review(settings: dict) -> None:
             exclusion_criteria=exclusion,
             model_name=settings["model"],
             num_ctx=settings["num_ctx"],
+            max_results=settings.get("max_results", 8),
+            include_crossref=settings.get("include_crossref", True),
         )
 
         # New corpus incoming — drop any cached deep-dive results from a
