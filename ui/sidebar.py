@@ -241,7 +241,12 @@ def render_sidebar() -> dict:
         _max_results_default = st.session_state.pop("sidebar_max_results_applied", 6)
         max_results = st.slider("Max papers per query", 3, 20, _max_results_default,
                                 key="sidebar_max_results")
-        include_crossref = st.toggle("Include CrossRef search", value=False)
+        include_crossref = st.toggle(
+            "Include CrossRef search", value=True, key="sidebar_include_crossref",
+            help="Adds CrossRef's published-article index to the Systematic Review "
+                 "literature search, alongside Google Scholar, arXiv and Semantic "
+                 "Scholar. Turn off for a faster but less complete search.",
+        )
 
         # ── Document settings ─────────────────────────────────
         st.divider()

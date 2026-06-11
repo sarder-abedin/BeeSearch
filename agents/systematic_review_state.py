@@ -13,6 +13,8 @@ class SystematicReviewState(TypedDict, total=False):
     model_name: str
     num_ctx: int
     session_id: str
+    max_results: int                # Max papers per source per query
+    include_crossref: bool          # Also search CrossRef for published articles
 
     # ── Search results ─────────────────────────────────────────
     raw_papers: List[Dict]          # All papers from initial search
@@ -58,6 +60,8 @@ def create_systematic_review_state(
     exclusion_criteria: List[str] = None,
     model_name: str = "llama3.1:8b",
     num_ctx: int = 32768,
+    max_results: int = 8,
+    include_crossref: bool = True,
 ) -> SystematicReviewState:
     import uuid
     return SystematicReviewState(
@@ -67,6 +71,8 @@ def create_systematic_review_state(
         search_queries=[],
         model_name=model_name,
         num_ctx=num_ctx,
+        max_results=max_results,
+        include_crossref=include_crossref,
         session_id=str(uuid.uuid4())[:8],
         raw_papers=[],
         screened_papers=[],
