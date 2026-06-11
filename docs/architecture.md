@@ -305,7 +305,7 @@ Available from CLI flags and UI tab buttons.
 | Mind map | DOT + PNG + SVG |
 | Knowledge graph | DOT + PNG + SVG |
 | Source comparison | Side-by-side Markdown table |
-| Timeline | Chronological events table |
+| Citation timeline | Cited works by year, parsed from each source's bibliography, with one-line gists (optional Semantic Scholar abstract enrichment) |
 | Study comparison | Research method/sample/findings table |
 
 ---

@@ -30,8 +30,8 @@ _PROJECTS = [
             "A NotebookLM-style workspace: upload PDFs, DOCX, TXT or web pages to build a "
             "source notebook, then chat with grounded citations. Run a full 7-agent pipeline "
             "for cross-document summary, citation verification, knowledge graph, study guide, "
-            "and podcast script. Advanced tools: FAQ, literature review, mind map, timeline, "
-            "source comparison, and study comparison table."
+            "and podcast script. Advanced tools: FAQ, literature review, mind map, "
+            "citation timeline, source comparison, and study comparison table."
         ),
         "tags": [
             "Grounded Q&A", "7-Agent Pipeline", "Knowledge Graph",

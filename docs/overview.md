@@ -167,7 +167,7 @@ ingest → summarize → retrieve → verify_citations → build_kg → generate
 | Mind map | `--notebook-mindmap <id>` | DOT + PNG + SVG |
 | Knowledge graph | `--notebook-graph <id>` | DOT + PNG + SVG |
 | Source comparison | `--notebook-compare <id> --compare-docs A B` | Side-by-side Markdown table |
-| Timeline | `--notebook-timeline <id>` | Chronological events table |
+| Citation timeline | `--notebook-timeline <id>` (`--enrich-abstracts` for S2 abstracts) | Cited works by year, with one-line gists |
 | Study comparison | `--notebook-study-table <id>` | Research method/sample/findings table |
 | 7-agent pipeline | `--notebook-pipeline <id>` | All of the above in sequence |
 

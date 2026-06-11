@@ -171,7 +171,7 @@ PRISMA Flow
    - **Mind Map** — concept tree as graph
    - **Graph** — entity–relationship knowledge graph
    - **Compare** — side-by-side source comparison
-   - **Timeline** — chronological events
+   - **Citation Timeline** — cited works by year, with one-line gists (optional Semantic Scholar abstract enrichment)
    - **Study Table** — structured research comparison
    - **Pipeline** — run all 7 agents in sequence
 
@@ -203,7 +203,8 @@ python main.py --notebook-audio <id>
 python main.py --notebook-mindmap <id>
 python main.py --notebook-graph <id>
 python main.py --notebook-compare <id> --compare-docs paper1.pdf paper2.pdf
-python main.py --notebook-timeline <id>
+python main.py --notebook-timeline <id>                  # citation timeline
+python main.py --notebook-timeline <id> --enrich-abstracts  # + Semantic Scholar abstracts
 python main.py --notebook-study-table <id>
 
 # 7-agent pipeline (runs all agents in sequence)
@@ -227,7 +228,7 @@ Once inside `--notebook` mode:
 | `/mindmap` | Extract mind map (DOT + PNG + SVG) |
 | `/graph` | Extract knowledge graph (DOT + PNG + SVG) |
 | `/compare` | Compare two sources interactively |
-| `/timeline` | Extract chronological timeline |
+| `/timeline` | Extract citation timeline (cited works by year) |
 | `/study-table` | Generate study comparison table |
 | `/quit` | Exit (session is saved automatically) |
 

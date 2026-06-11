@@ -695,36 +695,48 @@ def _tab_knowledge_graph(active_id: str, notebook: dict, settings: dict) -> None
 
 def _tab_timeline(active_id: str, notebook: dict, settings: dict) -> None:
     st.markdown(
-        "Extracts a **chronological timeline** of events, discoveries, and milestones "
-        "from your notebook sources."
+        "Builds a **citation timeline** from the references/bibliography section "
+        "of each source: when each cited work was published, who wrote it, and "
+        "a one-line gist of its key idea."
     )
-    cache_key = f"nb_timeline_{active_id}"
-    from agents.notebook_advanced import extract_timeline
+    enrich = st.toggle(
+        "Enrich with abstracts (Semantic Scholar)",
+        value=False,
+        key=f"nb_tl_enrich_{active_id}",
+        help="Look up each cited work on Semantic Scholar and use its "
+             "abstract/TL;DR for the gist instead of a title-only guess. "
+             "Slower, and requires internet access.",
+    )
+    cache_key = f"nb_timeline_{active_id}_{enrich}"
+    from agents.notebook_advanced import extract_citation_timeline
 
     items, _ = _gen_button(
-        "Extract Timeline", f"nb_gen_tl_{active_id}", cache_key,
-        settings, active_id, extract_timeline,
+        "Extract Citation Timeline", f"nb_gen_tl_{active_id}", cache_key,
+        settings, active_id, extract_citation_timeline, enrich,
     )
     if items:
         src_names = [s["filename"] for s in notebook.get("sources", [])]
-        md_lines = ["| Year | Event | Significance | Source |",
-                    "|------|-------|-------------|--------|"]
+        md_lines = ["| Year | Title | Authors | Key Idea | Source |",
+                    "|------|-------|---------|----------|--------|"]
         for item in items:
             year = item.get("year", "n.d.")
-            event = item.get("event", "").replace("|", "\\|")
-            sig = item.get("significance", "").replace("|", "\\|")
+            title = item.get("title", "").replace("|", "\\|")
+            url = item.get("url", "")
+            title_md = f"[{title}]({url})" if url else title
+            authors = item.get("authors", "").replace("|", "\\|")
+            gist = item.get("gist", "").replace("\n", " ").replace("|", "\\|")
             src_n = item.get("source", 0)
             src_label = (
                 src_names[src_n - 1][:20] if isinstance(src_n, int) and 1 <= src_n <= len(src_names)
                 else "—"
             )
-            md_lines.append(f"| {year} | {event} | {sig} | {src_label} |")
+            md_lines.append(f"| {year} | {title_md} | {authors} | {gist} | {src_label} |")
         table_md = "\n".join(md_lines)
         st.markdown(table_md)
         st.download_button(
             "Download (.md)",
             data=table_md,
-            file_name=f"timeline_{notebook.get('name','notebook')}.md",
+            file_name=f"citation_timeline_{notebook.get('name','notebook')}.md",
             mime="text/markdown",
             key=f"nb_dl_tl_{active_id}",
         )
@@ -1644,7 +1656,7 @@ for conversational science communication with multiple explanation styles.
             "Audio",
             "Compare",
             "Graph",
-            "Timeline",
+            "Citation Timeline",
             "Study Table",
             "Pipeline",
             "Research Report",
@@ -1765,7 +1777,7 @@ for conversational science communication with multiple explanation styles.
         with tab_kgraph:
             _tab_knowledge_graph(active_id, notebook, settings)
 
-        # ── Tab 9: Timeline ───────────────────────────────────
+        # ── Tab 9: Citation timeline ──────────────────────────
         with tab_timeline:
             _tab_timeline(active_id, notebook, settings)
 
