@@ -86,12 +86,14 @@ def _get_references(s2_id: str) -> List[str]:
         return []
 
 
-def _get_paper_metadata(s2_id: str) -> Optional[Dict]:
-    """Fetch title/year/venue/url for a single Semantic Scholar paper ID."""
+def _get_paper_metadata(
+    s2_id: str, fields: str = "title,year,venue,url,externalIds"
+) -> Optional[Dict]:
+    """Fetch metadata for a single Semantic Scholar paper ID."""
     try:
         resp = requests.get(
             f"{_S2_BASE}/paper/{s2_id}",
-            params={"fields": "title,year,venue,url,externalIds"},
+            params={"fields": fields},
             headers=_headers(),
             timeout=10,
         )
@@ -103,6 +105,33 @@ def _get_paper_metadata(s2_id: str) -> Optional[Dict]:
     except Exception as e:
         logger.debug("S2 metadata lookup failed for %s: %s", s2_id, e)
         return None
+
+
+def get_paper_abstract(title: str) -> Optional[Dict]:
+    """
+    Look up a paper on Semantic Scholar by title and return its abstract
+    and TL;DR summary.
+
+    Used by the Notebook Citation Timeline feature's "enrich with
+    abstracts" toggle to turn a bare cited-work title into a one-line gist.
+
+    Returns ``{"title", "year", "abstract", "tldr", "url"}`` or ``None`` if
+    the paper couldn't be found.
+    """
+    s2_id = _find_s2_id(title)
+    if not s2_id:
+        return None
+    meta = _get_paper_metadata(s2_id, fields="title,year,abstract,tldr,url")
+    if not meta:
+        return None
+    tldr = meta.get("tldr") or {}
+    return {
+        "title": meta.get("title") or title,
+        "year": meta.get("year"),
+        "abstract": meta.get("abstract") or "",
+        "tldr": tldr.get("text") or "",
+        "url": meta.get("url") or "",
+    }
 
 
 def build_citation_network(

@@ -1,11 +1,14 @@
 """
 tools/text_parsing.py
 ──────────────────────
-Helpers for cleaning up raw LLM text output.
+Helpers for cleaning up raw LLM text output and source documents.
 
 extract_suggested_questions() pulls the trailing "suggested_questions" JSON
 array that Notebook Chat and Explain prompts ask the LLM to append, tolerating
 the various formats and minor JSON quirks local models tend to produce.
+
+extract_references_section() locates the bibliography at the end of an
+academic paper, for the Notebook "Citation Timeline" feature.
 """
 
 from __future__ import annotations
@@ -61,3 +64,30 @@ def extract_suggested_questions(raw: str, max_questions: int = 3) -> Tuple[str, 
             return text[:m.start()].strip(), questions
 
     return raw, []
+
+
+# Bibliography sections always start with one of these headings, alone on
+# their own line (optionally followed by a colon). Requiring end-of-line
+# avoids false positives like "...the actual bibliography entry follows".
+_REFERENCES_HEADING = re.compile(
+    r'\b(references|bibliography|works\s+cited|literature\s+cited)\b[ \t]*:?[ \t]*(?=\n|$)',
+    re.IGNORECASE,
+)
+
+
+def extract_references_section(text: str) -> str:
+    """
+    Return the text following the last "References"/"Bibliography"/etc.
+    heading in ``text``, or ``""`` if no such heading is found.
+
+    Used by the Notebook Citation Timeline feature to isolate a source
+    document's bibliography from its body text. Heading matches in the
+    first 40% of the document (e.g. a table-of-contents entry or an
+    in-text mention) are ignored unless nothing later qualifies.
+    """
+    matches = list(_REFERENCES_HEADING.finditer(text))
+    if not matches:
+        return ""
+    cutoff = len(text) * 0.4
+    candidates = [m for m in matches if m.start() >= cutoff] or matches
+    return text[candidates[-1].end():].strip()

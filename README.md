@@ -260,7 +260,7 @@ python main.py --notebook-audio <id>            # audio script + WAV
 python main.py --notebook-mindmap <id>          # mind map (DOT + PNG + SVG)
 python main.py --notebook-graph <id>            # knowledge graph
 python main.py --notebook-compare <id> --compare-docs A.pdf B.pdf
-python main.py --notebook-timeline <id>         # chronological timeline
+python main.py --notebook-timeline <id>         # citation timeline (add --enrich-abstracts for S2 abstracts)
 python main.py --notebook-study-table <id>      # study comparison table
 
 # 7-agent pipeline
@@ -312,7 +312,7 @@ Once in `--notebook` mode, type:
 /mindmap        Mind map (DOT + PNG + SVG)
 /graph          Knowledge graph
 /compare        Compare two sources
-/timeline       Chronological timeline
+/timeline       Citation timeline
 /study-table    Study comparison table
 /quit           Exit
 ```
@@ -330,7 +330,7 @@ Once in `--notebook` mode, type:
 | **Literature Review** | Academic-style narrative synthesis |
 | **Mind Map** | Visual concept map (DOT + PNG + SVG) |
 | **Knowledge Graph** | Entity-relationship graph |
-| **Timeline** | Chronological event extraction |
+| **Citation Timeline** | Cited works by year, parsed from each source's bibliography, with one-line gists (optional Semantic Scholar abstract enrichment) |
 | **Study Comparison** | Side-by-side study table |
 | **Pipeline** | 7-agent automated analysis |
 
@@ -381,7 +381,7 @@ All outputs are saved to `outputs/`:
 | `pipeline_podcast_<name>.txt` | Podcast script |
 | `knowledge_graph_<id>.dot/png/svg` | Knowledge graph |
 | `mindmap_<id>.dot/png/svg` | Mind map |
-| `timeline_<id>.md` | Chronological timeline |
+| `citation_timeline_<id>.md` | Citation timeline (cited works by year) |
 | `<name>_sections_<id>.md` | Section-by-section breakdown (CLI `--output`) |
 
 ---

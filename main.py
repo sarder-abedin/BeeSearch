@@ -52,7 +52,7 @@ python main.py --notebook-audio <notebook_id>       # audio script + WAV
 python main.py --notebook-mindmap <notebook_id>     # mind map (DOT+PNG+SVG)
 python main.py --notebook-graph <notebook_id>       # knowledge graph
 python main.py --notebook-compare <id> --compare-docs A.pdf B.pdf
-python main.py --notebook-timeline <notebook_id>    # timeline extraction
+python main.py --notebook-timeline <notebook_id>    # citation timeline (add --enrich-abstracts for S2 abstracts)
 python main.py --notebook-study-table <notebook_id> # study comparison table
 python main.py --notebook-pipeline <notebook_id>    # 7-agent pipeline
 
@@ -91,7 +91,7 @@ _KNOWN_FLAGS = [
     "--notebook-summary", "--notebook-faq", "--notebook-review",
     "--notebook-audio", "--notebook-mindmap", "--notebook-graph",
     "--notebook-compare", "--compare-docs",
-    "--notebook-timeline", "--notebook-study-table",
+    "--notebook-timeline", "--enrich-abstracts", "--notebook-study-table",
     "--notebook-pipeline", "--pipeline-query",
     "--no-docling", "--ocr", "--large-doc-threshold",
     "-g", "-f", "-v",
@@ -270,7 +270,14 @@ def _parse_args():
     )
     nb.add_argument(
         "--notebook-timeline", type=str, default="", metavar="NOTEBOOK_ID",
-        help="Extract a chronological timeline from the given notebook",
+        help="Build a citation timeline (cited works by year) from the given "
+             "notebook's references sections",
+    )
+    nb.add_argument(
+        "--enrich-abstracts", action="store_true",
+        help="With --notebook-timeline, look up each cited work on Semantic "
+             "Scholar and use its abstract/TL;DR for the gist (slower, "
+             "requires internet)",
     )
     nb.add_argument(
         "--notebook-study-table", type=str, default="", metavar="NOTEBOOK_ID",
@@ -928,32 +935,39 @@ def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
             console.print(f"[green]Audio saved:[/green] {wav_path}")
 
     elif feature == "timeline":
-        from agents.notebook_advanced import extract_timeline
-        with console.status("[bold blue]Extracting timeline…[/bold blue]"):
-            items, err = extract_timeline(notebook_id, settings)
+        from agents.notebook_advanced import extract_citation_timeline
+        enrich = getattr(args, "enrich_abstracts", False)
+        status = "Extracting citation timeline" + (" (enriching with abstracts)…" if enrich else "…")
+        with console.status(f"[bold blue]{status}[/bold blue]"):
+            items, err = extract_citation_timeline(notebook_id, enrich, settings)
         if err:
             console.print(f"[red]{err}[/red]"); return
         src_names = [s["filename"] for s in notebook.get("sources", [])]
-        table = Table(title=f"Timeline — {nb_name}", border_style="blue")
+        table = Table(title=f"Citation Timeline — {nb_name}", border_style="blue")
         table.add_column("Year", no_wrap=True)
-        table.add_column("Event", max_width=55)
-        table.add_column("Significance", max_width=40)
+        table.add_column("Title", max_width=45)
+        table.add_column("Authors", max_width=20)
+        table.add_column("Key Idea", max_width=40)
         table.add_column("Source", max_width=20)
         for item in items:
             src_n = item.get("source", 0)
             src_label = (src_names[src_n - 1][:20]
                          if isinstance(src_n, int) and 1 <= src_n <= len(src_names) else "—")
-            table.add_row(item.get("year", "n.d."), item.get("event", "")[:55],
-                          item.get("significance", "")[:40], src_label)
+            table.add_row(item.get("year", "n.d."), item.get("title", "")[:45],
+                          item.get("authors", "")[:20], item.get("gist", "")[:40], src_label)
         console.print(table)
-        md_lines = ["| Year | Event | Significance | Source |", "|------|-------|-------------|--------|"]
+        md_lines = ["| Year | Title | Authors | Key Idea | Source |",
+                     "|------|-------|---------|----------|--------|"]
         for item in items:
             src_n = item.get("source", 0)
             src_label = (src_names[src_n - 1][:20]
                          if isinstance(src_n, int) and 1 <= src_n <= len(src_names) else "—")
-            md_lines.append(f"| {item.get('year','n.d.')} | {item.get('event','')} | "
-                            f"{item.get('significance','')} | {src_label} |")
-        p = out_dir / f"timeline_{notebook_id}.md"
+            title = item.get("title", "")
+            url = item.get("url", "")
+            title_md = f"[{title}]({url})" if url else title
+            md_lines.append(f"| {item.get('year','n.d.')} | {title_md} | "
+                            f"{item.get('authors','')} | {item.get('gist','')} | {src_label} |")
+        p = out_dir / f"citation_timeline_{notebook_id}.md"
         p.write_text("\n".join(md_lines), encoding="utf-8")
         console.print(f"\n[green]Saved:[/green] {p}")
 
@@ -1211,7 +1225,7 @@ def _cmd_notebook(args) -> None:
         "  /faq           Generate FAQ      /review         Literature review\n"
         "  /audio         Audio script+WAV  /mindmap        Mind map (DOT+PNG+SVG)\n"
         "  /graph         Knowledge graph   /compare        Compare two sources\n"
-        "  /timeline      Extract timeline  /study-table    Study comparison table\n"
+        "  /timeline      Citation timeline /study-table    Study comparison table\n"
         "  /search-all <query>              Search every notebook you've ever created\n"
         "  /quit          Exit[/dim]\n"
     )

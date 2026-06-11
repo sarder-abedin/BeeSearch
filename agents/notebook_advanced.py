@@ -22,9 +22,11 @@ Features
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import re
+import time
 from typing import Any, Dict, List, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -32,6 +34,8 @@ from langchain_ollama import ChatOllama
 
 from agents.notebook_memory import NotebookMemory
 from config.settings import get_settings
+from tools.citation_network import get_paper_abstract
+from tools.text_parsing import extract_references_section
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -618,55 +622,165 @@ def synthesize_speech(text: str, rate: int = 150) -> Tuple[bytes, str]:
         return b"", f"Speech synthesis failed: {e}"
 
 
-# ── Feature 8: Timeline extraction ───────────────────────────────────────────
+# ── Feature 8: Citation timeline ─────────────────────────────────────────────
 
-def extract_timeline(notebook_id: str, settings: dict) -> Tuple[List[Dict[str, Any]], str]:
+_REFERENCES_MAX_CHARS = 6_000   # chars of a source's bibliography sent to the LLM
+_REFS_PER_SOURCE = 20           # max bibliography entries requested per source
+_MAX_TOTAL_REFS = 30            # hard cap on the merged timeline
+
+_YEAR_RE = re.compile(r"(\d{4})")
+
+
+def _year_key(item: Dict[str, Any]) -> int:
+    """Sort key for timeline items: ascending by 4-digit year, undated last."""
+    m = _YEAR_RE.search(str(item.get("year", "")))
+    return int(m.group(1)) if m else 9999
+
+
+def extract_citation_timeline(
+    notebook_id: str, enrich_with_abstracts: bool, settings: dict
+) -> Tuple[List[Dict[str, Any]], str]:
     """
-    Extract a chronological timeline of events, discoveries, and milestones
-    from notebook sources.
+    Build a chronological timeline of the works cited by the notebook's
+    sources, by parsing each source's references/bibliography section.
 
-    Returns (list_of_timeline_items, error_string).
-    Each item: {"year": str, "event": str, "significance": str, "source": int}
+    Returns (list_of_timeline_items, error_string). Each item:
+      {"year": str, "title": str, "authors": str, "gist": str,
+       "source": int, "url": str}
+
+    By default each cited work's "gist" is a one-line summary the LLM infers
+    from its title alone. If *enrich_with_abstracts* is True, each title is
+    first looked up on Semantic Scholar and its TL;DR/abstract is used
+    instead, falling back to the title-only gist for lookups that fail.
     """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
         return [], f"Notebook '{notebook_id}' not found."
 
-    if not notebook.get("sources"):
+    sources = notebook.get("sources", [])
+    if not sources:
         return [], "No sources in this notebook."
 
-    context = _sources_context(notebook, max_chars_per_doc=2_000)
+    chunks = notebook.get("chunks", [])
+    by_doc: Dict[str, List[str]] = {}
+    for ch in chunks:
+        by_doc.setdefault(ch["doc_id"], []).append(ch.get("text", ""))
 
-    system = (
-        "You are a research historian. Extract a chronological timeline from the sources.\n"
-        "Output ONLY a JSON array — no code fences, no other text:\n"
-        "[\n"
-        '  {"year": "2017", "event": "Brief description", '
-        '"significance": "Why it matters", "source": 1},\n'
-        "  ...\n"
-        "]\n\n"
-        "Rules:\n"
-        "- Include 5–15 most important events, discoveries, or milestones.\n"
-        "- 'source' is the 1-based source number where the event is mentioned.\n"
-        "- Year can be approximate: '~1990', 'early 2000s', '2017–2020'.\n"
-        "- Output ONLY the JSON array."
-    )
-    human = f"SOURCES:\n{context}\n\nExtract the chronological timeline as a JSON array."
+    refs_by_source: List[List[Dict[str, Any]]] = []
+    for i, src in enumerate(sources, 1):
+        combined = " ".join(by_doc.get(src["doc_id"], []))
+        refs_section = extract_references_section(combined)[:_REFERENCES_MAX_CHARS]
+        if not refs_section:
+            continue
 
-    raw = ""
-    try:
-        raw = _invoke(_make_llm(settings, temperature=0.2, num_predict=2048), system, human)
-        items = _parse_json_from_llm(raw)
-        if not isinstance(items, list):
-            return [], "Timeline response was not a JSON array."
-        return [i for i in items if isinstance(i, dict)], ""
-    except json.JSONDecodeError as e:
-        logger.error("Timeline JSON parse failed: %s | raw: %.200s", e, raw)
-        return [], f"Timeline parsing failed: {e}"
-    except Exception as e:
-        logger.error("Timeline extraction failed: %s", e)
-        return [], f"Timeline extraction failed: {e}"
+        system = (
+            "You are extracting bibliography entries from an academic paper's "
+            "references section.\n"
+            "Output ONLY a JSON array — no code fences, no other text:\n"
+            "[\n"
+            '  {"year": "2017", "authors": "Smith et al.", "title": "Paper title"},\n'
+            "  ...\n"
+            "]\n\n"
+            "Rules:\n"
+            f"- Extract up to {_REFS_PER_SOURCE} distinct reference entries.\n"
+            '- "year" is the 4-digit publication year, or "n.d." if not stated.\n'
+            '- "authors" is a short author list, e.g. "Smith et al." or "Smith & Jones".\n'
+            '- "title" is the cited work\'s title, without surrounding quotes.\n'
+            "- Output ONLY the JSON array."
+        )
+        human = (
+            f"REFERENCES SECTION (Source {i}: {src['filename']}):\n{refs_section}\n\n"
+            "Extract the bibliography entries as a JSON array."
+        )
+
+        try:
+            raw = _invoke(_make_llm(settings, temperature=0.1, num_predict=2048), system, human)
+            items = _parse_json_from_llm(raw)
+            if not isinstance(items, list):
+                continue
+            parsed = [
+                {
+                    "year": str(it.get("year") or "n.d."),
+                    "authors": str(it.get("authors") or ""),
+                    "title": str(it["title"]),
+                    "gist": "",
+                    "source": i,
+                    "url": "",
+                }
+                for it in items[:_REFS_PER_SOURCE]
+                if isinstance(it, dict) and it.get("title")
+            ]
+            if parsed:
+                refs_by_source.append(parsed)
+        except Exception as e:
+            logger.debug("Reference extraction failed for source %d (%s): %s",
+                          i, src.get("filename"), e)
+            continue
+
+    if not refs_by_source:
+        return [], (
+            "No references/bibliography section could be found or parsed in "
+            "any source. Citation Timeline needs a references list at the "
+            "end of at least one document."
+        )
+
+    # Round-robin merge so no single source's bibliography crowds out the rest.
+    all_refs: List[Dict[str, Any]] = []
+    for group in itertools.zip_longest(*refs_by_source):
+        for item in group:
+            if item is not None:
+                all_refs.append(item)
+        if len(all_refs) >= _MAX_TOTAL_REFS:
+            break
+    all_refs = all_refs[:_MAX_TOTAL_REFS]
+
+    if enrich_with_abstracts:
+        for item in all_refs:
+            title = item["title"].strip()
+            if not title:
+                continue
+            try:
+                meta = get_paper_abstract(title)
+            except Exception as e:
+                logger.debug("Abstract enrichment failed for '%s': %s", title[:60], e)
+                meta = None
+            if meta:
+                gist = (meta.get("tldr") or meta.get("abstract", "")[:240]).strip()
+                if gist:
+                    item["gist"] = gist
+                if meta.get("year"):
+                    item["year"] = str(meta["year"])
+                if meta.get("url"):
+                    item["url"] = meta["url"]
+            time.sleep(0.4)
+
+    needs_gist = [item for item in all_refs if not item["gist"]]
+    if needs_gist:
+        titles_block = "\n".join(
+            f"{idx + 1}. {item['title']}" for idx, item in enumerate(needs_gist)
+        )
+        system_gist = (
+            "You are a research assistant. For each numbered title below, write "
+            "ONE short sentence (under 20 words) guessing its key idea or "
+            "contribution, based on the title and your general knowledge if you "
+            "recognize the work.\n"
+            "Output ONLY a JSON array of strings, same order, no code fences: "
+            '["gist 1", "gist 2", ...]'
+        )
+        human_gist = f"TITLES:\n{titles_block}\n\nOutput the JSON array of one-line gists."
+        try:
+            raw = _invoke(_make_llm(settings, temperature=0.4, num_predict=2048), system_gist, human_gist)
+            gists = _parse_json_from_llm(raw)
+            if isinstance(gists, list):
+                for item, gist in zip(needs_gist, gists):
+                    if isinstance(gist, str) and gist.strip():
+                        item["gist"] = gist.strip()
+        except Exception as e:
+            logger.debug("Gist batch generation failed: %s", e)
+
+    all_refs.sort(key=_year_key)
+    return all_refs, ""
 
 
 # ── Feature 9: Study comparison table ────────────────────────────────────────

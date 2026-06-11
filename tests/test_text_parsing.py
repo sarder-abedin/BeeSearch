@@ -7,12 +7,15 @@ Unit tests for tools/text_parsing.py:
     JSON array off LLM output, tolerating markdown-bolded/italicized keys,
     smart quotes, trailing commas, and several JSON-shape variants.
 
+  - extract_references_section(): isolates the bibliography at the end of
+    an academic paper, for the Notebook Citation Timeline feature.
+
 Pure stdlib — no network access or heavy deps required.
 """
 
 from __future__ import annotations
 
-from tools.text_parsing import extract_suggested_questions
+from tools.text_parsing import extract_references_section, extract_suggested_questions
 
 
 def test_full_json_object():
@@ -121,3 +124,52 @@ def test_no_match_returns_raw_unchanged():
     body, questions = extract_suggested_questions(raw)
     assert body == raw
     assert questions == []
+
+
+# ── extract_references_section() ─────────────────────────────────────────
+
+def test_references_heading_extracts_trailing_section():
+    text = (
+        "Title of the Paper\n\n"
+        "Abstract\nThis paper studies X.\n\n"
+        "1. Introduction\nSome introduction text. " + ("filler " * 50) + "\n\n"
+        "References\n"
+        "[1] Smith, J. (2020). A great paper. Journal of Things.\n"
+        "[2] Doe, A. (2019). Another paper. Conference of Stuff."
+    )
+    section = extract_references_section(text)
+    assert section.startswith("[1] Smith, J. (2020)")
+    assert "[2] Doe, A. (2019)" in section
+    assert "Introduction" not in section
+
+
+def test_bibliography_and_works_cited_headings_recognized():
+    for heading in ["Bibliography", "Works Cited", "Literature Cited", "REFERENCES"]:
+        text = ("Body text. " * 50) + f"\n\n{heading}\n[1] Author (2021). Paper title."
+        section = extract_references_section(text)
+        assert section == "[1] Author (2021). Paper title.", heading
+
+
+def test_early_mention_is_ignored_in_favor_of_later_heading():
+    text = (
+        "Table of Contents\n"
+        "1. Introduction\n"
+        "2. References\n"
+        "3. Appendix\n\n"
+        + ("Body text discussing prior work. " * 30) + "\n\n"
+        "References\n"
+        "[1] Real Citation (2022). The actual bibliography entry."
+    )
+    section = extract_references_section(text)
+    assert section == "[1] Real Citation (2022). The actual bibliography entry."
+
+
+def test_no_heading_returns_empty_string():
+    text = "Just a regular document body with no bibliography heading at all. " * 10
+    assert extract_references_section(text) == ""
+
+
+def test_heading_with_trailing_colon():
+    text = ("Body text. " * 50) + "\n\nReferences:\n[1] Author (2023). Title."
+    section = extract_references_section(text)
+    assert section == "[1] Author (2023). Title."
