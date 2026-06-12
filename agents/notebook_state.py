@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, TypedDict
 
+from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL
+
 
 class NotebookState(TypedDict, total=False):
     # ── User inputs ───────────────────────────────────────────
@@ -23,6 +25,7 @@ class NotebookState(TypedDict, total=False):
     embed_model: str                   # Ollama embedding model for retrieval
     top_k: int                         # Number of chunks to retrieve
     include_web_search: bool           # Auto-search Google for each query
+    temperature_level: str             # "precise" | "focused" | "balanced" | "creative"
 
     # ── Loaded from memory / retrieval ────────────────────────
     conversation_history: List[Dict]   # Last N turns from memory
@@ -52,6 +55,7 @@ def create_notebook_state(
     embed_model: str = "nomic-embed-text",
     top_k: int = 8,
     include_web_search: bool = False,
+    temperature_level: str = DEFAULT_TEMPERATURE_LEVEL,
 ) -> NotebookState:
     """Factory for a single-turn NotebookState."""
     return NotebookState(
@@ -62,6 +66,7 @@ def create_notebook_state(
         embed_model=embed_model,
         top_k=top_k,
         include_web_search=include_web_search,
+        temperature_level=temperature_level,
         conversation_history=[],
         retrieved_chunks=[],
         source_count=0,

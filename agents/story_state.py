@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict
 
+from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL
+
 
 class StoryState(TypedDict, total=False):
     # ── User inputs ───────────────────────────────────────────
@@ -22,6 +24,7 @@ class StoryState(TypedDict, total=False):
     session_id: str                  # Links to StorytellerMemory on disk
     model_name: str                  # Ollama model for this session
     num_ctx: int                     # LLM context window (tokens)
+    temperature_level: str           # "precise" | "focused" | "balanced" | "creative"
 
     # ── Loaded from memory ────────────────────────────────────
     document_context: str            # Truncated raw_text from uploaded docs
@@ -60,6 +63,7 @@ def create_story_state(
     explanation_style: str = "simple",
     explanation_level: str = "intermediate",
     clarifications: Optional[Dict[str, str]] = None,
+    temperature_level: str = DEFAULT_TEMPERATURE_LEVEL,
 ) -> StoryState:
     """Factory function for a single-turn StoryState."""
     return StoryState(
@@ -70,6 +74,7 @@ def create_story_state(
         session_id=session_id,
         model_name=model_name,
         num_ctx=num_ctx,
+        temperature_level=temperature_level,
         clarifications=clarifications or {},
         document_context="",
         document_names=[],

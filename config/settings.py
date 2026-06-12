@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     ollama_model: str = Field("llama3.1:8b", alias="OLLAMA_MODEL")
     num_ctx: int = Field(32768, alias="NUM_CTX")
 
+    # ── Research Notebook temperature tuning ─────────────────
+    # One of "precise" | "focused" | "balanced" | "creative" — see
+    # tools/temperature_levels.py. "focused" preserves BeeSearch's
+    # original per-call temperature tuning unchanged.
+    temperature_level: str = Field("focused", alias="TEMPERATURE_LEVEL")
+
     # ── Hybrid RAG ───────────────────────────────────────────
     embedding_model: str = Field("nomic-embed-text", alias="EMBED_MODEL")
     chroma_persist_dir: str = Field("./outputs/chroma_db", alias="CHROMA_PERSIST_DIR")

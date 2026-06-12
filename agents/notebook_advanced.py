@@ -35,6 +35,7 @@ from langchain_ollama import ChatOllama
 from agents.notebook_memory import NotebookMemory
 from config.settings import get_settings
 from tools.citation_network import get_paper_abstract
+from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 from tools.text_parsing import extract_references_section
 
 logger = logging.getLogger(__name__)
@@ -53,10 +54,11 @@ def _max_predict(settings: dict) -> int:
 
 def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 4096) -> ChatOllama:
     import httpx
+    level = settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=settings.get("model", cfg.ollama_model),
         base_url=cfg.ollama_base_url,
-        temperature=temperature,
+        temperature=apply_temperature_level(temperature, level),
         num_predict=num_predict,
         num_ctx=settings.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(300.0)},

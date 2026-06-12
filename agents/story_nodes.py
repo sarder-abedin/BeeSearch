@@ -33,6 +33,7 @@ from langchain_ollama import ChatOllama
 from agents.story_memory import StorytellerMemory
 from agents.story_state import StoryState
 from config.settings import get_settings
+from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 from tools.text_parsing import extract_suggested_questions
 
 logger = logging.getLogger(__name__)
@@ -51,10 +52,11 @@ def _get_memory() -> StorytellerMemory:
 
 def _llm(state: StoryState, temperature: float = 0.7) -> ChatOllama:
     import httpx
+    level = state.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=state.get("model_name", cfg.ollama_model),
         base_url=cfg.ollama_base_url,
-        temperature=temperature,
+        temperature=apply_temperature_level(temperature, level),
         num_predict=4096,
         num_ctx=state.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(180.0)},
