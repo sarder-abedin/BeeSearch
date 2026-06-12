@@ -47,6 +47,7 @@ from typing import Any, Dict, List
 from agents.notebook_memory import NotebookMemory
 from agents.notebook_pipeline_state import NotebookPipelineState
 from config.settings import get_settings
+from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -71,10 +72,11 @@ def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 2048)
     """ChatOllama factory — mirrors notebook_advanced._make_llm."""
     import httpx
     from langchain_ollama import ChatOllama
+    level = settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=settings.get("model", cfg.ollama_model),
         base_url=cfg.ollama_base_url,
-        temperature=temperature,
+        temperature=apply_temperature_level(temperature, level),
         num_predict=num_predict,
         num_ctx=settings.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(300.0)},

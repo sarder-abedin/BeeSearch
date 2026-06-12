@@ -13,6 +13,7 @@ from config.hardware import (
     get_available_models, get_recommended_tier, recommend_config,
 )
 from config.settings import get_settings
+from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, temperature_level_options
 from ui.glossary import term_help
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,25 @@ def render_sidebar() -> dict:
                                   value=rec.get("model") or "llama3.2:3b",
                                   key="sidebar_model_manual")
 
+        # ── Response Tuning (Research Notebook) ─────────────────
+        st.divider()
+        st.markdown("#### Response Tuning", help=term_help("Temperature level"))
+        _level_opts = temperature_level_options()
+        _level_keys = [k for k, _, _ in _level_opts]
+        _level_labels = {k: label for k, label, _ in _level_opts}
+        _level_desc = {k: desc for k, _, desc in _level_opts}
+        if "sidebar_temperature_level" not in st.session_state:
+            st.session_state["sidebar_temperature_level"] = DEFAULT_TEMPERATURE_LEVEL
+        temperature_level = st.select_slider(
+            "Temperature level", options=_level_keys,
+            format_func=lambda k: _level_labels[k],
+            key="sidebar_temperature_level",
+            help="How closely Research Notebook answers, summaries, and explanations "
+                 "stick to your sources vs. use varied phrasing. Takes effect on your "
+                 "next question or generation — change it any time.",
+        )
+        st.caption(f"**{_level_labels[temperature_level]}** — {_level_desc[temperature_level]}")
+
         # ── Context window ────────────────────────────────────
         st.divider()
         st.markdown("#### Context Window", help=term_help("Context window"))
@@ -311,4 +331,5 @@ def render_sidebar() -> dict:
         "use_ocr": use_ocr,
         "large_doc_page_threshold": large_doc_page_threshold,
         "style_profile": None,
+        "temperature_level": temperature_level,
     }

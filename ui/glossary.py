@@ -126,6 +126,14 @@ GLOSSARY: Dict[str, str] = {
         "High / Maximum) based on your RAM, used to pre-select sensible "
         "defaults for model size, context window, and document chunking."
     ),
+    "Temperature level": (
+        "Controls how 'creative' vs. 'literal' the AI's wording is in "
+        "Research Notebook answers, summaries, and explanations. Precise = "
+        "fully deterministic and repeatable; Focused = BeeSearch's default; "
+        "Balanced = more natural phrasing; Creative = most varied and "
+        "exploratory. Grading and fact-checking always stay deterministic, "
+        "no matter the level. Changes take effect on your very next question."
+    ),
 }
 
 

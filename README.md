@@ -271,6 +271,9 @@ python main.py --notebook-study-table <id>      # study comparison table
 # 7-agent pipeline
 python main.py --notebook-pipeline <id>
 python main.py --notebook-pipeline <id> --pipeline-query "What are the main findings?"
+
+# Response tuning — precise / focused (default) / balanced / creative
+python main.py --notebook --notebook-id <id> --temperature-level balanced
 ```
 
 ### Section-by-Section Breakdown (CLI)
@@ -319,7 +322,47 @@ Once in `--notebook` mode, type:
 /compare        Compare two sources
 /timeline       Citation timeline
 /study-table    Study comparison table
+/temperature [level]   Show or change response tuning (see below)
 /quit           Exit
+```
+
+---
+
+## Response tuning — Temperature levels
+
+Every LLM call in the Research Notebook (Chat answers, Explain, and all
+advanced tools — summary, FAQ, literature review, mind map, audio script,
+knowledge graph, compare, citation timeline, study table, and the 7-agent
+pipeline) is individually tuned: factual answers stay close to your
+sources, while the Explain "storyteller" is a bit more exploratory.
+**Temperature level** shifts every one of those tunings up or down together,
+without changing their relative balance — and it applies on your very next
+question, mid-session, with no restart needed.
+
+| Level | What you get |
+|-------|-------------|
+| **Precise** | Fully deterministic — the same question against the same sources always produces the same answer, word for word. Best for exact reproducibility. |
+| **Focused** *(default)* | BeeSearch's original tuning — factual answers, summaries, and extractions stay close to your source material, with minimal wording variation. |
+| **Balanced** | More natural, varied phrasing across answers, summaries, and explanations, while still grounded in your sources. |
+| **Creative** | The most varied and exploratory phrasing — useful for brainstorming, podcast-style explanations, and mind maps. Written answers may diverge further from exact source wording. |
+
+Chunk/citation grading and faithfulness checks always stay fully
+deterministic, no matter which level you pick — only the wording of
+generated text is affected.
+
+**In the UI:** use the **Response Tuning** control in the sidebar (under
+"LLM Model"). It applies to your next message or generation in any
+Research Notebook tab — Chat, Explain, and every advanced tool.
+
+**In the CLI:**
+
+```bash
+# Set at session start
+python main.py --notebook --notebook-id <id> --temperature-level creative
+
+# Or change anytime during a session
+/temperature              # show the current level and what each one means
+/temperature balanced     # switch — applies to your next question
 ```
 
 ---
@@ -354,6 +397,10 @@ NUM_CTX=8192
 # PDFs with more pages than this switch from Docling to pdfplumber
 # Lower on machines with < 8 GB RAM (e.g. 20 or 30). Set to 0 to always use Docling.
 LARGE_DOC_PAGE_THRESHOLD=50
+
+# Research Notebook response tuning: precise | focused | balanced | creative
+# (sidebar "Response Tuning" control / CLI /temperature override this per session)
+TEMPERATURE_LEVEL=focused
 ```
 
 ---

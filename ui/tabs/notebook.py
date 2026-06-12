@@ -12,6 +12,7 @@ from agents.notebook_memory import NotebookMemory
 from agents.notebook_state import create_notebook_state
 from config.settings import get_settings
 from tools.hybrid_store import _stores as _hybrid_stores
+from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL
 from ui.glossary import render_glossary_expander, term_help
 from ui.helpers import (
     get_supported_file_types, process_uploads, render_eval_result, render_rag_reflection,
@@ -1275,6 +1276,7 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
         num_ctx=settings["num_ctx"],
         explanation_style=explanation_style,
         explanation_level=explanation_level,
+        temperature_level=settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL),
     )
 
     step_log = st.empty()
@@ -1708,6 +1710,7 @@ for conversational science communication with multiple explanation styles.
                         embed_model=settings.get("embed_model", cfg.embedding_model),
                         top_k=settings.get("hybrid_top_k", cfg.hybrid_top_k),
                         include_web_search=auto_web,
+                        temperature_level=settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL),
                     )
 
                     labels = {

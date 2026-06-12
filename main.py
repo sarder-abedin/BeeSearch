@@ -44,6 +44,10 @@ python main.py --list-notebooks
 python main.py --search-notebooks "transformer attention mechanism"
 # (or, inside an open notebook session: /search-all <query>)
 
+# Tune response style (Chat, Explain, and advanced tools)
+python main.py --notebook --notebook-id <id> --temperature-level balanced
+# (or, inside an open notebook session: /temperature <precise|focused|balanced|creative>)
+
 # Advanced analysis (one-shot)
 python main.py --notebook-summary <notebook_id>     # cross-doc summary
 python main.py --notebook-faq <notebook_id>         # generate FAQ
@@ -94,6 +98,7 @@ _KNOWN_FLAGS = [
     "--notebook-timeline", "--enrich-abstracts", "--notebook-study-table",
     "--notebook-pipeline", "--pipeline-query",
     "--no-docling", "--ocr", "--large-doc-threshold",
+    "--temperature-level",
     "-g", "-f", "-v",
 ]
 
@@ -292,6 +297,17 @@ def _parse_args():
         "--pipeline-query", type=str, default="", metavar="QUERY",
         help="Optional focus query for Agent 3 (Retrieval) when using --notebook-pipeline",
     )
+    nb.add_argument(
+        "--temperature-level", choices=["precise", "focused", "balanced", "creative"],
+        default=None, metavar="LEVEL",
+        help="Response tuning for Chat answers, Explain, and advanced tools "
+             "(summary/FAQ/review/mindmap/etc.): precise = fully deterministic, "
+             "focused = BeeSearch's default, balanced = more varied natural "
+             "phrasing, creative = most exploratory wording. Grading and "
+             "fact-checking always stay deterministic. Change anytime in a "
+             "session with /temperature <level>. "
+             "(default: TEMPERATURE_LEVEL from settings, usually 'focused')",
+    )
 
     args = parser.parse_args()
 
@@ -302,6 +318,11 @@ def _parse_args():
         args.model = _cfg.ollama_model or "llama3.2:3b"
     if args.large_doc_threshold is None:
         args.large_doc_threshold = _cfg.large_doc_page_threshold
+    if args.temperature_level is None:
+        args.temperature_level = _cfg.temperature_level
+    from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, TEMPERATURE_LEVELS
+    if args.temperature_level not in TEMPERATURE_LEVELS:
+        args.temperature_level = DEFAULT_TEMPERATURE_LEVEL
 
     return args
 
@@ -864,6 +885,7 @@ def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
         "model": args.model,
         "num_ctx": args.num_ctx,
         "embed_model": getattr(args, "embed_model", settings_cfg.embedding_model),
+        "temperature_level": getattr(args, "temperature_level", settings_cfg.temperature_level),
     }
 
     from agents.notebook_memory import NotebookMemory
@@ -1047,6 +1069,7 @@ def _cmd_notebook_pipeline(notebook_id: str, args) -> None:
         "model": args.model,
         "num_ctx": args.num_ctx,
         "embed_model": getattr(args, "embed_model", _cfg.embedding_model),
+        "temperature_level": getattr(args, "temperature_level", _cfg.temperature_level),
     }
     initial = create_pipeline_state(
         notebook_id=notebook_id, settings=settings,
@@ -1152,6 +1175,7 @@ def _cmd_notebook(args) -> None:
         "embed_model": getattr(args, "embed_model", settings_cfg.embedding_model),
         "chunk_size": settings_cfg.chunk_size,
         "chunk_overlap": settings_cfg.chunk_overlap,
+        "temperature_level": getattr(args, "temperature_level", settings_cfg.temperature_level),
     }
 
     memory = NotebookMemory()
@@ -1209,11 +1233,15 @@ def _cmd_notebook(args) -> None:
 
     console.rule("[bold blue]Research Notebook[/bold blue]")
     sources = notebook.get("sources", [])
+    from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, TEMPERATURE_LEVELS
+    _temp_level = settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
+    _temp_label = TEMPERATURE_LEVELS.get(_temp_level, TEMPERATURE_LEVELS[DEFAULT_TEMPERATURE_LEVEL])["label"]
     console.print(Panel(
         f"Notebook: [bold]{notebook.get('name', 'Notebook')}[/bold]\n"
         f"ID:       [cyan]{notebook_id}[/cyan]\n"
         f"Sources:  {len(sources)}\n"
-        f"Turns:    {len(notebook.get('conversation', []))}"
+        f"Turns:    {len(notebook.get('conversation', []))}\n"
+        f"Tuning:   {_temp_label} (change with /temperature)"
         + (("\nFiles:  " + ", ".join(s['filename'][:25] for s in sources[:4])
             + (" …" if len(sources) > 4 else "")) if sources else ""),
         title="Session Info", border_style="blue",
@@ -1227,6 +1255,8 @@ def _cmd_notebook(args) -> None:
         "  /graph         Knowledge graph   /compare        Compare two sources\n"
         "  /timeline      Citation timeline /study-table    Study comparison table\n"
         "  /search-all <query>              Search every notebook you've ever created\n"
+        "  /temperature [level]             Show/change response tuning "
+        "(precise/focused/balanced/creative)\n"
         "  /quit          Exit[/dim]\n"
     )
 
@@ -1393,6 +1423,27 @@ def _cmd_notebook(args) -> None:
                         _cmd_notebook_advanced(notebook_id, "compare", _fake_args)
                     except (ValueError, IndexError):
                         console.print("[red]Invalid selection.[/red]")
+
+            elif cmd == "/temperature":
+                from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, LEVEL_ORDER, TEMPERATURE_LEVELS
+                level = arg.strip().lower()
+                current = settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
+                if current not in TEMPERATURE_LEVELS:
+                    current = DEFAULT_TEMPERATURE_LEVEL
+                if not level:
+                    console.print(f"\n[bold]Current level:[/bold] {TEMPERATURE_LEVELS[current]['label']} ({current})\n")
+                    for key in LEVEL_ORDER:
+                        meta = TEMPERATURE_LEVELS[key]
+                        marker = "[green]->[/green]" if key == current else " "
+                        console.print(f"{marker} [cyan]{key}[/cyan] ({meta['label']}): {meta['description']}")
+                    console.print("\n[dim]Usage: /temperature <precise|focused|balanced|creative>[/dim]")
+                elif level not in TEMPERATURE_LEVELS:
+                    console.print(f"[yellow]Unknown level '{level}'. Choose from: {', '.join(LEVEL_ORDER)}[/yellow]")
+                else:
+                    settings["temperature_level"] = level
+                    args.temperature_level = level
+                    meta = TEMPERATURE_LEVELS[level]
+                    console.print(f"[green]Temperature level set to {meta['label']}.[/green] {meta['description']}")
             else:
                 console.print(f"[yellow]Unknown command: {cmd}[/yellow]")
             continue
@@ -1406,6 +1457,7 @@ def _cmd_notebook(args) -> None:
             user_message=stripped, notebook_id=notebook_id,
             model_name=args.model, num_ctx=args.num_ctx,
             embed_model=settings["embed_model"],
+            temperature_level=settings.get("temperature_level", settings_cfg.temperature_level),
         )
 
         with console.status("[bold blue]Searching notebook…[/bold blue]"):

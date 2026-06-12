@@ -37,6 +37,7 @@ from agents.notebook_memory import NotebookMemory
 from agents.notebook_state import NotebookState
 from config.settings import get_settings
 from tools.hybrid_store import get_or_create_store
+from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 from tools.text_parsing import extract_suggested_questions
 
 logger = logging.getLogger(__name__)
@@ -259,10 +260,11 @@ def _max_predict(state: NotebookState) -> int:
 
 def _llm(state: NotebookState, temperature: float = 0.3) -> ChatOllama:
     import httpx
+    level = state.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=state.get("model_name", cfg.ollama_model),
         base_url=cfg.ollama_base_url,
-        temperature=temperature,
+        temperature=apply_temperature_level(temperature, level),
         num_predict=_max_predict(state),
         num_ctx=state.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(180.0)},
