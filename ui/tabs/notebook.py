@@ -1217,18 +1217,19 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
         if concepts:
             st.caption("Concepts covered: " + ", ".join(concepts[:8]))
         st.divider()
-        for turn_idx, turn in enumerate(session_data.get("conversation", [])):
-            role = turn.get("role", "user")
-            with st.chat_message(role):
-                st.markdown(turn.get("content", ""))
-                if role == "assistant":
-                    qs = turn.get("suggested_questions") or []
-                    if qs:
-                        st.markdown("**Follow-up questions:**")
-                        for q_idx, q in enumerate(qs):
-                            if st.button(q, key=f"nb_exp_sq_{active_id}_{turn_idx}_{q_idx}"):
-                                st.session_state[f"nb_explain_pending_{active_id}"] = q
-                                st.rerun()
+        with st.container(height=450):
+            for turn_idx, turn in enumerate(session_data.get("conversation", [])):
+                role = turn.get("role", "user")
+                with st.chat_message(role):
+                    st.markdown(turn.get("content", ""))
+                    if role == "assistant":
+                        qs = turn.get("suggested_questions") or []
+                        if qs:
+                            st.markdown("**Follow-up questions:**")
+                            for q_idx, q in enumerate(qs):
+                                if st.button(q, key=f"nb_exp_sq_{active_id}_{turn_idx}_{q_idx}"):
+                                    st.session_state[f"nb_explain_pending_{active_id}"] = q
+                                    st.rerun()
     else:
         st.info("Type your first question below to start an explanation session grounded in this notebook.")
 
@@ -1324,10 +1325,13 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
 
     with st.chat_message("assistant"):
         st.markdown(final.get("assistant_response", ""))
-        for q_idx, q in enumerate(final.get("suggested_questions", [])):
-            if st.button(q, key=f"nb_exp_newsq_{active_id}_{q_idx}"):
-                st.session_state[f"nb_explain_pending_{active_id}"] = q
-                st.rerun()
+        new_qs = final.get("suggested_questions", [])
+        if new_qs:
+            st.markdown("**Follow-up questions:**")
+            for q_idx, q in enumerate(new_qs):
+                if st.button(q, key=f"nb_exp_newsq_{active_id}_{q_idx}"):
+                    st.session_state[f"nb_explain_pending_{active_id}"] = q
+                    st.rerun()
 
     st.rerun()
 
@@ -1404,6 +1408,28 @@ def _render_cross_notebook_search(memory: NotebookMemory, settings: dict) -> Non
                         ):
                             st.session_state["nb_jump_to"] = hit["notebook_id"]
                             st.rerun()
+
+
+def _render_suggested_questions_sidebar(active_id: str, notebook: dict) -> None:
+    """Persistent sidebar list of past Chat follow-up questions (deduped, newest first)."""
+    seen: list[str] = []
+    for turn in notebook.get("conversation", []):
+        if turn.get("role") != "assistant":
+            continue
+        for q in turn.get("suggested_questions") or []:
+            if q and q not in seen:
+                seen.append(q)
+    if not seen:
+        return
+
+    with st.sidebar:
+        st.divider()
+        with st.expander(f"Suggested questions ({len(seen)})"):
+            st.caption("From this notebook's Chat — click to ask again.")
+            for i, q in enumerate(reversed(seen[-10:])):
+                if st.button(q, key=f"nb_sidebar_sq_{active_id}_{i}", use_container_width=True):
+                    st.session_state["nb_pending_q"] = q
+                    st.rerun()
 
 
 # ── Main tab ─────────────────────────────────────────────────────────────────────
@@ -1637,6 +1663,8 @@ for conversational science communication with multiple explanation styles.
             st.info("Create or select a notebook on the left to begin.")
             return
 
+        _render_suggested_questions_sidebar(active_id, notebook)
+
         st.markdown(f"**{notebook.get('name', 'Notebook')}**")
         src_names = [s["filename"] for s in notebook.get("sources", [])]
         if src_names:
@@ -1667,17 +1695,18 @@ for conversational science communication with multiple explanation styles.
 
         # ── Tab 1: Chat ───────────────────────────────────────
         with tab_chat:
-            for turn_idx, turn in enumerate(notebook.get("conversation", [])):
-                role = turn.get("role", "user")
-                with st.chat_message(role):
-                    st.markdown(turn.get("content", ""))
-                    if role == "assistant":
-                        _render_citations(turn.get("citations") or [])
-                        qs = turn.get("suggested_questions") or []
-                        for q_idx, q in enumerate(qs):
-                            if st.button(q, key=f"nb_sq_{active_id}_{turn_idx}_{q_idx}"):
-                                st.session_state["nb_pending_q"] = q
-                                st.rerun()
+            with st.container(height=450):
+                for turn_idx, turn in enumerate(notebook.get("conversation", [])):
+                    role = turn.get("role", "user")
+                    with st.chat_message(role):
+                        st.markdown(turn.get("content", ""))
+                        if role == "assistant":
+                            _render_citations(turn.get("citations") or [])
+                            qs = turn.get("suggested_questions") or []
+                            for q_idx, q in enumerate(qs):
+                                if st.button(q, key=f"nb_sq_{active_id}_{turn_idx}_{q_idx}"):
+                                    st.session_state["nb_pending_q"] = q
+                                    st.rerun()
 
             pending = st.session_state.pop("nb_pending_q", None)
             typed = st.chat_input(
