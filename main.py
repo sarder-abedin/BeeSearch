@@ -1257,6 +1257,8 @@ def _cmd_notebook(args) -> None:
         "  /search-all <query>              Search every notebook you've ever created\n"
         "  /temperature [level]             Show/change response tuning "
         "(precise/focused/balanced/creative)\n"
+        "  /followups                       List this session's follow-up questions\n"
+        "  /followup <n>  or just <n>       Ask follow-up question <n>\n"
         "  /quit          Exit[/dim]\n"
     )
 
@@ -1280,6 +1282,13 @@ def _cmd_notebook(args) -> None:
             console.print()
 
     last_questions: list[str] = []
+    if history and history[-1].get("role") == "assistant":
+        last_questions = history[-1].get("suggested_questions", []) or []
+        if last_questions:
+            console.print("[dim]Follow-up questions from your last session:[/dim]")
+            for i, q in enumerate(last_questions, 1):
+                console.print(f"  [dim]{i}. {q}[/dim]")
+            console.print()
 
     while True:
         try:
@@ -1305,6 +1314,27 @@ def _cmd_notebook(args) -> None:
                 console.print(f"[dim]→ {stripped}[/dim]")
             else:
                 console.print("[yellow]No question at that number.[/yellow]"); continue
+
+        _fu_parts = stripped.split(maxsplit=1)
+        _fu_cmd = _fu_parts[0].lower()
+        if _fu_cmd == "/followups":
+            if not last_questions:
+                console.print("[yellow]No follow-up questions yet — ask something first.[/yellow]")
+            else:
+                console.print("\n[dim]Follow-up questions:[/dim]")
+                for i, q in enumerate(last_questions, 1):
+                    console.print(f"  [dim]{i}. {q}[/dim]")
+            continue
+        if _fu_cmd == "/followup":
+            fu_arg = _fu_parts[1].strip() if len(_fu_parts) > 1 else ""
+            if not last_questions:
+                console.print("[yellow]No follow-up questions yet — ask something first.[/yellow]")
+                continue
+            if not fu_arg.isdigit() or not (1 <= int(fu_arg) <= len(last_questions)):
+                console.print(f"[yellow]Usage: /followup <1-{len(last_questions)}>[/yellow]")
+                continue
+            stripped = last_questions[int(fu_arg) - 1]
+            console.print(f"[dim]→ {stripped}[/dim]")
 
         if stripped.startswith("/"):
             parts = stripped.split(maxsplit=1)

@@ -102,6 +102,13 @@ html, body,
 [data-testid="stSidebar"] [data-testid="stSlider"] p {
     color: #334155 !important;
 }
+/* The slider's floating current-value pill is rendered with primaryColor
+   (amber) as its background — pair it with light text. (Separate from the
+   dark-slate rule above, which targets the tick-bar min/max labels that sit
+   on the sidebar's light background.) */
+[data-testid="stSidebar"] [data-testid="stThumbValue"] {
+    color: #FFFFFF !important;
+}
 
 /* ── Buttons ────────────────────────────────────────────────────────── */
 [data-testid="baseButton-primary"] {

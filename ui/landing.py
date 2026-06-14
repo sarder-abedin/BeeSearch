@@ -86,7 +86,7 @@ _CARD_CSS = """
 }
 .mode-tag {
     background: #F1F5F9;
-    color: #b4becc;
+    color: #475569;
     font-size: 0.72rem;
     font-weight: 500;
     padding: 2px 7px;
