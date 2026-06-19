@@ -39,6 +39,13 @@ cfg = get_settings()
 
 
 def _is_retryable(exc: BaseException) -> bool:
+    """
+    Decide whether @retry should retry *exc*.
+
+    Retries only transient failures — rate-limiting (429) and server-side
+    errors (5xx) — plus connection/timeout errors. Other HTTP errors (e.g.
+    404, 400) are treated as permanent and propagate immediately.
+    """
     if isinstance(exc, requests.exceptions.HTTPError):
         code = getattr(getattr(exc, "response", None), "status_code", None)
         return code in (429, 500, 502, 503, 504)
@@ -67,6 +74,7 @@ class Paper:
     tags: List[str] = field(default_factory=list)
 
     def __post_init__(self):
+        """Auto-derive citation_key (e.g. "Smith et al., 2022") from authors/year if not supplied."""
         if not self.citation_key:
             first_author = self.authors[0].split()[-1] if self.authors else "Unknown"
             et_al = " et al." if len(self.authors) > 1 else ""
@@ -252,6 +260,7 @@ class CrossRefResolver:
         return [p for item in items if (p := self._parse_crossref(item)) is not None]
 
     def _parse_crossref(self, msg: dict) -> Optional[Paper]:
+        """Convert one raw CrossRef "message" object into a Paper, or None if it has no title."""
         title_list = msg.get("title", [])
         if not title_list:
             return None
@@ -301,6 +310,7 @@ class GoogleScholarSearcher:
     """
 
     def search(self, query: str, max_results: int = 6) -> List[Paper]:
+        """Search Google Scholar for `query`, returning up to `max_results` papers (`[]` if blocked/unavailable)."""
         try:
             from scholarly import scholarly as _sch
         except ImportError:
@@ -364,6 +374,7 @@ class AcademicSearcher:
     """
 
     def __init__(self):
+        """Construct the underlying per-source searchers (Google Scholar, arXiv, Semantic Scholar, CrossRef)."""
         self.google_scholar = GoogleScholarSearcher()
         self.arxiv = ArxivSearcher()
         self.semantic = SemanticScholarSearcher()
@@ -433,6 +444,7 @@ class AcademicSearcher:
         return unique
 
     def resolve_doi(self, doi: str) -> Optional[Paper]:
+        """Look up full metadata for a known DOI via CrossRef."""
         return self.crossref.resolve_doi(doi)
 
 
@@ -445,6 +457,7 @@ class WebSearcher:
     """Search the web using DuckDuckGo (ddgs). No API key required."""
 
     def search(self, query: str, max_results: int = 5) -> List[WebResult]:
+        """Run a DuckDuckGo text search; returns an empty list (logged, not raised) on any failure."""
         try:
             try:
                 from duckduckgo_search import DDGS  # duckduckgo-search package (pip name)

@@ -19,6 +19,7 @@ from tools.text_parsing import extract_references_section, extract_suggested_que
 
 
 def test_full_json_object():
+    """A trailing well-formed JSON object with a "suggested_questions" key is parsed and stripped from the body."""
     raw = (
         "Here is the explanation.\n\n"
         '{"suggested_questions": ["Q1?", "Q2?", "Q3?"]}'
@@ -29,6 +30,7 @@ def test_full_json_object():
 
 
 def test_quoted_key_without_braces():
+    """A quoted "suggested_questions": [...] block with no enclosing {} is still recognized."""
     raw = (
         "Here is the explanation.\n\n"
         '"suggested_questions": ["Q1?", "Q2?", "Q3?"]'
@@ -39,6 +41,7 @@ def test_quoted_key_without_braces():
 
 
 def test_bare_key_with_colon():
+    """An unquoted suggested_questions: [...] key (colon separator) is recognized."""
     raw = (
         "Here is the explanation.\n\n"
         'suggested_questions: ["Q1?", "Q2?", "Q3?"]'
@@ -49,6 +52,7 @@ def test_bare_key_with_colon():
 
 
 def test_bare_key_with_equals():
+    """An unquoted suggested_questions = [...] key (equals separator) is recognized."""
     raw = (
         "Here is the explanation.\n\n"
         'suggested_questions = ["Q1?", "Q2?", "Q3?"]'
@@ -83,6 +87,7 @@ def test_markdown_bold_key_reported_bug():
 
 
 def test_markdown_italic_and_underscore_keys():
+    """Single-asterisk, single-underscore, and double-underscore markdown emphasis around the key are all normalized away."""
     for opener, closer in [("*", "*"), ("_", "_"), ("__", "__")]:
         raw = (
             "Body text.\n\n"
@@ -94,6 +99,7 @@ def test_markdown_italic_and_underscore_keys():
 
 
 def test_smart_quotes_are_normalized():
+    """Curly/smart quotes (“ ”) inside the question strings are normalized to plain ASCII quotes."""
     raw = (
         "Body text.\n\n"
         "suggested_questions: [“What is X?”, “What is Y?”]"
@@ -104,6 +110,7 @@ def test_smart_quotes_are_normalized():
 
 
 def test_trailing_comma_is_tolerated():
+    """A trailing comma before the closing bracket (invalid strict JSON) doesn't break parsing."""
     raw = (
         "Body text.\n\n"
         'suggested_questions: ["Q1?", "Q2?", "Q3?",]'
@@ -114,12 +121,14 @@ def test_trailing_comma_is_tolerated():
 
 
 def test_max_questions_caps_results():
+    """max_questions truncates the parsed list even when more questions are present in the source text."""
     raw = 'suggested_questions: ["Q1?", "Q2?", "Q3?", "Q4?", "Q5?"]'
     _, questions = extract_suggested_questions(raw, max_questions=2)
     assert questions == ["Q1?", "Q2?"]
 
 
 def test_no_match_returns_raw_unchanged():
+    """With no recognizable suggested_questions block, the raw text passes through unchanged and questions is empty."""
     raw = "Just a plain explanation with no trailing JSON block."
     body, questions = extract_suggested_questions(raw)
     assert body == raw
@@ -129,6 +138,7 @@ def test_no_match_returns_raw_unchanged():
 # ── extract_references_section() ─────────────────────────────────────────
 
 def test_references_heading_extracts_trailing_section():
+    """A "References" heading near the end of the document isolates the bibliography, excluding earlier body text."""
     text = (
         "Title of the Paper\n\n"
         "Abstract\nThis paper studies X.\n\n"
@@ -144,6 +154,7 @@ def test_references_heading_extracts_trailing_section():
 
 
 def test_bibliography_and_works_cited_headings_recognized():
+    """Alternate bibliography headings ("Bibliography", "Works Cited", "Literature Cited", all-caps "REFERENCES") are all recognized."""
     for heading in ["Bibliography", "Works Cited", "Literature Cited", "REFERENCES"]:
         text = ("Body text. " * 50) + f"\n\n{heading}\n[1] Author (2021). Paper title."
         section = extract_references_section(text)
@@ -151,6 +162,7 @@ def test_bibliography_and_works_cited_headings_recognized():
 
 
 def test_early_mention_is_ignored_in_favor_of_later_heading():
+    """An early "References" mention in a table of contents is ignored in favor of the real, later heading."""
     text = (
         "Table of Contents\n"
         "1. Introduction\n"
@@ -165,17 +177,20 @@ def test_early_mention_is_ignored_in_favor_of_later_heading():
 
 
 def test_no_heading_returns_empty_string():
+    """With no recognizable bibliography heading anywhere, the function returns an empty string."""
     text = "Just a regular document body with no bibliography heading at all. " * 10
     assert extract_references_section(text) == ""
 
 
 def test_heading_with_trailing_colon():
+    """A "References:" heading (trailing colon) is recognized the same as a bare "References" heading."""
     text = ("Body text. " * 50) + "\n\nReferences:\n[1] Author (2023). Title."
     section = extract_references_section(text)
     assert section == "[1] Author (2023). Title."
 
 
 def test_heading_with_trailing_page_number():
+    """A heading line with a trailing running-footer page number ("References  12") still matches."""
     # PDF extraction sometimes leaves a running-footer page number on the
     # same line as the heading: "References  12".
     text = ("Body text. " * 50) + "\n\nReferences  12\n[1] Author (2024). Title."
@@ -184,6 +199,7 @@ def test_heading_with_trailing_page_number():
 
 
 def test_heading_at_chunk_boundary_recovered_via_paragraph_join():
+    """Re-joining two notebook chunks with "\\n\\n" restores the line break the heading regex needs when a chunk boundary fell right after "References"."""
     # Simulates two notebook chunks: the first ends right at the "References"
     # heading (chunk text is .strip()'d, so the trailing newline is gone),
     # and the second begins with the first bibliography entry. Joining with
@@ -197,6 +213,7 @@ def test_heading_at_chunk_boundary_recovered_via_paragraph_join():
 
 
 def test_numbered_bibliography_fallback_when_heading_unrecognizable():
+    """When the heading is mangled beyond regex recognition (e.g. letter-spaced "R E F E R E N C E S"), a numbered [1][2][3]... run is used as a fallback signal."""
     # PDF extraction sometimes mangles a letter-spaced "REFERENCES" heading
     # into something that no longer contains "references" as a word. Fall
     # back to recognizing the standard [1] [2] [3]... numbered list.
@@ -216,6 +233,7 @@ def test_numbered_bibliography_fallback_when_heading_unrecognizable():
 
 
 def test_numbered_fallback_requires_minimum_run_length():
+    """A short numbered list unrelated to citations (e.g. "our contributions") is NOT mistaken for a bibliography by the fallback heuristic."""
     # A short numbered list (e.g. "our contributions") with no References/
     # Bibliography heading should NOT be mistaken for a bibliography.
     text = (

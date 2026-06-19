@@ -26,10 +26,12 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
+    """Return the current UTC time as an ISO-8601 string."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _short_id(length: int = 8) -> str:
+    """Generate a short random lowercase-alphanumeric id for a new session."""
     import random
     import string
     chars = string.ascii_lowercase + string.digits
@@ -57,6 +59,13 @@ class StorytellerMemory:
     """
 
     def __init__(self, db_path: Path | None = None):
+        """Open (and lazily initialise) the story sessions SQLite database.
+
+        Parameters
+        ----------
+        db_path : Override path for the SQLite file; defaults to the
+                  package-standard location inside `init_db`/`_tx` when None.
+        """
         self._db_path = db_path
         init_db(self._db_path)
 
@@ -129,6 +138,7 @@ class StorytellerMemory:
         return sessions
 
     def delete(self, session_id: str) -> bool:
+        """Delete a session. Returns True if a row was removed."""
         with _tx(self._db_path) as conn:
             cursor = conn.execute(
                 "DELETE FROM story_sessions WHERE session_id=?",

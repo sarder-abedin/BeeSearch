@@ -30,6 +30,9 @@ from config.settings import get_settings
 logger = logging.getLogger(__name__)
 cfg = get_settings()
 
+# Caps keep the two LLM calls in check_faithfulness() fast and within
+# context-window limits — enough claims/chunks for a representative
+# faithfulness score without re-sending the full retrieved context.
 _MAX_CLAIMS = 8
 _MAX_CHUNKS = 8
 _MAX_CONTEXT_CHARS = 6000
@@ -59,6 +62,7 @@ def is_available() -> bool:
 
 
 def _make_llm(model_name: str, ollama_base_url: str) -> ChatOllama:
+    """Build a deterministic ChatOllama client for claim extraction/verification."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -71,6 +75,11 @@ def _make_llm(model_name: str, ollama_base_url: str) -> ChatOllama:
 
 
 def _extract_json(raw: str) -> Dict[str, Any]:
+    """Parse the first `{...}` block found in `raw`, or return `{}` if none parses.
+
+    Tolerates models that wrap their JSON reply in prose despite
+    instructions to respond with only JSON.
+    """
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
         return {}
@@ -81,6 +90,11 @@ def _extract_json(raw: str) -> Dict[str, Any]:
 
 
 def _extract_claims(llm: ChatOllama, query: str, response_text: str) -> List[str]:
+    """Ask the LLM to pull up to `_MAX_CLAIMS` atomic factual claims out of `response_text`.
+
+    Returns `[]` (rather than raising) on any LLM or parsing failure, so a
+    failed extraction simply skips faithfulness checking for that turn.
+    """
     human = (
         f"QUESTION: {query[:300]}\n\n"
         f"RESPONSE TO CHECK:\n{response_text[:4000]}\n\n"
@@ -101,6 +115,12 @@ def _extract_claims(llm: ChatOllama, query: str, response_text: str) -> List[str
 
 
 def _verify_claims(llm: ChatOllama, claims: List[str], context: str) -> List[bool]:
+    """Ask the LLM whether each of `claims` is supported by `context`, in order.
+
+    Pads the verdict list with `False` (and truncates to `len(claims)`) if
+    the LLM returns the wrong number of verdicts, so a malformed reply
+    counts as "unsupported" rather than misaligning claims to verdicts.
+    """
     numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(claims))
     human = (
         f"SOURCE PASSAGES:\n{context}\n\n"

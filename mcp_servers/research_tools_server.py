@@ -1,6 +1,15 @@
 """mcp_servers/research_tools_server.py
+─────────────────────────────────────────
 MCP server exposing the research assistant's tools to external clients
 (Claude Code, Claude Desktop, etc.) via the Model Context Protocol.
+
+Wraps a subset of BeeSearch's `tools/` and `agents/` functions (academic
+search, web search, notebook RAG query, document ingestion) as `@mcp.tool()`
+functions. Each tool's docstring is surfaced verbatim to MCP clients as its
+description, so wording changes here affect what a calling LLM sees — keep
+edits additive/clarifying rather than altering the stated behavior. This
+server is independent of the Streamlit app (`app.py`) and CLI (`main.py`);
+it does not share their session state.
 
 Run:  python mcp_servers/research_tools_server.py
       mcp dev mcp_servers/research_tools_server.py  (inspector UI)
@@ -85,6 +94,9 @@ def query_notebook(notebook_id: str, question: str, top_k: int = 8) -> dict:
         )
         results = store.search_hybrid(question, top_k) if store.is_indexed() else stored_chunks[:top_k]
     except Exception:
+        # HybridStore can fail (e.g. embedding model not pulled, ChromaDB
+        # unavailable) — degrade to an unranked truncation rather than error,
+        # since this MCP tool has no UI to surface a warning to the caller.
         results = stored_chunks[:top_k]
     return {
         "notebook_id": notebook_id,

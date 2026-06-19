@@ -64,6 +64,31 @@ Utilities
 ─────────
 python main.py --check-system                       # hardware + model check
 python main.py --shutdown                           # safe shutdown
+
+Contents
+────────
+This file is ~1600 lines: mostly argparse setup (`_parse_args`), a hardware
+banner, a handful of `_cmd_*` dispatch functions (one per CLI flag/group of
+flags), and one large interactive REPL function, `_cmd_notebook`. Orientation
+for both:
+
+CLI flags → dispatch function (see `main()` for the actual if/elif chain):
+  --check-system                                  → `_print_hardware_banner` (always runs; this flag just stops after)
+  --shutdown                                       → `_cmd_shutdown`
+  --list-notebooks                                 → `_cmd_list_notebooks`
+  --search-notebooks QUERY                         → `_cmd_search_notebooks`
+  --notebook-summary/-faq/-review/-audio/-mindmap/
+    -graph/-compare/-timeline/-study-table ID      → `_cmd_notebook_advanced(ID, feature, args)`
+  --notebook-pipeline ID                           → `_cmd_notebook_pipeline`
+  --notebook [--notebook-id ID] [--notebook-name]  → `_cmd_notebook` (interactive REPL)
+  --systematic-review / --sr                       → `_cmd_systematic_review`
+
+`_cmd_notebook`'s REPL recognizes these slash-commands (typed at the "You>"
+prompt; documented in detail at each `elif cmd == ...` branch below):
+  /sources, /add <file>, /url <url>, /summary, /faq, /review, /audio,
+  /mindmap, /graph, /compare, /timeline, /study-table, /search-all <query>,
+  /temperature [level], /followups, /followup <n> (or bare <n>), /quit
+Anything not starting with "/" is treated as a question for the notebook.
 """
 from __future__ import annotations
 
@@ -84,6 +109,9 @@ from rich.table import Table
 
 console = Console()
 
+# Flat list of every recognized flag, used only as the candidate pool for
+# _SmartParser's "did you mean" typo suggestions (difflib.get_close_matches) —
+# not consulted by argparse itself for parsing.
 _KNOWN_FLAGS = [
     "--goal", "--files", "--model", "--output",
     "--num-ctx", "--embed-model", "--top-k", "--check-system", "--verbose",
@@ -104,6 +132,7 @@ _KNOWN_FLAGS = [
 
 
 def _configure_logging(verbose: bool = False):
+    """Set the root logger level to DEBUG if --verbose, else WARNING (quiet by default for CLI output)."""
     level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(
         level=level,
@@ -112,7 +141,10 @@ def _configure_logging(verbose: bool = False):
 
 
 class _SmartParser(argparse.ArgumentParser):
+    """ArgumentParser subclass that prints rich-formatted errors and suggests close-match flags on typos."""
+
     def error(self, message: str):
+        """Override argparse's default error() to add colored output and "did you mean" flag suggestions before exiting(2)."""
         self.print_usage(sys.stderr)
         console.print(f"\n[red]Error:[/red] {message}")
         match = re.search(r"(?:unrecognized argument|invalid choice)[s]?:?\s*'?(--?[\w-]+)", message)
@@ -128,6 +160,14 @@ class _SmartParser(argparse.ArgumentParser):
 
 
 def _parse_args():
+    """Define and parse all CLI flags, then resolve model/threshold/temperature-level defaults from settings.
+
+    Defaults for `--model`, `--large-doc-threshold`, and `--temperature-level`
+    are deliberately left unset on the argparse arguments themselves (`""`,
+    `None`, `None`) so this function can tell "user didn't pass it" apart
+    from "user explicitly passed the same value as the config default," and
+    fill them in from `config.settings.get_settings()` afterward.
+    """
     parser = _SmartParser(
         prog="python main.py",
         description=(
@@ -330,6 +370,14 @@ def _parse_args():
 # ─── Hardware banner ─────────────────────────────────────────────────────────
 
 def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) -> dict:
+    """Print detected hardware, pulled Ollama models, and a recommended model/num_ctx; return the recommendation dict.
+
+    Runs on every invocation (not just `--check-system`) so users always see
+    whether their `--model` choice is pulled and how it compares to the
+    recommendation. On a tight-memory fit with no explicit `--model`, prompts
+    interactively (only if `sys.stdin.isatty()`) to choose between the
+    higher-capability model and a safer, lower-RAM alternative.
+    """
     from config.hardware import detect_hardware, get_available_models, recommend_config
 
     hw = detect_hardware()
@@ -403,6 +451,7 @@ def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) 
 # ─── Output helpers ───────────────────────────────────────────────────────────
 
 def _print_eval_cli(eval_result: dict) -> None:
+    """Print a color-coded quality-score table (per dimension + overall) for a systematic review's eval_result, if present."""
     if not eval_result or not eval_result.get("overall"):
         return
     overall = eval_result.get("overall", 0)
@@ -423,6 +472,12 @@ def _print_eval_cli(eval_result: dict) -> None:
 
 
 def _print_rag_reflection_cli(rag_reflection_info) -> None:
+    """Print a Self-Reflective RAG summary table (retrieved/passed-grading counts, cycles, rewritten queries) if any grading occurred.
+
+    Accepts either a single reflection-info dict or a list of them (one
+    systematic review can run retrieval+grading multiple times), normalizing
+    to a list before aggregating totals.
+    """
     if not rag_reflection_info:
         return
     entries = rag_reflection_info if isinstance(rag_reflection_info, list) else [rag_reflection_info]
@@ -454,6 +509,11 @@ def _print_rag_reflection_cli(rag_reflection_info) -> None:
 
 def _process_files(files, chunk_size=800, overlap=150, max_raw_chars=0,
                    use_docling=True, use_ocr=False, large_doc_page_threshold=50):
+    """Process each path in `files` into a ProcessedDocument, printing progress/errors to console.
+
+    Missing files and per-file processing failures are reported and
+    skipped rather than aborting the whole batch.
+    """
     from tools.document_tools import get_processor
     if use_docling:
         console.print(
@@ -488,11 +548,13 @@ def _process_files(files, chunk_size=800, overlap=150, max_raw_chars=0,
 # ─── Safe exit / shutdown ─────────────────────────────────────────────────────
 
 def _cli_safe_exit() -> None:
+    """Flush ChromaDB and free the ports this CLI process may own, on normal exit from a REPL."""
     from tools.shutdown import safe_shutdown, PORT_GOOGLE_SEARCH, PORT_OLLAMA
     safe_shutdown(ports=[PORT_GOOGLE_SEARCH, PORT_OLLAMA], flush_db=True, console=console)
 
 
 def _cmd_shutdown() -> None:
+    """Handle the `--shutdown` flag: free every app port (including Ollama) and flush ChromaDB."""
     from tools.shutdown import safe_shutdown, is_port_in_use, ALL_PORTS
     console.rule("[bold red]Safe Shutdown[/bold red]")
     safe_shutdown(ports=ALL_PORTS, flush_db=True, console=console)
@@ -503,6 +565,12 @@ def _cmd_shutdown() -> None:
 
 def _feedback_loop(current_output: str, mode: str, model_name: str,
                    num_ctx: int, context: str = "") -> str:
+    """Interactively prompt for free-text feedback and refine `current_output` up to MAX_FEEDBACK_ROUNDS times.
+
+    Pressing Enter (or Ctrl-D/Ctrl-C) at any round's prompt stops early.
+    Returns the most recently refined output (or the original if no
+    rounds produced feedback).
+    """
     from agents.feedback_agent import refine_with_feedback, MAX_FEEDBACK_ROUNDS
     refined = current_output
     for round_num in range(1, MAX_FEEDBACK_ROUNDS + 1):
@@ -532,6 +600,7 @@ def _feedback_loop(current_output: str, mode: str, model_name: str,
 # ─── Systematic Literature Review ────────────────────────────────────────────
 
 def _cmd_systematic_review(args) -> None:
+    """Handle `--systematic-review`: run the full PRISMA pipeline end-to-end and write outputs to disk."""
     from agents.systematic_review_state import create_systematic_review_state
     from agents.systematic_review_graph import run_systematic_review
 
@@ -579,6 +648,7 @@ def _cmd_systematic_review(args) -> None:
         task = progress.add_task("Systematic review", total=100)
 
         def sr_callback(node_name: str, state: dict):
+            """LangGraph stream_callback: update the SR pipeline's Rich progress bar/description."""
             pct = state.get("progress_pct", 0)
             label = node_labels.get(node_name, node_name)
             detail = state.get("status_detail", "")
@@ -824,6 +894,7 @@ def _cmd_systematic_review(args) -> None:
 # ─── Research Notebook ────────────────────────────────────────────────────────
 
 def _cmd_list_notebooks():
+    """Handle `--list-notebooks`: print a table of every saved Research Notebook."""
     from agents.notebook_memory import NotebookMemory
     notebooks = NotebookMemory().list_notebooks()
     if not notebooks:
@@ -879,6 +950,9 @@ def _cmd_search_notebooks(query: str, limit: int = 20) -> None:
 
 
 def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
+    """Handle `--notebook-advanced <feature>`: run one of the advanced-analysis features
+    (summary/faq/mindmap/timeline/knowledge-graph/study-guide/podcast/compare/...) one-shot
+    and write its output to disk."""
     from config.settings import get_settings
     settings_cfg = get_settings()
     settings = {
@@ -1050,6 +1124,7 @@ def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
 
 
 def _cmd_notebook_pipeline(notebook_id: str, args) -> None:
+    """Handle `--notebook-pipeline`: run the 7-agent analysis pipeline end-to-end on a saved notebook."""
     from agents.notebook_memory import NotebookMemory
     from agents.notebook_pipeline_graph import run_notebook_pipeline
     from agents.notebook_pipeline_state import create_pipeline_state
@@ -1087,6 +1162,7 @@ def _cmd_notebook_pipeline(notebook_id: str, args) -> None:
     }
 
     def _cb(node_name: str, partial: dict) -> None:
+        """LangGraph stream_callback: print the just-started pipeline agent's label and percent complete."""
         console.print(f"  [green]{_LABELS.get(node_name, node_name)} ({partial.get('progress_pct', 0)}%)[/green]")
 
     try:
@@ -1160,6 +1236,7 @@ def _cmd_notebook_pipeline(notebook_id: str, args) -> None:
 
 
 def _cmd_notebook(args) -> None:
+    """Handle `--notebook`: open (or create) a Research Notebook and run its interactive chat REPL."""
     from agents.notebook_memory import NotebookMemory
     from agents.notebook_state import create_notebook_state
     from agents.notebook_graph import run_notebook_turn
@@ -1524,6 +1601,7 @@ def _cmd_notebook(args) -> None:
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 def main():
+    """CLI entry point: parse args and dispatch to the requested command/mode."""
     args = _parse_args()
 
     if args.shutdown:

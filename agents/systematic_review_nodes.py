@@ -37,6 +37,7 @@ _searcher: AcademicSearcher | None = None
 
 
 def _get_searcher() -> AcademicSearcher:
+    """Return the module-level lazy AcademicSearcher singleton, creating it on first use."""
     global _searcher
     if _searcher is None:
         _searcher = AcademicSearcher()
@@ -49,6 +50,7 @@ def _max_predict(state: SystematicReviewState) -> int:
 
 
 def _llm(state: SystematicReviewState, temperature: float = 0.2, num_predict: int = 4096) -> ChatOllama:
+    """Build a ChatOllama client configured from the SR state's model/context settings."""
     import httpx
     return ChatOllama(
         model=state.get("model_name", cfg.ollama_model),
@@ -61,12 +63,22 @@ def _llm(state: SystematicReviewState, temperature: float = 0.2, num_predict: in
 
 
 def _call(llm: ChatOllama, system: str, human: str) -> str:
+    """Invoke the LLM with a system/human message pair and return the stripped text content."""
     return llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
 
 
 # ── Node 1: Query Generation ───────────────────────────────────────────────────
 
 def query_generation_node(state: SystematicReviewState) -> Dict[str, Any]:
+    """
+    Generate 4-6 diverse academic search queries from the research question.
+
+    Reads state: ``research_question``, ``inclusion_criteria``, ``exclusion_criteria``.
+    Writes: ``search_queries`` (capped at 6), plus progress/step bookkeeping.
+
+    Falls back to ``[research_question, "<rq> systematic review", "<rq> meta-analysis"]``
+    if the LLM does not return a parseable JSON array.
+    """
     logger.info("[SR Node 1] Query Generation")
     llm = _llm(state, temperature=0.1, num_predict=512)
     rq = state.get("research_question", "")
@@ -113,6 +125,22 @@ Return ONLY a valid JSON array of strings. No explanation.""",
 # ── Node 2: Literature Search ──────────────────────────────────────────────────
 
 def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
+    """
+    Run every generated query through AcademicSearcher, dedupe, grade, and
+    pre-screen the resulting papers.
+
+    Reads state: ``search_queries`` (or ``research_question`` as fallback),
+    ``max_results``, ``include_crossref``, ``research_question``,
+    ``inclusion_criteria``, ``exclusion_criteria``, ``model_name``, ``num_ctx``.
+    Writes: ``raw_papers`` (deduped, relevance-graded, screener-ranked),
+    ``screener_scores``, ``rag_reflection_info`` (pre/post grading counts),
+    plus progress/step bookkeeping.
+
+    Papers are deduped by a normalized title key (not DOI/URL) since sources
+    don't reliably share identifiers. Self-reflective grading
+    (``agents.self_reflective_rag.grade_papers``) is applied before citation-key
+    dedup so excluded papers never consume a citation-key suffix.
+    """
     logger.info("[SR Node 2] Literature Search")
     queries = state.get("search_queries", [state.get("research_question", "")])
     searcher = _get_searcher()
@@ -210,7 +238,20 @@ def literature_search_node(state: SystematicReviewState) -> Dict[str, Any]:
 # ── Node 3: Screening ──────────────────────────────────────────────────────────
 
 def screening_node(state: SystematicReviewState) -> Dict[str, Any]:
-    """Screen papers by title/abstract against inclusion and exclusion criteria."""
+    """
+    Screen papers by title/abstract against inclusion and exclusion criteria.
+
+    Reads state: ``raw_papers``, ``research_question``, ``inclusion_criteria``,
+    ``exclusion_criteria``.
+    Writes: ``screened_papers``, ``included_papers`` (same set as
+    ``screened_papers`` at this stage — evidence_extraction_node may further
+    filter), ``excluded_papers`` (each tagged with ``exclusion_reason``).
+
+    One LLM call per paper (not batched) since the INCLUDE/EXCLUDE decision
+    needs to reason about each abstract individually against the criteria.
+    Any unparseable LLM response defaults to INCLUDE — screening errs toward
+    keeping papers rather than silently dropping them.
+    """
     logger.info("[SR Node 3] Screening")
     llm = _llm(state, temperature=0.1, num_predict=128)
 
@@ -277,7 +318,18 @@ Return ONLY valid JSON.""",
 # ── Node 4: Evidence Extraction ────────────────────────────────────────────────
 
 def evidence_extraction_node(state: SystematicReviewState) -> Dict[str, Any]:
-    """Extract structured evidence from each included paper."""
+    """
+    Extract structured evidence (study design, sample size, key finding,
+    quality, relevance) from each included paper via one LLM call per paper.
+
+    Reads state: ``included_papers`` (capped at 20 papers), ``research_question``.
+    Writes: ``evidence_table`` — sorted by quality (High > Medium > Low) then
+    by descending relevance_score, plus progress/step bookkeeping.
+
+    Caps at 20 papers to bound total LLM call count for the synthesis stage
+    that follows; any extraction failure yields a row with "Unknown"/"Medium"
+    defaults rather than dropping the paper.
+    """
     logger.info("[SR Node 4] Evidence Extraction")
     llm = _llm(state, temperature=0.1, num_predict=256)
 
@@ -332,7 +384,26 @@ Return ONLY valid JSON.""",
 # ── Node 5: Synthesis ──────────────────────────────────────────────────────────
 
 def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
-    """Generate PRISMA flow, narrative synthesis, themes, gaps, and conclusion."""
+    """
+    Generate PRISMA flow counts, narrative synthesis, themes, gaps, and conclusion.
+
+    Reads state: ``research_question``, ``evidence_table``, ``raw_papers``,
+    ``screened_papers``, ``included_papers``, ``excluded_papers``.
+    Writes: ``prisma_flow`` (identified/screened/eligibility/included/excluded
+    counts), ``narrative_synthesis``, ``key_themes``, ``research_gaps``,
+    ``limitations``, ``conclusion``, plus progress/step bookkeeping.
+
+    If ``evidence_table`` is empty (nothing survived screening), returns a
+    diagnostic synthesis built from ``excluded_papers``' exclusion reasons
+    instead of attempting to synthesize from no evidence.
+
+    Otherwise issues two separate LLM calls rather than one combined call:
+    narrative synthesis as free-form prose, then key_themes/research_gaps/
+    limitations/conclusion as compact JSON. Small LLMs consistently fail when
+    asked to embed a long free-text essay inside a JSON string value, so
+    generating the prose first and the structured fields second is far more
+    robust than asking for both in one JSON object.
+    """
     logger.info("[SR Node 5] Synthesis")
     llm = _llm(state, temperature=0.3, num_predict=_max_predict(state))
 
@@ -447,7 +518,20 @@ Do not truncate your response; write until the synthesis is complete.
 # ── Node 6: Evaluation ─────────────────────────────────────────────────────────
 
 def sr_eval_node(state: SystematicReviewState) -> Dict[str, Any]:
-    """Quality self-evaluation for the systematic review."""
+    """
+    Quality self-evaluation for the systematic review (final pipeline step).
+
+    Reads state: ``narrative_synthesis``, ``included_papers``, ``raw_papers``,
+    ``excluded_papers``, ``research_question``, ``evidence_table``,
+    ``key_themes``, ``research_gaps``.
+    Writes: ``eval_result`` (search_comprehensiveness, screening_rigor,
+    evidence_quality, synthesis_depth, gap_identification — each 1-5 — plus a
+    one-sentence summary), and sets ``progress_pct`` to 100.
+
+    Unparseable LLM output yields an empty ``eval_result`` dict rather than
+    raising, since evaluation is advisory and must never block pipeline
+    completion.
+    """
     logger.info("[SR Node 6] Evaluation")
     llm = _llm(state, temperature=0.1, num_predict=512)
 

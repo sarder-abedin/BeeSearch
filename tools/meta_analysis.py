@@ -201,6 +201,7 @@ def run_meta_analysis(studies: List[Dict[str, Any]], measure: str = "OR") -> Dic
         # asymmetric in log space (yi's symmetric SE is an internal pooling device).
 
     def _summary(y: float, v: float) -> Dict[str, float]:
+        """Back-transform a pooled log-scale estimate + variance into a reportable estimate/CI."""
         se = math.sqrt(v)
         return {
             "estimate": _back_transform(y, measure),
@@ -235,6 +236,7 @@ def run_meta_analysis(studies: List[Dict[str, Any]], measure: str = "OR") -> Dic
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _llm(model_name: str, num_ctx: int) -> ChatOllama:
+    """Build a low-temperature ChatOllama client for best-effort effect-size extraction."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model, base_url=cfg.ollama_base_url,
@@ -283,6 +285,7 @@ def extract_effect_size_row(paper: Dict[str, Any], measure: str, model_name: str
         parsed = {}
 
     def _num(key: str) -> Optional[float]:
+        """Read `key` from the parsed LLM JSON as a float, or None if absent/unparseable."""
         v = parsed.get(key)
         try:
             return float(v) if v is not None else None
@@ -306,6 +309,7 @@ def extract_effect_size_row(paper: Dict[str, Any], measure: str, model_name: str
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _forest_rows(result: Dict[str, Any], model: str) -> tuple[list, dict, str, str]:
+    """Pick the fixed-effect or random-effects summary row and matching per-study weight key for plotting."""
     studies = result["studies"]
     weight_key = "weight_re_pct" if model == "random" else "weight_fe_pct"
     pooled = result["random_effects"] if model == "random" else result["fixed_effect"]

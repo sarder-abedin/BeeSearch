@@ -1,4 +1,14 @@
-"""agents/contradiction_detector.py — Contradiction detection across included papers"""
+"""
+agents/contradiction_detector.py
+───────────────────────────────────
+Contradiction detection across included papers, for the Systematic Review
+(Mode 7) synthesis step.
+
+Given the evidence table of included papers, asks the LLM to identify areas
+where findings conflict and to score how much consensus exists for each.
+Called from the SR synthesis node; failures degrade to an empty list rather
+than blocking the rest of the pipeline.
+"""
 from __future__ import annotations
 
 import json
@@ -16,6 +26,7 @@ cfg = get_settings()
 
 
 def _llm(model_name: str, num_ctx: int) -> ChatOllama:
+    """Build a low-temperature ChatOllama client for contradiction analysis, falling back to config defaults."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -28,6 +39,7 @@ def _llm(model_name: str, num_ctx: int) -> ChatOllama:
 
 
 def _call(llm, system: str, human: str) -> str:
+    """Send a system+human message pair to the LLM and return the stripped text response."""
     return llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
 
 
@@ -40,6 +52,19 @@ def detect_contradictions(
     """
     Detect contradictions and conflicting findings across included papers.
     Returns a list of contradiction groups with consensus scores.
+
+    Args:
+        evidence_table: Extracted evidence rows (only the first 20 are sent
+            to the LLM to bound prompt size); needs >= 2 entries to compare.
+        research_question: Used to focus the LLM on relevant contradictions.
+        model_name: Ollama chat model identifier.
+        num_ctx: LLM context window size.
+
+    Returns:
+        A list of dicts shaped like
+        ``{claim, position_a, position_b, consensus_score, explanation}``,
+        or ``[]`` if there are too few papers, the LLM found no meaningful
+        contradictions, or the response could not be parsed as JSON.
     """
     if len(evidence_table) < 2:
         return []
@@ -74,6 +99,8 @@ Return [] if no meaningful contradictions exist.""",
     )
 
     try:
+        # Regex-extract the JSON array rather than json.loads(raw) directly: the LLM
+        # sometimes wraps the array in stray prose despite the "ONLY valid JSON" instruction.
         match = re.search(r"\[.*\]", raw, re.DOTALL)
         results = json.loads(match.group(0)) if match else []
         if not isinstance(results, list):

@@ -28,6 +28,14 @@ load_dotenv(_ROOT / ".env")
 
 
 class Settings(BaseSettings):
+    """Typed application configuration, populated from environment variables / `.env`.
+
+    Every field has a sensible local-first default (no API keys required for
+    Ollama or the academic search APIs), so the app runs out-of-the-box.
+    Access via `get_settings()` rather than instantiating directly, so the
+    whole app shares one cached instance.
+    """
+
     # ── Local LLM ───────────────────────────────────────────
     ollama_base_url: str = Field("http://localhost:11434", alias="OLLAMA_BASE_URL")
     ollama_model: str = Field("llama3.1:8b", alias="OLLAMA_MODEL")
@@ -86,6 +94,10 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", alias="LOG_LEVEL")
 
     class Config:
+        """Pydantic settings config: load `.env` from the project root and
+        allow constructing `Settings` with either field names or their
+        `alias=` env-var names."""
+
         env_file = str(_ROOT / ".env")
         env_file_encoding = "utf-8"
         populate_by_name = True
@@ -99,7 +111,11 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return a cached singleton Settings instance."""
+    """Return a cached singleton Settings instance.
+
+    The `lru_cache` means `.env` is only read once per process — restart the
+    app (not just rerun the Streamlit script) to pick up `.env` changes.
+    """
     s = Settings()
     s.ensure_output_dirs()
     return s

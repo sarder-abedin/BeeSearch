@@ -117,6 +117,8 @@ def generate_clarifying_questions(
         )
         resp.raise_for_status()
         content = resp.json()["message"]["content"].strip()
+        # Despite "ONLY valid JSON" in the system prompt, the model sometimes wraps the
+        # array in prose or a code fence — extract the first [...] block defensively.
         match = re.search(r"\[.*\]", content, re.DOTALL)
         if match:
             questions = _validate_questions(json.loads(match.group()))

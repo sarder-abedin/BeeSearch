@@ -60,6 +60,7 @@ _memory: NotebookMemory | None = None
 
 
 def _get_memory() -> NotebookMemory:
+    """Return the module-level lazy NotebookMemory singleton, creating it on first use."""
     global _memory
     if _memory is None:
         _memory = NotebookMemory()
@@ -84,6 +85,7 @@ def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 2048)
 
 
 def _invoke(llm, system: str, human: str) -> str:
+    """Invoke the LLM with a system/human message pair and return the stripped text content."""
     from langchain_core.messages import HumanMessage, SystemMessage
     return llm.invoke(
         [SystemMessage(content=system), HumanMessage(content=human)]
@@ -94,8 +96,14 @@ def _sources_context_from_state(
     state: NotebookPipelineState,
     max_chars_per_doc: int = 3_500,
 ) -> str:
-    """Build numbered source context block from state's chunks — delegates to
-    notebook_advanced._sources_context via a minimal notebook dict."""
+    """
+    Build numbered source context block from state's chunks — delegates to
+    notebook_advanced._sources_context via a minimal notebook dict.
+
+    Args:
+        state: Pipeline state; only ``sources`` and ``chunks`` are read.
+        max_chars_per_doc: Per-source character cap passed through unchanged.
+    """
     from agents.notebook_advanced import _sources_context
     return _sources_context(
         {"sources": state.get("sources", []), "chunks": state.get("chunks", [])},

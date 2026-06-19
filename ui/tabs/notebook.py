@@ -1,4 +1,41 @@
-"""ui/tabs/notebook.py — Mode 8: Research Notebook (NotebookLM-style grounded Q&A)"""
+"""
+ui/tabs/notebook.py
+─────────────────────
+Tab container for Mode 8 (user-facing Mode 2 — Research Notebook), a
+NotebookLM-style grounded Q&A experience over uploaded documents.
+
+This is the largest UI module in the repo. The main entry point,
+`tab_notebook(settings)`, lays out a 2-column page: a left sidebar-style column
+for notebook selection and source management (upload/URL/remove/rename/delete),
+and a right column holding 13 tabs. Almost every other function in this file is
+either a per-advanced-tab renderer (`_tab_*`) or a small shared helper used by
+several of them (export buttons, generate/regenerate button pairs, section Q&A).
+Persistence goes through `agents.notebook_memory.NotebookMemory` (SQLite-backed,
+the `notebooks` + `notebook_chunks` tables described in CLAUDE.md) for
+everything notebook-scoped, and through the separate `StorytellerMemory` (only
+inside `_tab_explain`) for the Explain tab's own conversation history — these
+two stores are deliberately independent so Explain sessions and Chat
+conversations don't collide or overwrite each other.
+
+Contents (in file order):
+  1. Ingestion helpers              — `_index_and_store`, `_render_citations`
+  2. Advanced-feature tab helpers   — `_gen_button`, `_docx_pdf_buttons`,
+                                       `_dot_export_buttons`, section Q&A/breakdown
+                                       renderers used by the Summary tab
+  3. Per-advanced-tab renderers     — `_tab_cross_summary` (+ Section-by-Section
+                                       Breakdown), `_tab_faq`, `_tab_literature_review`,
+                                       `_tab_mindmap`, `_tab_audio`, `_tab_compare`,
+                                       `_tab_knowledge_graph`, `_tab_timeline`,
+                                       `_tab_study_comparison`, `_tab_pipeline`
+                                       (the 7-agent pipeline), `_tab_research_report`,
+                                       `_tab_explain` (Mode 5 storytelling)
+  4. Cross-notebook search          — `_render_cross_notebook_search`,
+                                       `_render_suggested_questions_sidebar`
+  5. Main tab                      — `tab_notebook(settings)`: notebook
+                                       selector + source management (left column),
+                                       Chat tab + the 13-tab `st.tabs(...)` (right
+                                       column)
+"""
 
 from __future__ import annotations
 
@@ -53,7 +90,10 @@ def _index_and_store(notebook_id: str, processed_docs: list, settings: dict,
 
 
 def _render_citations(citations: list) -> None:
-    """Render a compact citation list under an assistant answer."""
+    """Render a compact citation list under an assistant answer (Chat tab only — the
+    Explain tab's storyteller turns don't carry this field). Pure display, no
+    session_state; each citation dict comes from `final["citations"]` /
+    `turn["citations"]` produced by the notebook graph."""
     if not citations:
         return
     with st.expander(f"Sources ({len(citations)})", expanded=False):
@@ -79,6 +119,12 @@ def _gen_button(label: str, key: str, cache_key: str, settings: dict,
     Render a Generate / Regenerate button pair.  Calls `fn(notebook_id,
     *fn_args, settings)` and stores the result under `cache_key` in
     session_state.  Returns (result_or_None, error_str).
+
+    Shared by most of the simple advanced tabs (Summary, Literature Review, Mind
+    Map, Audio, Compare, Knowledge Graph, Timeline, Study Comparison) — each just
+    picks its own `cache_key` (e.g. `f"nb_summary_{active_id}"`) so results from
+    different tabs/notebooks never collide in session_state, and a "Clear" press
+    pops that key and reruns so the cached result disappears immediately.
     """
     col_gen, col_clr = st.columns([4, 1])
     btn_label = "Regenerate" if cache_key in st.session_state else label
@@ -165,7 +211,15 @@ def _render_section_qa(
     active_id: str, doc_id: str, section_idx: int,
     section_title: str, section_chunks: list, level: str, settings: dict,
 ) -> None:
-    """Q&A interface scoped to a single section, inside an expander."""
+    """Q&A interface scoped to a single section, inside an expander.
+
+    Reads/writes `session_state[f"nb_sec_qa_{active_id}_{doc_id}_{section_idx}"]` —
+    the turn history for this one section (distinct per notebook/doc/section so
+    Q&A in one section never bleeds into another). Also writes
+    `nb_sec_last_qa_{active_id}_{doc_id}`, which `_render_section_breakdown` reads to
+    decide which section's expander to keep open after a rerun. Calls
+    `agents.section_summary.answer_section_question` (not a full LangGraph — a single
+    scoped LLM call) for the actual answer."""
     from agents.section_summary import answer_section_question
     qa_hist_key = f"nb_sec_qa_{active_id}_{doc_id}_{section_idx}"
     qa_history = st.session_state.get(qa_hist_key, [])
@@ -175,6 +229,8 @@ def _render_section_qa(
         with st.chat_message(turn["role"]):
             st.markdown(turn["content"])
 
+    # Key includes len(qa_history) so the text_input clears itself after each
+    # answer (a fresh widget key) instead of re-showing the just-submitted text.
     q_key = f"nb_sec_q_{active_id}_{doc_id}_{section_idx}_{len(qa_history)}"
     q_input = st.text_input(
         "Question",
@@ -204,7 +260,15 @@ def _render_section_breakdown(
     active_id: str, doc_id: str, level: str,
     breakdown: list, review: list | None, settings: dict,
 ) -> None:
-    """Render per-section expanders: summary, claim questions, Q&A, expert review."""
+    """Render per-section expanders: summary, claim questions, Q&A, expert review.
+
+    Pure display over the `breakdown`/`review` lists passed in (themselves cached by
+    the caller, `_tab_cross_summary`, under `nb_sec_{...}` / `nb_sec_rev_{...}` keys).
+    Reads `session_state[f"nb_sec_last_qa_{active_id}_{doc_id}"]` (written by
+    `_render_section_qa` / the claim-question buttons below) to decide which section's
+    expander should stay open after a rerun — otherwise every answer would collapse
+    the section the user is actively reading. Delegates the interactive Q&A box in
+    each expander to `_render_section_qa`."""
     last_qa_idx = st.session_state.get(f"nb_sec_last_qa_{active_id}_{doc_id}")
     n = len(breakdown)
     st.caption(
@@ -278,6 +342,28 @@ def _render_section_breakdown(
 
 
 def _tab_cross_summary(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the Summary tab: a cross-document synthesis (top half) plus the
+    Section-by-Section Breakdown feature (bottom half) — two related but separate
+    features sharing one tab.
+
+    Cross-document summary: caches its result under `session_state[f"nb_summary_{active_id}"]`
+    via `_gen_button`, calling `agents.notebook_advanced.generate_cross_document_summary`.
+
+    Section-by-Section Breakdown: lets the user pick one source + explanation level,
+    then runs `agents.section_summary.detect_sections_hybrid` /
+    `summarize_section` / `generate_section_claim_questions` per detected section.
+    Session_state keys:
+      - `nb_sec_src_{active_id}` / `nb_sec_level_{active_id}` — the source picker and
+        level radio widget state.
+      - `nb_sec_{active_id}_{chosen_doc_id}_{level}` (`breakdown_key`) — the generated
+        list of per-section summaries/claim-questions/chunks; keyed by level so
+        switching novice/intermediate/expert doesn't reuse a stale breakdown.
+      - `nb_sec_rev_{active_id}_{chosen_doc_id}` (`review_key`) — the optional expert
+        review pass (`agents.section_summary.review_section`), generated only after a
+        breakdown exists (the button is disabled until then) and cleared whenever the
+        breakdown is regenerated or cleared so review text never outlives its source
+        breakdown.
+    Delegates the actual per-section rendering to `_render_section_breakdown`."""
     from agents.notebook_advanced import generate_cross_document_summary
     st.markdown(
         "Synthesizes **all** notebook sources into a unified markdown summary "
@@ -451,6 +537,7 @@ def _tab_cross_summary(active_id: str, notebook: dict, settings: dict) -> None:
 
 
 def _tab_faq(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the notebook's FAQ tab: generate/clear grounded Q&A pairs and export as Markdown."""
     st.markdown(
         "Auto-generates frequently asked questions with grounded answers "
         "drawn from your notebook sources."
@@ -503,6 +590,7 @@ def _tab_faq(active_id: str, notebook: dict, settings: dict) -> None:
 
 
 def _tab_literature_review(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the Literature Review tab: generate a formal academic-style review and export it."""
     st.markdown(
         "Generates a formal academic-style literature review with structured "
         "sections: introduction, background, methodology, key findings, "
@@ -529,6 +617,7 @@ def _tab_literature_review(active_id: str, notebook: dict, settings: dict) -> No
 
 
 def _tab_mindmap(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the Mind Map tab: generate a concept-relationship mind map and render/export it as DOT."""
     st.markdown(
         "Extracts key concepts and their relationships from your sources and "
         "renders them as an interactive mind map."
@@ -553,6 +642,7 @@ def _tab_mindmap(active_id: str, notebook: dict, settings: dict) -> None:
 
 
 def _tab_audio(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the Podcast/Audio tab: generate a spoken-word script and synthesize/play/download it as .wav."""
     st.markdown(
         "Generates a spoken-word summary script (~300 words, ~2 min) "
         "and synthesizes it to a downloadable **.wav** audio file."
@@ -622,6 +712,7 @@ if (window.speechSynthesis) {{
 
 
 def _tab_compare(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the Source Comparison tab: pick two sources and generate a side-by-side comparison."""
     sources = notebook.get("sources", [])
     if len(sources) < 2:
         st.info("Add at least two sources to use source comparison.")
@@ -662,6 +753,7 @@ def _tab_compare(active_id: str, notebook: dict, settings: dict) -> None:
 
 
 def _tab_knowledge_graph(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the Knowledge Graph tab: extract entities/relationships and render/export as DOT."""
     st.markdown(
         "Extracts entities (concepts, methods, datasets, authors) and their "
         "relationships from your sources and visualises them as a knowledge graph."
@@ -695,6 +787,7 @@ def _tab_knowledge_graph(active_id: str, notebook: dict, settings: dict) -> None
 
 
 def _tab_timeline(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the Citation Timeline tab: extract cited works from bibliographies and list them as a table."""
     st.markdown(
         "Builds a **citation timeline** from the references/bibliography section "
         "of each source: when each cited work was published, who wrote it, and "
@@ -744,6 +837,7 @@ def _tab_timeline(active_id: str, notebook: dict, settings: dict) -> None:
 
 
 def _tab_study_comparison(active_id: str, notebook: dict, settings: dict) -> None:
+    """Render the Study Comparison tab: generate a structured cross-source comparison table."""
     st.markdown(
         "Generates a **structured comparison table** across all sources: "
         "research type, sample/data scope, methodology, key findings, and limitations."
@@ -834,6 +928,7 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
             }
 
             def _cb(node_name: str, partial_state: dict) -> None:
+                """LangGraph stream_callback: update the 7-agent pipeline's progress bar/label."""
                 pct = partial_state.get("progress_pct", 0)
                 label = _AGENT_LABELS.get(node_name, node_name)
                 progress_bar.progress(pct / 100)
@@ -1111,6 +1206,7 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
             }
 
             def _cb(node_name: str, state: dict) -> None:
+                """LangGraph stream_callback: update the Research Report progress bar/label."""
                 pct = state.get("progress_pct", 0)
                 prog.progress(pct / 100)
                 status.caption(_step_labels.get(node_name, node_name.replace("_", " ").title()) + f" ({pct}%)")
@@ -1284,6 +1380,7 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
     done_steps: list = []
 
     def _cb(node_name: str, _state: dict) -> None:
+        """LangGraph stream_callback: append the just-finished Explain step to the running step log."""
         done_steps.append(node_name.replace("_", " ").title())
         step_log.caption(" → ".join(done_steps))
 
@@ -1751,6 +1848,7 @@ for conversational science communication with multiple explanation styles.
                     done: list = []
 
                     def _cb(node_name: str, _state: dict) -> None:
+                        """LangGraph stream_callback: append the just-finished Chat step to the running step log."""
                         done.append(labels.get(node_name, node_name))
                         step_log.caption(" → ".join(done))
 

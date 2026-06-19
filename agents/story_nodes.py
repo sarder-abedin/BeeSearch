@@ -44,6 +44,7 @@ _memory: StorytellerMemory | None = None
 
 
 def _get_memory() -> StorytellerMemory:
+    """Return the module-level lazy StorytellerMemory singleton, creating it on first use."""
     global _memory
     if _memory is None:
         _memory = StorytellerMemory()
@@ -51,6 +52,7 @@ def _get_memory() -> StorytellerMemory:
 
 
 def _llm(state: StoryState, temperature: float = 0.7) -> ChatOllama:
+    """Build a ChatOllama client whose temperature is adjusted by the user's response-tuning level."""
     import httpx
     level = state.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
@@ -64,6 +66,7 @@ def _llm(state: StoryState, temperature: float = 0.7) -> ChatOllama:
 
 
 def _call(llm: ChatOllama, system: str, human: str) -> str:
+    """Invoke the LLM with a system/human message pair and return the stripped text content."""
     response = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
     return response.content.strip()
 

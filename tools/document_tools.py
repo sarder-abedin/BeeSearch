@@ -147,6 +147,7 @@ class DocumentProcessor:
         max_raw_chars: int = 0,
         max_pages: int = 300,
     ):
+        """Configure chunking and the memory-safety caps used by the extraction backends."""
         self.chunk_size = chunk_size
         self.overlap = overlap
         # Stop reading pages once accumulated raw text reaches this many chars.
@@ -344,6 +345,7 @@ class DocumentProcessor:
     def _build_chunks(
         self, pages_text: List[str], doc_id: str, doc_name: str
     ) -> List[DocumentChunk]:
+        """Chunk each page's text and assemble DocumentChunk objects with stable IDs and page/index metadata."""
         chunks: List[DocumentChunk] = []
         chunk_index = 0
 

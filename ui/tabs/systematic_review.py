@@ -1,4 +1,28 @@
-"""ui/tabs/systematic_review.py — Mode 7: PRISMA Systematic Review"""
+"""
+ui/tabs/systematic_review.py
+─────────────────────────────
+Tab container for Mode 7 (user-facing Mode 1 — Systematic Literature Review).
+
+Renders the entire PRISMA-style systematic review workflow: research question
++ inclusion/exclusion inputs, a run button that drives
+`agents.systematic_review_graph.run_systematic_review`, and a tabbed results
+view (Synthesis, Evidence, Explore, Write-up & Export) once a run completes.
+The SR pipeline itself is stateless (see CLAUDE.md) — this module is the only
+place SR results live, cached in `st.session_state["sr_last_result"]` so they
+survive reruns triggered by widgets inside the results tabs.
+
+Contents (in file order):
+  1. Small render helpers       — `_render_prisma_flow`, `_render_evidence_table`
+  2. Tab renderers              — Synthesis, Evidence (+ Abstract Screener),
+                                   Explore (Citation Network, Preprint Status,
+                                   Research Trends, Evidence Map, Meta-Analysis,
+                                   Concept Drift), Write-up & Export
+  3. Guided templates           — preset research-question/criteria starting
+                                   points (`SR_TEMPLATES`) shown in an optional
+                                   expander before the inputs
+  4. Main entry point           — `tab_systematic_review(settings)`
+  5. Markdown export helper     — `_build_sr_markdown`
+"""
 
 from __future__ import annotations
 
@@ -20,6 +44,9 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_prisma_flow(flow: dict) -> None:
+    """Render the 5-stage PRISMA flow counts (Identified/Screened/Eligibility/Included/Excluded)
+    as a row of `st.metric` columns. Pure display — reads only the `flow` dict passed in
+    (`final_state["prisma_flow"]`), no session_state."""
     if not flow:
         return
     cols = st.columns(5)
@@ -31,6 +58,9 @@ def _render_prisma_flow(flow: dict) -> None:
 
 
 def _render_evidence_table(evidence_table: list) -> None:
+    """Render one expander per included paper (citation key, title, year, quality) with
+    authors/journal/DOI, study design, sample size, relevance score, and key finding.
+    Pure display — takes `final_state["evidence_table"]` as input, no session_state."""
     if not evidence_table:
         st.info("No papers were included in the review.")
         return
@@ -62,6 +92,13 @@ def _render_evidence_table(evidence_table: list) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _tab_synthesis(final_state: dict, settings: dict) -> None:
+    """Render the Synthesis results tab: key themes, narrative synthesis, research gaps,
+    conclusion, limitations, and a feedback/refinement section for the synthesis text.
+
+    Reads `final_state["session_id"]` to key the feedback widget and
+    `session_state[f"_fb_output_{session_id}"]` (written by `render_feedback_section`)
+    as the current draft to refine. Delegates rendering of the feedback UI itself to
+    `ui.helpers.render_feedback_section`."""
     themes = final_state.get("key_themes", [])
     if themes:
         st.markdown("**Key Themes:**")
@@ -107,6 +144,10 @@ def _tab_synthesis(final_state: dict, settings: dict) -> None:
 
 
 def _tab_evidence(final_state: dict, settings: dict) -> None:
+    """Render the Evidence results tab: the included-papers evidence table (via
+    `_render_evidence_table`), an expander of excluded papers with exclusion reasons,
+    and the Abstract Screener section (via `_render_abstract_screener`). No
+    session_state of its own — purely composes other render helpers."""
     n_inc = len(final_state.get("included_papers", []))
     n_exc = len(final_state.get("excluded_papers", []))
     st.subheader(f"Evidence Table ({n_inc} included papers)", help=term_help("Quality score"))
@@ -123,6 +164,12 @@ def _tab_evidence(final_state: dict, settings: dict) -> None:
 
 
 def _render_abstract_screener(final_state: dict, settings: dict) -> None:
+    """Render the Abstract Screener section: summary metrics (total/include/uncertain/
+    exclude counts, mean score) plus a verdict-filterable list of every paper's LLM
+    relevance score and rationale.
+
+    Reads `final_state["screener_scores"]`. Writes/reads the verdict filter via the
+    `screener_filter` selectbox widget key (no other session_state)."""
     st.subheader("Abstract Screener")
     st.markdown(
         "LLM relevance scores (0–100) for every paper retrieved before the inclusion/exclusion "
@@ -162,6 +209,16 @@ def _render_abstract_screener(final_state: dict, settings: dict) -> None:
 
 
 def _render_citation_network_section(final_state: dict, settings: dict) -> None:
+    """Render the Citation Network deep-dive tool: a button that calls
+    `tools.citation_network.build_citation_network` (Semantic Scholar API) to build an
+    ego network of citation links between included papers, then renders the cached
+    pyvis HTML plus most-cited/isolated-paper/gap-candidate lists.
+
+    Reuses any previously computed network from `final_state["citation_graph_html"]`
+    (set by the SR pipeline itself) before offering to build a new one. Caches the
+    freshly built network in `session_state["_cn_html"]`, `"_cn_stats"`, `"_cn_gaps"`
+    so it survives reruns without re-querying Semantic Scholar. These keys are cleared
+    whenever a new SR run starts (see `tab_systematic_review`)."""
     st.subheader("Citation Network", help=term_help("Citation network"))
     st.markdown(
         "Ego network showing citation links **between** the included papers. "
@@ -235,6 +292,13 @@ def _render_citation_network_section(final_state: dict, settings: dict) -> None:
 
 
 def _render_preprint_status_section(final_state: dict, settings: dict) -> None:
+    """Render the Preprint Status deep-dive tool: a button that calls
+    `tools.preprint_tracker.track_preprints` (CrossRef API) to check each included
+    paper's publication status and flag retractions.
+
+    Reuses `final_state["preprint_tracking"]` if already populated by the SR pipeline;
+    otherwise caches the freshly fetched tracking list in `session_state["_pt_tracking"]`
+    / `"_pt_summary"` so it survives reruns. These keys are cleared on a new SR run."""
     st.subheader("Preprint Status")
     st.markdown(
         "Checks each included paper against CrossRef to identify unverified preprints "
@@ -268,6 +332,9 @@ def _render_preprint_status_section(final_state: dict, settings: dict) -> None:
 
 
 def _render_preprint_tracking(tracking: list) -> None:
+    """Render the preprint-status summary metrics and one expander per paper
+    (status, note, published DOI/venue if applicable). Pure display, no session_state —
+    shared by `_render_preprint_status_section` for both fresh and cached tracking data."""
     from tools.preprint_tracker import preprint_summary
     summary = preprint_summary(tracking)
     c1, c2, c3, c4 = st.columns(4)
@@ -290,7 +357,8 @@ def _render_preprint_tracking(tracking: list) -> None:
 
 
 def _seed_meta_rows(evidence_table: list) -> list:
-    """Build initial editable rows (label + blank effect/CI/N) from the evidence table."""
+    """Build initial editable rows (label + blank effect/CI/N) from the evidence table.
+    Pure data transform — no Streamlit calls, no session_state."""
     import re
     rows = []
     for row in evidence_table:
@@ -311,7 +379,25 @@ def _seed_meta_rows(evidence_table: list) -> list:
 
 
 def _render_meta_analysis(final_state: dict, settings: dict) -> None:
-    """Pool effect sizes from the evidence table into a forest plot (generic inverse-variance)."""
+    """Pool effect sizes from the evidence table into a forest plot (generic inverse-variance).
+
+    Renders an editable `st.data_editor` of per-study effect/CI/N, an optional LLM
+    "draft from abstracts" pass (`tools.meta_analysis.extract_effect_size_row`), and —
+    once run — fixed-effect/random-effects estimates, heterogeneity stats, and a forest
+    plot via `tools.meta_analysis.run_meta_analysis` / `meta_analysis_to_forest_plotly`.
+
+    Session_state keys (all `_meta_*`, scoped to this single SR result — there is only
+    ever one active review at a time, so no notebook/session id suffix is needed):
+      - `_meta_table_hash` — MD5 of the evidence table's citation keys; when this
+        changes (new SR run) the editable rows are reseeded from scratch.
+      - `_meta_rows` — the editable row data backing the data_editor.
+      - `_meta_seed_version` — bumped on every reseed/LLM-draft pass so the
+        `_meta_editor_{version}` widget key changes, forcing Streamlit to remount the
+        data_editor with the new rows instead of treating it as a continuation of the
+        previous edit session.
+      - `_meta_result` — the last `run_meta_analysis` output; cleared whenever the rows
+        are reseeded or redrafted so a stale forest plot can't be shown against new data.
+    """
     import hashlib
 
     import pandas as pd
@@ -448,6 +534,13 @@ def _render_meta_analysis(final_state: dict, settings: dict) -> None:
 
 
 def _render_research_trends_section(final_state: dict, settings: dict) -> None:
+    """Render the Research Trend Forecaster: a button that calls
+    `tools.trend_analyzer.analyze_trends` (CrossRef field-wide year counts vs. this
+    review's corpus) and plots the comparison with plotly (falls back to `st.json`
+    if plotly isn't installed).
+
+    Caches the fetched trend data in `session_state["_trend_data"]` / `"_trend_json"`
+    so it survives reruns without re-querying CrossRef. Cleared on a new SR run."""
     rq = final_state.get("research_question", "")
     included = final_state.get("included_papers", [])
 
@@ -520,6 +613,10 @@ def _render_research_trends_section(final_state: dict, settings: dict) -> None:
 
 
 def _render_evidence_map_section(final_state: dict, settings: dict) -> None:
+    """Render the Evidence Map: a Population x Intervention bubble chart built purely
+    from `final_state["evidence_table"]` via `tools.evidence_map.build_evidence_map_data`
+    / `evidence_map_to_plotly_html` (falls back to a matplotlib PNG if plotly isn't
+    installed). No API calls, no caching — recomputed on every render since it's cheap."""
     st.subheader("Evidence Map", help=term_help("Evidence map"))
     st.markdown(
         "Bubble chart of evidence density across Population × Intervention dimensions. "
@@ -553,6 +650,13 @@ def _render_evidence_map_section(final_state: dict, settings: dict) -> None:
 
 
 def _render_concept_drift_section(final_state: dict, settings: dict) -> None:
+    """Render the Concept Drift Tracker: a button that calls
+    `tools.concept_drift.detect_concept_drift` (LLM analysis pass over the full corpus,
+    `final_state["raw_papers"]`) to surface rising/declining vocabulary across time
+    buckets, plus an LLM narrative summary of the shifts.
+
+    Caches the result in `session_state["_drift_data"]` so it survives reruns without
+    re-running the LLM analysis. Cleared on a new SR run."""
     model = settings.get("model", "llama3.1:8b")
     num_ctx = settings.get("num_ctx", 32768)
 
@@ -615,7 +719,12 @@ _EXPLORE_TOOLS = [
 
 
 def _tab_explore(final_state: dict, settings: dict) -> None:
-    """Pick one deep-dive analysis tool to run on this review's corpus."""
+    """Pick one deep-dive analysis tool to run on this review's corpus.
+
+    Renders a horizontal radio of the six `_EXPLORE_TOOLS` entries and dispatches to
+    the matching render function. Reads/writes the chosen tool via the `sr_explore_tool`
+    widget key; each individual tool manages its own `_cn_*`/`_pt_*`/`_trend_*`/
+    `_drift_*`/`_meta_*` session_state as documented on its own render function."""
     st.markdown(
         "Optional deep-dive tools that run on top of this review's corpus — pick one below. "
         "Each shows what it needs and roughly how long it takes before you run it."
@@ -637,7 +746,18 @@ def _tab_explore(final_state: dict, settings: dict) -> None:
 
 
 def _tab_export(final_state: dict, rq: str, session_id: str, settings: dict) -> None:
-    """Search Queries · Markdown · DOCX · PDF · Plain-Language Summaries."""
+    """Render the Write-up & Export tab: search queries used, Markdown export, the
+    PRISMA 2020 DOCX/PDF manuscript report (`tools.prisma_report`), and plain-language
+    summaries for patient/policy/press audiences (`tools.plain_language`).
+
+    Session_state keys:
+      - `_docx_bytes` / `_pdf_bytes` — generated report bytes, cached so the
+        `st.download_button` below the Generate button has data to serve across the
+        rerun that `st.button` triggers (the bytes aren't regenerated on every render).
+      - `_pls_result` — dict of generated plain-language summaries (`patient`/`policy`/
+        `press` keys), persisted the same way for its own download buttons.
+    Widget keys `report_author` / `report_institution` / `pls_format` hold the DOCX/PDF
+    author+institution fields and the plain-language summary format choice."""
     model = settings.get("model", "llama3.1:8b")
     num_ctx = settings.get("num_ctx", 32768)
 
@@ -875,7 +995,12 @@ def _consume_template_application() -> None:
 
 
 def _render_template_picker() -> None:
-    """Optional preset picker that pre-fills the question + criteria for common review types."""
+    """Optional preset picker that pre-fills the question + criteria for common review types.
+
+    Calls `_consume_template_application()` first to flush any pending choice from the
+    previous run. Reads/writes the `sr_template_choice` selectbox key; on "Use this
+    template" writes the chosen key to `session_state["sr_apply_template"]` and reruns
+    so `_consume_template_application` can apply it before the input widgets render."""
     _consume_template_application()
     with st.expander("New to systematic reviews? Start from a guided template (optional)", expanded=False):
         st.caption(
@@ -913,7 +1038,32 @@ def _render_template_picker() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def tab_systematic_review(settings: dict) -> None:
-    """Mode 7 — PRISMA Systematic Review."""
+    """Mode 7 — PRISMA Systematic Review. Top-level entry point registered for this tab.
+
+    Renders, in order: the glossary expander, the guided-template picker
+    (`_render_template_picker`), the research-question + inclusion/exclusion inputs
+    (each gated through `render_query_gate` for an optional grammar check), and the
+    Run button. On click, builds a `SystematicReviewState` via
+    `create_systematic_review_state` and drives it through
+    `agents.systematic_review_graph.run_systematic_review`, streaming per-node progress
+    into a progress bar / status line / step-log expander.
+
+    Once a run completes (fresh or restored from cache), renders the shared results
+    view: eval/RAG-reflection panels, the PRISMA flow metrics, and four result tabs
+    (Synthesis, Evidence, Explore, Write-up & Export) via `_tab_synthesis`/
+    `_tab_evidence`/`_tab_explore`/`_tab_export`.
+
+    Session_state keys:
+      - `sr_last_result` — the final SR state dict, persisted after every successful
+        run so it survives reruns triggered by widgets inside the result tabs (e.g.
+        the Explore tools' own buttons) without re-running the whole pipeline.
+      - `sr_question` / `sr_inclusion` / `sr_exclusion` — the three input widgets'
+        backing state; also the targets `_consume_template_application` writes into.
+      - `_cn_html`, `_cn_stats`, `_cn_gaps`, `_pt_tracking`, `_pt_summary`,
+        `_trend_data`, `_trend_json`, `_drift_data` — cached deep-dive results from the
+        Explore tab's tools; explicitly cleared here at the start of a fresh run so a
+        new corpus never shows a previous run's citation network / trends / drift.
+    """
     st.header("Mode 7 — Systematic Review")
     st.markdown(
         "Conduct a **PRISMA-style systematic review** powered by local LLM inference (Ollama). "
@@ -1022,6 +1172,10 @@ def tab_systematic_review(settings: dict) -> None:
         }
 
         def stream_callback(node_name: str, state: dict) -> None:
+            """Per-node progress callback passed to `run_systematic_review`; updates the
+            progress bar, status line, and appends to the step-log expander as each
+            graph node completes. Closes over `progress_bar`/`status_text`/`step_log`/
+            `log_lines` from the enclosing `tab_systematic_review` call."""
             pct = state.get("progress_pct", 0)
             label = node_labels.get(node_name, node_name)
             detail = state.get("status_detail", "")
@@ -1098,6 +1252,10 @@ def tab_systematic_review(settings: dict) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_sr_markdown(research_question: str, state: dict) -> str:
+    """Build the full SR results (PRISMA flow table, key themes, narrative synthesis,
+    research gaps, conclusion, limitations, evidence table) as a single Markdown
+    string for the "Download as Markdown" button in `_tab_export`. Pure data → string
+    transform — no Streamlit calls, no session_state."""
     from datetime import datetime
     lines = [
         "# Systematic Review Report",

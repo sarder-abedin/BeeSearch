@@ -79,6 +79,7 @@ def _make_llm(
     temperature: float = 0.3,
     num_predict: int = 1024,
 ) -> ChatOllama:
+    """Build a ChatOllama client for section-tool calls (detection, summary, Q&A, review)."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -91,6 +92,7 @@ def _make_llm(
 
 
 def _invoke(llm: ChatOllama, system: str, human: str) -> str:
+    """Invoke the LLM with a system/human message pair and return the stripped text content."""
     resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
     return resp.content.strip()
 

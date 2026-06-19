@@ -48,6 +48,7 @@ _memory: NotebookMemory | None = None
 
 
 def _get_memory() -> NotebookMemory:
+    """Return the module-level lazy NotebookMemory singleton, creating it on first use."""
     global _memory
     if _memory is None:
         _memory = NotebookMemory()
@@ -58,6 +59,7 @@ def _get_memory() -> NotebookMemory:
 
 @dataclass
 class _RebuiltChunk:
+    """Minimal chunk shape matching DocumentChunk's fields, rebuilt from stored notebook chunks."""
     chunk_id: str
     doc_id: str
     doc_name: str
@@ -259,6 +261,7 @@ def _max_predict(state: NotebookState) -> int:
 
 
 def _llm(state: NotebookState, temperature: float = 0.3) -> ChatOllama:
+    """Build a ChatOllama client whose temperature is adjusted by the user's response-tuning level."""
     import httpx
     level = state.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
@@ -285,6 +288,7 @@ def _build_context_block(chunks: List[Dict[str, Any]]) -> str:
 
 
 def _format_history(history: List[Dict]) -> str:
+    """Render prior conversation turns (each truncated to 500 chars) as a labelled block."""
     if not history:
         return ""
     lines = []

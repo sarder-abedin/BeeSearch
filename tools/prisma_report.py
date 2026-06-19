@@ -36,7 +36,23 @@ def generate_prisma_docx(
     author: str = "",
     institution: str = "",
 ) -> bytes:
-    """Return .docx bytes of a PRISMA 2020-compliant manuscript."""
+    """
+    Return .docx bytes of a PRISMA 2020-compliant manuscript.
+
+    Args:
+        state: A completed SystematicReviewState dict (or plain dict with the
+            same shape). Reads research_question, prisma_flow, evidence_table,
+            included_papers, excluded_papers, narrative_synthesis, key_themes,
+            research_gaps, conclusion, limitations, search_queries,
+            inclusion_criteria, exclusion_criteria — all keys are optional and
+            default to empty values, so a partially populated state still
+            renders (with thinner sections) rather than raising.
+        author: Optional author name shown on the title page.
+        institution: Optional institution name shown on the title page.
+
+    Returns:
+        Raw .docx file bytes, ready for Streamlit's st.download_button.
+    """
     try:
         from docx import Document
         from docx.shared import Inches, Pt
@@ -278,7 +294,16 @@ def generate_prisma_pdf(
     author: str = "",
     institution: str = "",
 ) -> bytes:
-    """Return .pdf bytes of a PRISMA 2020-compliant manuscript (reportlab)."""
+    """
+    Return .pdf bytes of a PRISMA 2020-compliant manuscript (reportlab).
+
+    Mirrors generate_prisma_docx() section-for-section and reads the same
+    SystematicReviewState keys (see its docstring for the full list); this
+    is the PDF-flavoured twin so DOCX and PDF outputs stay in sync structurally.
+
+    Returns:
+        Raw .pdf file bytes, ready for Streamlit's st.download_button.
+    """
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.units import cm
@@ -328,12 +353,24 @@ def generate_prisma_pdf(
 
     story = []
 
-    def h1(t): story.append(Paragraph(t, H1))
-    def h2(t): story.append(Paragraph(t, H2))
-    def h3(t): story.append(Paragraph(t, H3))
-    def para(t): story.append(Paragraph(t or " ", BODY))
-    def bullet(t): story.append(Paragraph(f"• {t}", BULLET))
-    def space(n=6): story.append(Spacer(1, n))
+    def h1(t):
+        """Append a level-1 heading paragraph to `story`."""
+        story.append(Paragraph(t, H1))
+    def h2(t):
+        """Append a level-2 heading paragraph to `story`."""
+        story.append(Paragraph(t, H2))
+    def h3(t):
+        """Append a level-3 heading paragraph to `story`."""
+        story.append(Paragraph(t, H3))
+    def para(t):
+        """Append a body paragraph to `story` (falls back to a single space if `t` is empty)."""
+        story.append(Paragraph(t or " ", BODY))
+    def bullet(t):
+        """Append a bullet-style paragraph to `story`."""
+        story.append(Paragraph(f"• {t}", BULLET))
+    def space(n=6):
+        """Append a vertical spacer of `n` points to `story`."""
+        story.append(Spacer(1, n))
 
     # Title page
     story.append(Spacer(1, 2*cm))

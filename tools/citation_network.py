@@ -32,6 +32,7 @@ _S2_BASE = "https://api.semanticscholar.org/graph/v1"
 
 
 def _headers() -> Dict[str, str]:
+    """Build request headers for the Semantic Scholar API, adding the API key if configured."""
     h = {"User-Agent": "BeeSearch/1.0"}
     if cfg.semantic_scholar_api_key:
         h["x-api-key"] = cfg.semantic_scholar_api_key
@@ -48,12 +49,17 @@ def _find_s2_id(title: str) -> Optional[str]:
             timeout=10,
         )
         if resp.status_code == 429:
+            # S2's free tier rate-limits aggressively; back off once and give up rather
+            # than blocking the whole network build on a single lookup.
             time.sleep(3)
             return None
         resp.raise_for_status()
         data = resp.json().get("data", [])
         if data:
             found = data[0].get("title", "")
+            # S2 search is fuzzy and can return a near-match instead of the exact paper;
+            # comparing only the first 15 normalised chars tolerates punctuation/casing
+            # differences while still rejecting an unrelated top hit.
             norm_q = re.sub(r"\W+", "", title.lower())[:30]
             norm_f = re.sub(r"\W+", "", found.lower())[:30]
             if norm_q and norm_f and norm_q[:15] == norm_f[:15]:
@@ -177,6 +183,8 @@ def build_citation_network(
         if s2_id:
             ck_to_s2[ck] = s2_id
             node_meta[ck]["s2_id"] = s2_id
+        # Pace requests below S2's unauthenticated rate limit (~1 req/sec); this loop
+        # makes one request per paper, so 0.4s keeps us comfortably under that.
         time.sleep(0.4)
 
     s2_to_ck = {v: k for k, v in ck_to_s2.items()}
@@ -191,6 +199,8 @@ def build_citation_network(
                 if ck_b != ck_a:
                     G.add_edge(ck_a, ck_b, relation="cites")
             else:
+                # Not in the included set — track how often the corpus cites it so
+                # find_gap_candidates can surface it as a possible screening miss.
                 external_counts[ref_id] = external_counts.get(ref_id, 0) + 1
         time.sleep(0.4)
 

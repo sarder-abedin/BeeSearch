@@ -1,4 +1,14 @@
-"""agents/systematic_review_state.py — State for Mode 7 Systematic Review"""
+"""
+agents/systematic_review_state.py
+───────────────────────────────────
+State TypedDict for the Systematic Literature Review (Mode 7) PRISMA pipeline.
+
+One graph invocation = one full review run: query generation → literature
+search (Google Scholar, arXiv, Semantic Scholar, optionally CrossRef) →
+screening → evidence extraction → synthesis. Unlike the Notebook pipelines,
+the SR pipeline is stateless between runs — there is no `*_memory.py`; all
+outputs are written to `outputs/` rather than persisted to SQLite.
+"""
 
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, TypedDict
@@ -63,7 +73,13 @@ def create_systematic_review_state(
     max_results: int = 8,
     include_crossref: bool = True,
 ) -> SystematicReviewState:
-    import uuid
+    """Factory — returns a fully-initialised SystematicReviewState.
+
+    Generates a fresh short `session_id` (used to namespace this run's
+    outputs) and defaults every list/dict field so downstream nodes can
+    safely append/update without checking for key existence.
+    """
+    import uuid  # local import: uuid is only needed here, not elsewhere in the module
     return SystematicReviewState(
         research_question=research_question,
         inclusion_criteria=inclusion_criteria or [],

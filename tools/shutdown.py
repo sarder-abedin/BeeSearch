@@ -57,6 +57,7 @@ def free_port(port: int) -> tuple[bool, str]:
         import psutil
 
         def _kill_pid(pid: int) -> str:
+            """Terminate `pid` (escalating to kill on timeout) and return a "name(pid=...)" label."""
             proc = psutil.Process(pid)
             name = proc.name()
             proc.terminate()
@@ -179,6 +180,7 @@ def _make_printer(console=None):
     """Return a print callable that uses rich Console if available, else plain print."""
     if console is not None:
         def _rich(msg: str):
+            """Print one status line, colored green for success/done, dim otherwise."""
             if msg.startswith("✓") or msg.startswith("Safe"):
                 console.print(f"[green]{msg}[/green]")
             elif msg.startswith("  ✓"):
@@ -188,6 +190,7 @@ def _make_printer(console=None):
         return _rich
 
     def _plain(msg: str):
+        """Print one status line with no formatting (no rich Console available)."""
         print(msg)
     return _plain
 
@@ -202,6 +205,7 @@ def install_signal_handlers(console=None, ports: Sequence[int] = (PORT_GOOGLE_SE
     _print = _make_printer(console)
 
     def _handler(sig, frame):
+        """SIGINT/SIGTERM handler: run safe_shutdown() then exit(0)."""
         _print("\nInterrupt received — shutting down cleanly…")
         safe_shutdown(ports=ports, flush_db=True, console=console)
         sys.exit(0)

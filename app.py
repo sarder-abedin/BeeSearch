@@ -6,6 +6,15 @@ Two modes:
   Mode 2 — Research Notebook (NotebookLM-style grounded Q&A)
 
 Run:  streamlit run app.py
+
+This module is Streamlit's script entry point: it runs top-to-bottom on every
+rerun (page load, widget interaction, etc.), so module-level statements here
+(page config, theme, browser-launch thread) execute on every rerun guarded by
+session/env-var checks. Mode dispatch lives in `main()`, which reads
+`st.session_state["active_project"]` (mirrored to `st.query_params["mode"]`
+so a refresh doesn't lose the active mode) and hands off to
+`projects.mode1_systematic_review` / `projects.mode2_notebook` via
+`projects.PROJECT_REGISTRY`.
 """
 from __future__ import annotations
 import logging
@@ -28,6 +37,7 @@ if not os.environ.get("_BEESEARCH_BROWSER_OPENED"):
         _url = f"http://localhost:{_port}"
 
         def _open_browser() -> None:
+            """Wait for the Streamlit server to be ready, then open it in the default browser."""
             time.sleep(1.5)
             try:
                 webbrowser.open(_url)
@@ -65,6 +75,12 @@ _PROJECT_MODULES = {
 
 
 def main() -> None:
+    """Render the sidebar, then either dispatch to the active project's `run(settings)` or show the landing page.
+
+    Restores `active_project` from the `mode` URL query param if the
+    Streamlit session state was reset (e.g. browser refresh), so deep links
+    into a mode survive a reload.
+    """
     settings = render_sidebar()
 
     # ── Restore active_project from URL if session was reset ──────────────────

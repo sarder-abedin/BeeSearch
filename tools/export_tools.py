@@ -444,6 +444,7 @@ def build_pdf(
 
     # ── Page footer ───────────────────────────────────────────
     def _footer(canvas, doc):
+        """ReportLab page-decoration callback: draws the page number on every page."""
         canvas.saveState()
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(MID_GREY)

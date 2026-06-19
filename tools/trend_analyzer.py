@@ -75,6 +75,12 @@ def _s2_year_counts(query: str) -> Dict[int, int]:
 
 
 def _classify_trend(year_counts: Dict[int, int]) -> str:
+    """
+    Classify a year→count series as "growing", "declining", "stable", or
+    "insufficient data" by comparing the average of the most recent 3 years
+    against the average of the 3 years before that (ratio > 1.2 => growing,
+    < 0.8 => declining, otherwise stable). Needs at least 4 distinct years.
+    """
     if len(year_counts) < 4:
         return "insufficient data"
     years = sorted(year_counts)

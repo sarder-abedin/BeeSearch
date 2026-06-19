@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """
 cli.py — BeeSearch command-line interface
+───────────────────────────────────────────
+A smaller, focused companion to `main.py` for one-shot research-notebook
+utilities (BibTeX import, research-gap mapping, hypothesis generation, the
+section-by-section breakdown tool) and a non-interactive systematic review
+runner. It builds the same `agents.*` LangGraph state/graph objects as the
+Streamlit UI and `main.py`, just with plain `print()` output instead of
+`rich` tables — use this when you don't need `main.py`'s hardware banner,
+progress bars, or persistent slash-command REPL.
 
 Usage:
   python cli.py sr   "<research question>"  [options]
@@ -10,6 +18,14 @@ Usage:
   python cli.py bib  <notebook_id>  <file.bib>
   python cli.py gap  <notebook_id>  "<research question>"
   python cli.py hyp  <notebook_id>  "<research question>"
+
+Subcommands (see `main()` for the argparse wiring and dispatch table):
+  sr        cmd_sr        — run a full systematic review headlessly
+  nb        cmd_nb        — ask a notebook a question, or open a REPL/list notebooks
+  bib       cmd_bib       — import a .bib file into a notebook
+  gap       cmd_gap       — map research gaps from a notebook's retrieved chunks
+  sections  cmd_sections  — section-by-section breakdown of one notebook source
+  hyp       cmd_hyp       — generate testable hypotheses from research gaps
 """
 
 from __future__ import annotations
@@ -23,16 +39,19 @@ from pathlib import Path
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _banner(text: str) -> None:
+    """Print a top-level section header framed by `=` rules."""
     print(f"\n{'=' * 60}")
     print(f"  {text}")
     print('=' * 60)
 
 
 def _section(title: str) -> None:
+    """Print a lightweight subsection header within a banner."""
     print(f"\n--- {title} ---")
 
 
 def _settings(model: str, num_ctx: int) -> dict:
+    """Build the minimal settings dict expected by `tools.zotero_importer.import_bibtex_to_notebook`."""
     return {
         "model": model,
         "num_ctx": num_ctx,
@@ -47,7 +66,14 @@ def _settings(model: str, num_ctx: int) -> dict:
 # ── Command: sr ──────────────────────────────────────────────────────
 
 def cmd_sr(args: argparse.Namespace) -> None:
-    """Run a full systematic review from the command line."""
+    """Run a full systematic review from the command line (routed from the `sr` subcommand).
+
+    Builds a `SystematicReviewState`, streams node-by-node progress to
+    stdout, then prints the PRISMA flow, GRADE grade, risk-of-bias table,
+    contradictions, synthesis, gaps, and conclusion. Optionally writes a
+    Markdown report (`--output`) and/or the raw JSON-serializable state
+    (`--json-output`).
+    """
     from agents.systematic_review_graph import run_systematic_review
     from agents.systematic_review_state import create_systematic_review_state
 
@@ -69,6 +95,7 @@ def cmd_sr(args: argparse.Namespace) -> None:
     )
 
     def progress(node_name: str, s: dict) -> None:
+        """Render the systematic-review graph's per-node progress as an ASCII bar (stream_callback for `run_systematic_review`)."""
         pct = s.get("progress_pct", 0)
         detail = s.get("status_detail", "")
         label = {
@@ -159,7 +186,14 @@ def cmd_sr(args: argparse.Namespace) -> None:
 # ── Command: nb ──────────────────────────────────────────────────────
 
 def cmd_nb(args: argparse.Namespace) -> None:
-    """Interact with a Research Notebook from the CLI."""
+    """Interact with a Research Notebook from the CLI (routed from the `nb` subcommand).
+
+    Three modes depending on flags: `--list` prints every saved notebook and
+    returns; otherwise resolves/creates a notebook ID (via `--new` or
+    `--notebook-id`/positional `notebook_id`), then either answers a single
+    `--question`/`-q` or, if none was given, drops into a simple
+    `input()`-based REPL (type 'exit'/'quit'/'q' to leave).
+    """
     from agents.notebook_memory import NotebookMemory
 
     memory = NotebookMemory()
@@ -205,6 +239,10 @@ def cmd_nb(args: argparse.Namespace) -> None:
 
 
 def _ask_notebook(nb_id: str, question: str, args: argparse.Namespace) -> None:
+    """Run one notebook Q&A turn and print the answer, its citations, and any suggested follow-ups.
+
+    Shared by `cmd_nb`'s single-question path and its REPL loop.
+    """
     from agents.notebook_graph import run_notebook_turn
     from agents.notebook_state import create_notebook_state
     from config.settings import get_settings
@@ -224,6 +262,7 @@ def _ask_notebook(nb_id: str, question: str, args: argparse.Namespace) -> None:
     print(f"\nSearching notebook {nb_id}…")
 
     def _cb(node_name: str, _s: dict) -> None:
+        """Print a friendly label for the current notebook-graph node (stream_callback for `run_notebook_turn`)."""
         labels = {"retrieve": "Retrieving", "answer": "Answering", "save": "Saving"}
         print(f"  {labels.get(node_name, node_name)}…")
 
@@ -252,7 +291,11 @@ def _ask_notebook(nb_id: str, question: str, args: argparse.Namespace) -> None:
 # ── Command: bib ─────────────────────────────────────────────────────
 
 def cmd_bib(args: argparse.Namespace) -> None:
-    """Import a BibTeX file into a notebook."""
+    """Import a BibTeX file into a notebook (routed from the `bib` subcommand).
+
+    Reads `args.bib_file`, parses it via `import_bibtex_to_notebook`, and
+    reports how many references were added plus any per-entry warnings.
+    """
     from tools.zotero_importer import import_bibtex_to_notebook
 
     bib_path = Path(args.bib_file)
@@ -273,7 +316,15 @@ def cmd_bib(args: argparse.Namespace) -> None:
 # ── Command: gap ─────────────────────────────────────────────────────
 
 def cmd_gap(args: argparse.Namespace) -> None:
-    """Map research gaps from a notebook."""
+    """Map research gaps from a notebook (routed from the `gap` subcommand).
+
+    Retrieves the top chunks for `args.question` from the notebook's hybrid
+    store, builds a lightweight evidence table from them (best-effort; an
+    empty table is used if retrieval fails), and runs `map_research_gaps` to
+    print population/methodology/outcome/context/temporal gap categories
+    plus a prioritized summary. Optionally saves a Markdown gap map
+    (`--output`).
+    """
     from tools.research_gaps import map_research_gaps
     from tools.hybrid_store import get_or_create_store
     from config.settings import get_settings
@@ -333,7 +384,15 @@ def cmd_gap(args: argparse.Namespace) -> None:
 # ── Command: sections ────────────────────────────────────────────────
 
 def cmd_sections(args: argparse.Namespace) -> None:
-    """Section-by-section breakdown of a notebook source with optional expert review."""
+    """Section-by-section breakdown of a notebook source with optional expert review (routed from the `sections` subcommand).
+
+    Resolves which source to break down (via `--source` filename substring
+    match, the notebook's sole source, or an interactive numbered prompt),
+    detects sections, then for each one prints/collects a level-tuned
+    summary (`--level`) and critical-thinking questions. If `--review` is
+    set, also generates strengths/weaknesses/limitations/improvements
+    feedback per section. Saves combined Markdown to `--output` if given.
+    """
     from agents.notebook_memory import NotebookMemory
     from agents.section_summary import (
         detect_sections_hybrid,
@@ -471,7 +530,13 @@ def cmd_sections(args: argparse.Namespace) -> None:
 # ── Command: hyp ────────────────────────────────────────────────────
 
 def cmd_hyp(args: argparse.Namespace) -> None:
-    """Generate testable hypotheses from research gaps."""
+    """Generate testable hypotheses from research gaps (routed from the `hyp` subcommand).
+
+    Uses `--gaps` (comma-separated) if provided, otherwise falls back to a
+    fixed set of generic placeholder gaps. Prints `args.n` hypotheses with
+    suggested study design, feasibility, and rationale, and saves Markdown
+    to `--output` if given.
+    """
     from tools.hypothesis_generator import generate_hypotheses
 
     gaps = [c.strip() for c in args.gaps.split(",") if c.strip()] if args.gaps else [
@@ -514,6 +579,11 @@ def cmd_hyp(args: argparse.Namespace) -> None:
 # ── Entry point ────────────────────────────────────────────────────────
 
 def main() -> None:
+    """Build the argparse parser/subparsers, parse argv, and dispatch to the matching `cmd_*` function.
+
+    Prints help and exits 0 if no subcommand was given (`args.command is
+    None`), since `add_subparsers` without `required=True` allows that.
+    """
     parser = argparse.ArgumentParser(
         prog="beesearch",
         description="BeeSearch CLI — AI-powered systematic review and research notebook",

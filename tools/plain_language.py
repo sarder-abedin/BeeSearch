@@ -24,6 +24,7 @@ cfg = get_settings()
 
 
 def _make_llm(model_name: str, num_ctx: int) -> ChatOllama:
+    """Build a ChatOllama client tuned for fluent lay-audience prose."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -36,10 +37,12 @@ def _make_llm(model_name: str, num_ctx: int) -> ChatOllama:
 
 
 def _call(llm: ChatOllama, system: str, human: str) -> str:
+    """Send a system/human message pair to the LLM and return the stripped reply text."""
     return llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
 
 
 def _evidence_context(state: Dict[str, Any]) -> str:
+    """Condense an SR state's synthesis, themes, conclusion, and top finding into a prompt block."""
     parts = []
     narrative = state.get("narrative_synthesis", "")
     themes = state.get("key_themes", [])

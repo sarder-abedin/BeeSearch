@@ -53,6 +53,7 @@ def _max_predict(settings: dict) -> int:
 
 
 def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 4096) -> ChatOllama:
+    """Build a ChatOllama client whose temperature is adjusted by the user's response-tuning level."""
     import httpx
     level = settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
@@ -66,6 +67,7 @@ def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 4096)
 
 
 def _invoke(llm: ChatOllama, system: str, human: str) -> str:
+    """Invoke the LLM with a system/human message pair and return the stripped text content."""
     resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
     return resp.content.strip()
 

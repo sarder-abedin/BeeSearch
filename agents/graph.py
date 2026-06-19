@@ -47,6 +47,7 @@ def _max_predict(state: dict) -> int:
 
 
 def _llm(state: dict, temperature: float = 0.3, num_predict: int = 4096) -> ChatOllama:
+    """Build a ChatOllama client from state's model/context settings, falling back to config defaults."""
     import httpx
     return ChatOllama(
         model=state.get("model_name") or cfg.ollama_model,
@@ -59,12 +60,14 @@ def _llm(state: dict, temperature: float = 0.3, num_predict: int = 4096) -> Chat
 
 
 def _invoke(llm: ChatOllama, system: str, human: str) -> str:
+    """Send a system+human message pair to the LLM and return the stripped text response."""
     return llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
 
 
 # ── Context builders ────────────────────────────────────────────────────────────
 
 def _build_doc_context(uploaded_docs: list) -> str:
+    """Concatenate notebook source chunks into a labelled context block, capped at `_MAX_DOC_CONTEXT` chars."""
     parts: list[str] = []
     total = 0
     for i, doc in enumerate(uploaded_docs, 1):
@@ -78,6 +81,7 @@ def _build_doc_context(uploaded_docs: list) -> str:
 
 
 def _build_academic_context(papers: list) -> str:
+    """Format academic search results (title/authors/year/abstract) into a labelled context block."""
     parts: list[str] = []
     total = 0
     for i, p in enumerate(papers, 1):
@@ -98,6 +102,7 @@ def _build_academic_context(papers: list) -> str:
 
 
 def _build_web_context(web_results: list) -> str:
+    """Format up to 5 web search results (title/snippet/url) into a labelled context block."""
     parts: list[str] = []
     for i, r in enumerate(web_results[:5], 1):
         title = getattr(r, "title", "")
@@ -110,6 +115,7 @@ def _build_web_context(web_results: list) -> str:
 # ── Workflow steps ──────────────────────────────────────────────────────────────
 
 def _step_document_ingestion(state: dict) -> dict:
+    """Build the notebook-source context block and stash it under `_doc_context`."""
     docs = state.get("uploaded_docs") or []
     state["_doc_context"] = _build_doc_context(docs)
     logger.info("[Research Report] Ingested %d document(s)", len(docs))
@@ -117,6 +123,7 @@ def _step_document_ingestion(state: dict) -> dict:
 
 
 def _step_query_generation(state: dict) -> dict:
+    """Generate up to 3 academic search queries from the goal, or skip the LLM call in pure-document mode."""
     goal = state["goal"]
     if state["mode"] == "document" and not state.get("include_web_search"):
         state["search_queries"] = [goal]
@@ -139,6 +146,11 @@ def _step_query_generation(state: dict) -> dict:
 
 
 def _step_academic_search(state: dict) -> dict:
+    """Search arXiv + Semantic Scholar for the first 2 queries, deduping papers by normalised title.
+
+    Skipped entirely when `mode == "document"` (notebook-only reports have no
+    academic search step).
+    """
     if state["mode"] == "document":
         state["academic_papers"] = []
         return state
@@ -151,6 +163,8 @@ def _step_academic_search(state: dict) -> dict:
     for query in (state.get("search_queries") or [state["goal"]])[:2]:
         try:
             for p in searcher.search(query, max_per_source=4):
+                # Normalise title (strip non-word chars, lowercase, truncate) so the same
+                # paper returned by two different queries/sources is only counted once.
                 key = re.sub(r"\W+", "", (getattr(p, "title", "") or "").lower())[:60]
                 if key and key not in seen:
                     seen.add(key)
@@ -164,6 +178,7 @@ def _step_academic_search(state: dict) -> dict:
 
 
 def _step_web_search(state: dict) -> dict:
+    """Search DuckDuckGo for the first 2 queries; no-op unless `include_web_search` is True."""
     if not state.get("include_web_search"):
         state["web_results"] = []
         return state
@@ -181,12 +196,14 @@ def _step_web_search(state: dict) -> dict:
 
 
 def _step_document_analysis(state: dict) -> dict:
+    """Build the academic and web context blocks for the upcoming report-generation step."""
     state["_academic_context"] = _build_academic_context(state.get("academic_papers") or [])
     state["_web_context"] = _build_web_context(state.get("web_results") or [])
     return state
 
 
 def _step_reference_compilation(state: dict) -> dict:
+    """Build the `references` list (with APA-style citation strings) from the found academic papers."""
     refs: list[dict] = []
     for i, p in enumerate(state.get("academic_papers") or [], 1):
         authors = getattr(p, "authors", None) or []
@@ -224,6 +241,13 @@ def _step_reference_compilation(state: dict) -> dict:
 
 
 def _step_report_generation(state: dict) -> dict:
+    """Generate the Markdown research report from all gathered context, then parse out `key_findings`.
+
+    The numbered list under the report's "## Key Findings" section is
+    re-parsed back out of the generated Markdown (rather than requested as
+    separate structured output) so the report text and the findings list
+    can never drift out of sync.
+    """
     goal = state["goal"]
     doc_ctx = state.get("_doc_context", "")
     acad_ctx = state.get("_academic_context", "")
@@ -282,6 +306,7 @@ def _step_report_generation(state: dict) -> dict:
 
 
 def _step_research_eval(state: dict) -> dict:
+    """LLM self-evaluates report quality (1-5 per dimension); no-op if generation already failed."""
     report = state.get("report", "")
     if not report or report.startswith("*Report generation failed"):
         state["eval_result"] = {}
@@ -294,6 +319,8 @@ def _step_research_eval(state: dict) -> dict:
         '"overall": N, "summary": "one sentence"}'
     )
     try:
+        # temperature=0.0: this is a quality grading call, not creative generation —
+        # deterministic scoring is more trustworthy than a sampled one.
         raw = _invoke(_llm(state, temperature=0.0, num_predict=200),
                       system, f"Goal: {state['goal']}\n\nReport:\n{report[:2000]}")
         m = re.search(r"\{[^}]+\}", raw, re.DOTALL)

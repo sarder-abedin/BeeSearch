@@ -38,6 +38,7 @@ _EVAL_SYSTEM = (
 
 
 def _eval_llm(model_name: str, num_ctx: int) -> ChatOllama:
+    """Build the shared deterministic (temperature=0.1) ChatOllama client used by every eval node."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -66,7 +67,19 @@ def _run_eval(llm: ChatOllama, human: str) -> Dict[str, Any]:
 # ── Research eval ──────────────────────────────────────────────────────────────
 
 def research_eval_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate the research report on goal_alignment, evidence_quality, clarity."""
+    """
+    Evaluate the research report on goal_alignment, evidence_quality, clarity.
+
+    Reads state: ``model_name``, ``num_ctx``, ``key_findings``, ``goal``,
+    ``report``, ``references``, ``doc_context``.
+    Writes: ``eval_result`` (the rating dict, optionally with a nested
+    ``ragchecker_faithfulness`` entry), plus step bookkeeping.
+
+    The RAGChecker faithfulness check is best-effort and only runs if the
+    optional ``ragchecker_eval`` tool is importable and available; its
+    failure is caught separately from the main rating call so one failing
+    check never drops the other.
+    """
     logger.info("[Eval] Research mode")
     result: Dict[str, Any] = {}
     try:
@@ -143,7 +156,13 @@ Return this JSON exactly:
 # ── Proposal eval ──────────────────────────────────────────────────────────────
 
 def proposal_eval_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate the proposal on goal_alignment, objectives_quality, methodology_soundness."""
+    """
+    Evaluate the proposal on goal_alignment, objectives_quality, methodology_soundness.
+
+    Reads state: ``model_name``, ``num_ctx``, ``goal``, ``title``,
+    ``objectives``, ``methodology``, ``abstract``.
+    Writes: ``eval_result``, plus step bookkeeping.
+    """
     logger.info("[Eval] Proposal mode")
     result: Dict[str, Any] = {}
     try:
@@ -182,7 +201,13 @@ Return this JSON exactly:
 # ── Story eval ─────────────────────────────────────────────────────────────────
 
 def story_eval_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate a storyteller response on clarity and style_adherence."""
+    """
+    Evaluate a storyteller response on clarity and style_adherence.
+
+    Reads state: ``model_name``, ``num_ctx``, ``topic``, ``explanation_style``,
+    ``assistant_response``.
+    Writes: ``eval_result``, plus step bookkeeping.
+    """
     logger.info("[Eval] Story mode")
     result: Dict[str, Any] = {}
     try:
@@ -216,9 +241,17 @@ Return this JSON exactly:
 # ── Wisdom eval ────────────────────────────────────────────────────────────────
 
 def wisdom_eval_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate wisdom synthesis on evidence_grounding, confidence_calibration, actionability.
+    """
+    Evaluate wisdom synthesis on evidence_grounding, confidence_calibration, actionability.
 
     Skips evaluation silently when no wisdom has been generated yet (clarification turns).
+
+    Reads state: ``deep_understanding``, ``model_name``, ``num_ctx``, ``topic``,
+    ``actionable_takeaways``, ``overall_confidence``, ``academic_papers``,
+    ``wisdom_synthesis``, ``knowledge_sources``.
+    Writes: ``eval_result`` (with optional nested ``ragchecker_faithfulness``),
+    plus step bookkeeping. Returns ``{"eval_result": {}}`` immediately (no step
+    bookkeeping update) if ``deep_understanding`` is empty.
     """
     logger.info("[Eval] Wisdom mode")
     deep = state.get("deep_understanding", "")
@@ -311,7 +344,15 @@ Return this JSON exactly:
 # ── ProposalGPT eval ───────────────────────────────────────────────────────────
 
 def proposal_gpt_eval_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate ProposalGPT output on compliance, reviewer score, and proposal completeness."""
+    """
+    Evaluate ProposalGPT output on compliance, reviewer score, and proposal completeness.
+
+    Reads state: ``model_name``, ``num_ctx``, ``compliance_score``,
+    ``overall_score``, ``funding_agency``, ``executive_summary``,
+    ``introduction``, ``research_problem``, ``methodology``, ``work_plan``,
+    ``budget_narrative``.
+    Writes: ``eval_result``, plus step bookkeeping.
+    """
     logger.info("[Eval] ProposalGPT mode")
     result: Dict[str, Any] = {}
     try:
@@ -357,7 +398,15 @@ Return this JSON exactly:
 # ── Research Notebook Q&A eval ─────────────────────────────────────────────────
 
 def notebook_eval_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate a Research Notebook Q&A response on grounding, citation accuracy, relevance."""
+    """
+    Evaluate a Research Notebook Q&A response on grounding, citation accuracy, relevance.
+
+    Reads state: ``assistant_response``, ``model_name``, ``num_ctx``,
+    ``citations``, ``retrieved_chunks``, ``user_message``.
+    Writes: ``eval_result`` (with optional nested ``ragchecker_faithfulness``),
+    plus step bookkeeping. Returns ``{"eval_result": {}}`` immediately (no step
+    bookkeeping update) if ``assistant_response`` is empty.
+    """
     logger.info("[Eval] Notebook Q&A mode")
     response = state.get("assistant_response", "")
     if not response:
@@ -435,7 +484,20 @@ Return this JSON exactly:
 # ── Research Notebook Pipeline eval ───────────────────────────────────────────
 
 def notebook_pipeline_eval_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate the 7-agent pipeline output on summary quality, citation coverage, study guide."""
+    """
+    Evaluate the 7-agent pipeline output on summary quality, citation coverage, study guide.
+
+    Reads state: ``cross_summary``, ``settings`` (for ``settings["model"]``),
+    ``verified_citations``, ``per_doc_summaries``, ``doc_count``, ``study_guide``.
+    Writes: ``eval_result``, plus step bookkeeping. Returns
+    ``{"eval_result": {}}`` immediately (no step bookkeeping update) if
+    ``cross_summary`` is empty.
+
+    Note: unlike the other eval nodes, the model name here is read from
+    ``state["settings"]["model"]`` (the pipeline's settings sub-dict), not
+    ``state["model_name"]`` directly — this mirrors how the 7-agent pipeline
+    nodes themselves read model config.
+    """
     logger.info("[Eval] Notebook pipeline mode")
     cross_summary = state.get("cross_summary", "")
     if not cross_summary:
@@ -480,7 +542,16 @@ Return this JSON exactly:
 # ── Grammar Proofreading eval ─────────────────────────────────────────────────
 
 def grammar_eval_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate the polished text on polish_quality, context_fit, error_coverage, fluency."""
+    """
+    Evaluate the polished text on polish_quality, context_fit, error_coverage, fluency.
+
+    Reads state: ``polished_text``, ``model_name``, ``num_ctx``,
+    ``issues_found``, ``style_level``, ``raw_text``.
+    Writes: ``eval_result``, plus step bookkeeping (``progress_pct`` forced to
+    100 either way). Returns early with an empty ``eval_result`` if
+    ``polished_text`` is empty, but — unlike the other early-return eval nodes
+    — still records step completion in that case.
+    """
     logger.info("[Eval] Grammar Proofreading mode")
     result: Dict[str, Any] = {}
 

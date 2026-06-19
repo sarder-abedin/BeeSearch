@@ -79,7 +79,13 @@ TIER_CONFIGS: List[Dict] = [
 
 
 def get_recommended_tier(hw: Dict) -> Dict:
-    """Return the TIER_CONFIGS entry that matches the detected (or overridden) RAM."""
+    """Return the TIER_CONFIGS entry that matches the detected (or overridden) RAM.
+
+    Args:
+        hw: A hardware profile dict as returned by `detect_hardware()` (or a
+            copy with `ram_gb` overridden, e.g. for the sidebar's manual RAM
+            override when running in Docker).
+    """
     usable = _usable_ram(hw)
     for tier in TIER_CONFIGS:  # ordered highest → lowest
         if usable >= tier["ram_min_gb"]:
@@ -140,7 +146,15 @@ KNOWN_MODELS: List[Dict] = [
 
 
 def detect_hardware() -> Dict:
-    """Return a hardware profile dict for the current machine."""
+    """Return a hardware profile dict for the current machine.
+
+    Returns:
+        Dict with keys: `os`, `arch`, `cpu`, `ram_gb`, `gpu_type`
+        (`"apple_silicon"` | `"nvidia"` | `"cpu"`), `is_apple_silicon`,
+        `in_docker`, `is_docker_on_apple_silicon`. Consumed by
+        `recommend_config()`, `get_recommended_tier()`, and
+        `ui/sidebar.py::render_sidebar()`'s Hardware panel.
+    """
     in_docker = _is_docker()
     os_name = platform.system()
     arch = platform.machine()
@@ -329,6 +343,11 @@ def recommend_config(hw: Dict, available_models: List[str]) -> Dict:
 # ── Private helpers ────────────────────────────────────────────────────────────
 
 def _get_cpu_name(in_docker: bool = False, arch: str = "") -> str:
+    """Best-effort CPU model name, with an Apple-Silicon-in-Docker special case.
+
+    Tries `sysctl` (macOS), then `/proc/cpuinfo` (Linux/Docker), then
+    `platform.processor()`, falling back to `"Unknown CPU"`.
+    """
     # Native macOS: sysctl gives the exact chip name (e.g. "Apple M3 Max")
     try:
         if platform.system() == "Darwin":
@@ -392,6 +411,11 @@ def _is_docker() -> bool:
 
 
 def _get_ram_gb() -> float:
+    """Total system RAM in GB, preferring `psutil` with OS-specific fallbacks.
+
+    Returns 0.0 if every detection method fails (rather than raising), so
+    callers degrade to the "low" tier instead of crashing.
+    """
     # psutil (cross-platform, most accurate)
     try:
         import psutil
@@ -420,6 +444,11 @@ def _get_ram_gb() -> float:
 
 
 def _get_gpu_type(is_apple_silicon: bool) -> str:
+    """Classify the accelerator as `"apple_silicon"`, `"nvidia"`, or `"cpu"`.
+
+    NVIDIA detection shells out to `nvidia-smi`; any failure (not installed,
+    no GPU, timeout) is treated as `"cpu"`.
+    """
     if is_apple_silicon:
         return "apple_silicon"
     try:

@@ -42,6 +42,10 @@ def _crossref_by_title(title: str) -> Optional[Dict]:
         resp.raise_for_status()
         for item in resp.json().get("message", {}).get("items", []):
             item_title = (item.get("title") or [""])[0]
+            # Strip whitespace/punctuation and compare just the leading 15
+            # chars — tolerant of minor title differences (subtitle
+            # punctuation, case) between the arXiv and published versions
+            # without requiring an exact string match.
             norm_q = re.sub(r"\W+", "", title.lower())[:30]
             norm_i = re.sub(r"\W+", "", item_title.lower())[:30]
             if norm_q and norm_i and norm_q[:15] == norm_i[:15]:
@@ -52,6 +56,12 @@ def _crossref_by_title(title: str) -> Optional[Dict]:
 
 
 def _is_retracted(item: Dict) -> bool:
+    """Return True if a CrossRef item's metadata signals a retraction.
+
+    Checks two independent signals since CrossRef doesn't expose a single
+    canonical "is_retracted" field: an update-policy mentioning a
+    retraction notice, or an explicit is-retracted-by relation.
+    """
     if "retract" in (item.get("update-policy") or "").lower():
         return True
     if (item.get("relation") or {}).get("is-retracted-by"):
@@ -89,7 +99,7 @@ def track_preprints(papers: List[Dict]) -> List[Dict]:
             continue
 
         item = _crossref_by_title(title)
-        time.sleep(0.25)
+        time.sleep(0.25)  # stay polite to CrossRef's shared rate limit
 
         if item:
             doi = item.get("DOI", "")

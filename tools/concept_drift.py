@@ -36,6 +36,7 @@ _STOPWORDS = {
 
 
 def _tokenize(text: str) -> List[str]:
+    """Lowercase and split into alphabetic words of 3+ letters, dropping stopwords."""
     return [w for w in re.findall(r"\b[a-z]{3,}\b", text.lower()) if w not in _STOPWORDS]
 
 
@@ -48,6 +49,8 @@ def _tfidf_top(texts: List[str], top_n: int = 15) -> List[str]:
     doc_freq: Counter = Counter()
     for tokens in doc_tokens:
         doc_freq.update(set(tokens))
+    # Smoothed IDF (+1 to numerator/denominator, +1 to the result) avoids
+    # division-by-zero / log(0) for terms that appear in every document.
     idf = {t: math.log((n_docs + 1) / (f + 1)) + 1 for t, f in doc_freq.items()}
     scores: Counter = Counter()
     for tf_tokens in doc_tokens:
@@ -111,7 +114,10 @@ def detect_concept_drift(
     term_rank: Dict[str, Dict[str, int]] = defaultdict(dict)
     for label in bucket_labels:
         for rank, term in enumerate(bucket_kw.get(label, [])):
-            term_rank[term][label] = top_n - rank  # higher score = more prominent
+            # Invert TF-IDF rank into a score (rank 0 = top_n, last = 1) so
+            # "prominence" increases monotonically and bucket-to-bucket deltas
+            # are directly comparable regardless of each bucket's vocabulary.
+            term_rank[term][label] = top_n - rank
 
     rising, declining, stable = [], [], []
 
@@ -122,6 +128,9 @@ def detect_concept_drift(
         first_score = presence[labels_present[0]]
         last_score = presence[labels_present[-1]]
         growth = last_score - first_score
+        # +-3 threshold: a term must move by roughly a quarter of the score
+        # range (top_n=12 default) before it's worth calling "rising"/
+        # "declining" rather than noise between adjacent buckets.
         entry = {
             "term": term,
             "first_bucket": labels_present[0],
