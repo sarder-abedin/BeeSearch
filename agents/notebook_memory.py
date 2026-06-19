@@ -29,10 +29,12 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
+    """Return the current UTC time as an ISO-8601 string."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _short_id(length: int = 8) -> str:
+    """Generate a short random lowercase-alphanumeric id for a new notebook."""
     chars = string.ascii_lowercase + string.digits
     return "".join(random.choices(chars, k=length))
 
@@ -61,6 +63,13 @@ class NotebookMemory:
     """
 
     def __init__(self, db_path: Path | None = None):
+        """Open (and lazily initialise) the notebooks SQLite database.
+
+        Parameters
+        ----------
+        db_path : Override path for the SQLite file; defaults to the
+                  package-standard location inside `init_db`/`_tx` when None.
+        """
         self._db_path = db_path
         init_db(self._db_path)
 
@@ -130,6 +139,7 @@ class NotebookMemory:
         return notebooks
 
     def delete(self, notebook_id: str) -> bool:
+        """Delete a notebook (and, via FK cascade, its chunks). Returns True if a row was removed."""
         with _tx(self._db_path) as conn:
             cursor = conn.execute(
                 "DELETE FROM notebooks WHERE notebook_id=?",
@@ -138,6 +148,7 @@ class NotebookMemory:
             return cursor.rowcount > 0
 
     def rename(self, notebook_id: str, new_name: str) -> bool:
+        """Update a notebook's display name. Returns False if the notebook doesn't exist."""
         nb = self.load(notebook_id)
         if nb is None:
             return False

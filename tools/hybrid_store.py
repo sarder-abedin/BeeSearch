@@ -59,6 +59,7 @@ class HybridStore:
         ollama_base_url: str,
         persist_dir: str,
     ):
+        """Initialise an empty store; FAISS/BM25 indices are built lazily by add_documents*."""
         self.session_id = session_id
         self.persist_dir = persist_dir
 
@@ -175,9 +176,11 @@ class HybridStore:
         return _rrf_merge(dense, sparse, k)
 
     def is_indexed(self) -> bool:
+        """Whether add_documents (or the BM25-only variant) has populated this store."""
         return self._is_indexed
 
     def embedder_available(self) -> bool:
+        """Whether the configured Ollama embedding model is reachable and pulled."""
         return self._embedder.is_available()
 
     def list_indexed_documents(self) -> List[str]:
@@ -204,6 +207,7 @@ class HybridStore:
     # ── Dense retrieval (FAISS) ───────────────────────────────────────────────
 
     def _search_dense(self, query: str, k: int) -> List[Dict[str, Any]]:
+        """Embed *query* and return the top-k FAISS nearest-neighbour chunks with their cosine score."""
         import faiss as _faiss
 
         q_emb = np.array([self._embedder.embed_query(query)], dtype=np.float32)
@@ -221,6 +225,7 @@ class HybridStore:
     # ── Sparse retrieval (BM25) ───────────────────────────────────────────────
 
     def _search_sparse(self, query: str, k: int) -> List[Dict[str, Any]]:
+        """Tokenise *query* and return the top-k BM25-scoring chunks (score > 0 only)."""
         tokens = query.lower().split()
         scores = self._bm25.get_scores(tokens)
         top_idx = np.argsort(scores)[::-1][:k]
@@ -235,6 +240,7 @@ class HybridStore:
     # ── Index builders ────────────────────────────────────────────────────────
 
     def _build_faiss(self, chunks: List[Dict], embeddings: List[List[float]]) -> None:
+        """Build a fresh in-memory FAISS IndexFlatIP over *embeddings*, replacing any prior session index."""
         import faiss as _faiss
 
         emb_arr = np.array(embeddings, dtype=np.float32)
@@ -246,6 +252,7 @@ class HybridStore:
         self._faiss_chunks = chunks
 
     def _build_bm25(self, chunks: List[Dict]) -> None:
+        """Build a fresh in-memory BM25Okapi index over *chunks*, replacing any prior session index."""
         from rank_bm25 import BM25Okapi
         tokenized = [c["text"].lower().split() for c in chunks]
         self._bm25 = BM25Okapi(tokenized)
@@ -321,6 +328,7 @@ class HybridStore:
     # ── Cache invalidation ────────────────────────────────────────────────────
 
     def _invalidate_doc_cache(self, doc_name: str) -> int:
+        """Delete all cached ChromaDB embeddings for *doc_name* (called when its content_md5 changes)."""
         try:
             col = self._get_chroma_col()
             existing = col.get(where={"doc_name": doc_name})
@@ -335,6 +343,7 @@ class HybridStore:
     # ── ChromaDB helpers ──────────────────────────────────────────────────────
 
     def _get_chroma_client(self):
+        """Return (lazily creating) the persistent ChromaDB client rooted at persist_dir."""
         if self._chroma_client is None:
             import chromadb
             Path(self.persist_dir).mkdir(parents=True, exist_ok=True)
@@ -342,6 +351,7 @@ class HybridStore:
         return self._chroma_client
 
     def _get_chroma_col(self):
+        """Return (lazily creating) this embed model's ChromaDB collection."""
         if self._chroma_col is None:
             client = self._get_chroma_client()
             self._chroma_col = client.get_or_create_collection(

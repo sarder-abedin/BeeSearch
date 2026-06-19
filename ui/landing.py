@@ -1,4 +1,14 @@
-"""ui/landing.py — BeeSearch landing page."""
+"""
+ui/landing.py — BeeSearch landing page.
+─────────────────────────────────────────
+Mode-selector screen shown by `app.py` before a mode is chosen.
+
+Renders the two `_PROJECTS` cards (Mode 1 Systematic Literature Review,
+Mode 2 Research Notebook); selecting one sets
+`st.session_state["active_project"]`, which `app.py::main()` reads to decide
+whether to dispatch into `projects.mode1_systematic_review` or
+`projects.mode2_notebook`.
+"""
 from __future__ import annotations
 from pathlib import Path
 import streamlit as st
@@ -98,6 +108,12 @@ _CARD_CSS = """
 
 
 def _card_html(project: dict) -> str:
+    """Build the raw HTML for one mode-selector card from a `_PROJECTS` entry.
+
+    Returned via `st.markdown(..., unsafe_allow_html=True)` by `render_landing()`;
+    relies on the `.mode-card`/`.mode-label`/`.mode-title`/`.mode-desc`/`.mode-tags`/
+    `.mode-tag` classes defined in `_CARD_CSS`.
+    """
     tags_html = "".join(f'<span class="mode-tag">{t}</span>' for t in project["tags"])
     return f"""
 <div class="mode-card">
@@ -110,6 +126,14 @@ def _card_html(project: dict) -> str:
 
 
 def render_landing() -> None:
+    """Render the BeeSearch landing page: logo, tagline, and the Mode 1 / Mode 2 cards.
+
+    Shown by `app.py::main()` whenever `st.session_state["active_project"]` is
+    unset. Clicking a card's "Open ..." button sets
+    `st.session_state["active_project"]` to the project id (`"mode1"`/`"mode2"`)
+    and calls `st.rerun()`, which routes `app.py` into that mode's tab container
+    on the next run.
+    """
     st.markdown(_CARD_CSS, unsafe_allow_html=True)
 
     if _LOGO_PATH.exists():

@@ -39,6 +39,7 @@ cfg = get_settings()
 
 
 def _make_llm(model_name: str, num_ctx: int) -> ChatOllama:
+    """Build a low-temperature ChatOllama client tuned for short scoring replies."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -57,7 +58,12 @@ def _score_one(
     inclusion_criteria: List[str],
     exclusion_criteria: List[str],
 ) -> Dict[str, Any]:
-    """Score a single paper. Returns a result dict with score, verdict, rationale."""
+    """Score a single paper. Returns a result dict with score, verdict, rationale.
+
+    Falls back to a neutral "uncertain" verdict (score 50) if the LLM call
+    fails or its reply cannot be parsed as JSON, so one bad response never
+    aborts screening of the rest of the batch.
+    """
     inc_block = "; ".join(inclusion_criteria) if inclusion_criteria else "Relevant to the research question"
     exc_block = "; ".join(exclusion_criteria) if exclusion_criteria else "Clearly off-topic"
     title = paper.get("title", "")
@@ -78,6 +84,9 @@ def _score_one(
             HumanMessage(content=f"Title: {title}\nAbstract: {abstract}"),
         ])
         raw = response.content.strip()
+        # Local models sometimes wrap the JSON in prose/markdown fences despite
+        # instructions — grab the outermost {...} block rather than requiring
+        # the reply to be pure JSON.
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         result = json.loads(match.group(0)) if match else {}
         score = max(0, min(100, int(result.get("score", 50))))

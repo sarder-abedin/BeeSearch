@@ -1,8 +1,16 @@
 """
-tools/__init__.py — BeeSearch lazy re-exports.
+tools/__init__.py
+──────────────────
+BeeSearch lazy re-exports for the `tools` package.
 
-Submodules are only imported when the specific name is first accessed,
-keeping startup and tests fast.
+`tools/` holds the standalone utility functions used by the `agents/`
+pipelines and the UI (search, document processing, citation export,
+PRISMA reporting, etc.). Rather than importing every submodule eagerly
+(which would pull in heavy deps like faiss/chromadb/langchain_ollama as
+soon as `import tools` runs anywhere), `_EXPORTS` maps each public name to
+its `(module_path, attr)` location and `__getattr__` resolves and caches it
+on first access. New public tool functions should be added to `_EXPORTS`
+rather than imported at module scope here.
 """
 
 from __future__ import annotations
@@ -59,6 +67,15 @@ __all__ = list(_EXPORTS)
 
 
 def __getattr__(name: str) -> Any:
+    """Resolve `tools.<name>` lazily via the `_EXPORTS` table (PEP 562).
+
+    On first access, imports the owning submodule, fetches the attribute,
+    and caches it in this module's globals so subsequent lookups skip
+    `__getattr__` entirely (plain attribute access from then on).
+
+    Raises:
+        AttributeError: if `name` is not a key in `_EXPORTS`.
+    """
     if name in _EXPORTS:
         module_path, attr = _EXPORTS[name]
         module = importlib.import_module(module_path)

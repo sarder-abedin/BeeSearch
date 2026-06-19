@@ -1,4 +1,15 @@
-"""agents/risk_of_bias.py — Cochrane RoB 2 / ROBINS-I risk of bias assessment"""
+"""
+agents/risk_of_bias.py
+─────────────────────────
+Cochrane RoB 2 / ROBINS-I per-paper risk-of-bias assessment for the
+Systematic Review (Mode 7) synthesis step.
+
+Each included paper is rated with the tool appropriate to its study design —
+RoB 2 for RCTs, ROBINS-I for observational studies — across that tool's
+standard bias domains. Complements `agents/grade_assessment.py`, which rates
+the overall body of evidence rather than individual papers; `rob_table`
+output from this module feeds into that one.
+"""
 from __future__ import annotations
 
 import json
@@ -16,6 +27,7 @@ cfg = get_settings()
 
 
 def _llm(model_name: str, num_ctx: int, temperature: float = 0.1) -> ChatOllama:
+    """Build a low-temperature ChatOllama client for risk-of-bias assessment, falling back to config defaults."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -28,6 +40,7 @@ def _llm(model_name: str, num_ctx: int, temperature: float = 0.1) -> ChatOllama:
 
 
 def _call(llm: ChatOllama, system: str, human: str) -> str:
+    """Send a system+human message pair to the LLM and return the stripped text response."""
     return llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
 
 
@@ -58,8 +71,24 @@ def assess_risk_of_bias(
     """
     Assess RoB 2 for RCTs and ROBINS-I for observational studies.
     Returns dict with tool, domains, overall, and justification.
+
+    Args:
+        paper: A single evidence-table row (title, study_design, sample_size,
+            key_finding, abstract, citation_key); the study design determines
+            which tool and domain set is used.
+        model_name: Ollama chat model identifier.
+        num_ctx: LLM context window size.
+
+    Returns:
+        A dict with one key per domain in `ROB2_DOMAINS`/`ROBINS_DOMAINS`
+        (each "Low" | "Some concerns" | "High"), plus ``overall``,
+        ``justification``, ``tool``, ``citation_key``, and ``title``. Falls
+        back to an all-"Some concerns" dict if the LLM response can't be
+        parsed as JSON.
     """
     study_design = paper.get("study_design", "Unknown").lower()
+    # Spelling variants ("randomis"/"randomiz") catch both British and American spellings
+    # of "randomised"/"randomized" since paper metadata isn't normalised to one locale.
     is_rct = any(kw in study_design for kw in ["rct", "randomis", "randomiz", "trial"])
 
     llm = _llm(model_name, num_ctx)
@@ -83,6 +112,8 @@ Also add keys: "overall": "Low|Some concerns|High", "justification": "2-3 senten
     )
 
     try:
+        # Regex-extract the JSON object rather than json.loads(raw) directly: the LLM
+        # sometimes wraps the object in stray prose despite the "ONLY valid JSON" instruction.
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         result = json.loads(match.group(0)) if match else {}
     except Exception:
@@ -101,7 +132,12 @@ def assess_rob_batch(
     model_name: str,
     num_ctx: int,
 ) -> List[Dict[str, Any]]:
-    """Assess risk of bias for all papers in evidence_table."""
+    """Assess risk of bias for all papers in evidence_table.
+
+    Each paper is assessed independently — a failure on one paper logs a
+    warning and yields a "Some concerns" placeholder row for it rather than
+    aborting the whole batch.
+    """
     results = []
     for paper in evidence_table:
         try:

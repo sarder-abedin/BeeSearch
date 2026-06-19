@@ -1,4 +1,14 @@
-"""agents/grade_assessment.py — GRADE evidence grading"""
+"""
+agents/grade_assessment.py
+─────────────────────────────
+GRADE (Grading of Recommendations Assessment, Development and Evaluation)
+evidence-quality rating for the Systematic Review (Mode 7) synthesis step.
+
+Rates the overall body of evidence (not individual papers — see
+`agents/risk_of_bias.py` for per-paper assessment) across five standard GRADE
+domains, starting from "High" for RCT-only evidence or "Low" otherwise, then
+applying LLM-judged downgrades. Called from the SR synthesis node.
+"""
 from __future__ import annotations
 
 import json
@@ -16,6 +26,7 @@ cfg = get_settings()
 
 
 def _llm(model_name: str, num_ctx: int) -> ChatOllama:
+    """Build a low-temperature ChatOllama client for GRADE assessment, falling back to config defaults."""
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,
@@ -28,6 +39,7 @@ def _llm(model_name: str, num_ctx: int) -> ChatOllama:
 
 
 def _call(llm: ChatOllama, system: str, human: str) -> str:
+    """Send a system+human message pair to the LLM and return the stripped text response."""
     return llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
 
 
@@ -50,11 +62,28 @@ def grade_evidence_body(
     """
     Apply GRADE framework to the body of evidence.
     RCTs start at High; observational studies start at Low.
+
+    Args:
+        evidence_table: Extracted evidence rows (only the first 15 are sent
+            to the LLM to bound prompt size); empty input short-circuits to {}.
+        research_question: Used to focus the LLM's domain ratings.
+        rob_table: Per-paper risk-of-bias results (from `risk_of_bias.py`),
+            summarised alongside the evidence to inform the risk_of_bias domain.
+        model_name: Ollama chat model identifier.
+        num_ctx: LLM context window size.
+
+    Returns:
+        A dict with ``starting_level``, ``domains`` (rating per GRADE_DOMAINS
+        entry), ``overall_grade``, ``summary``, and ``certainty_statement``.
+        Falls back to a "no concern" / unchanged-starting-level dict if the
+        LLM response can't be parsed as JSON.
     """
     if not evidence_table:
         return {}
 
     llm = _llm(model_name, num_ctx)
+    # Spelling variants ("randomis"/"randomiz") catch both British and American spellings
+    # of "randomised"/"randomized" since paper metadata isn't normalised to one locale.
     has_rcts = any(
         any(kw in e.get("study_design", "").lower()
             for kw in ["rct", "randomis", "randomiz", "trial"])
@@ -91,6 +120,8 @@ Return ONLY valid JSON:
     )
 
     try:
+        # Regex-extract the JSON object rather than json.loads(raw) directly: the LLM
+        # sometimes wraps the object in stray prose despite the "ONLY valid JSON" instruction.
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         result = json.loads(match.group(0)) if match else {}
     except Exception:

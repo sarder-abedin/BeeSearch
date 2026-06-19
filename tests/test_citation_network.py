@@ -29,6 +29,7 @@ from tools.citation_network import (
 
 
 def test_network_stats_empty_graph():
+    """An empty graph reports zero nodes/edges/isolated and an empty isolated_papers list."""
     G = nx.DiGraph()
     stats = network_stats(G)
 
@@ -39,6 +40,7 @@ def test_network_stats_empty_graph():
 
 
 def test_network_stats_isolated_papers():
+    """A node with no edges is named in isolated_papers, not just counted."""
     G = nx.DiGraph()
     G.add_node("smith2020")
     G.add_node("jones2019")
@@ -54,6 +56,7 @@ def test_network_stats_isolated_papers():
 
 
 def test_network_stats_most_cited_and_most_citing():
+    """most_cited ranks by in-degree and most_citing by out-degree, alongside isolated_papers."""
     G = nx.DiGraph()
     G.add_edge("a", "b", relation="cites")
     G.add_edge("c", "b", relation="cites")
@@ -76,10 +79,12 @@ _PAPERS = [
 
 
 def _fake_find_s2_id(title: str):
+    """Stand in for Semantic Scholar paper-ID lookup, keyed by title."""
     return {"Alpha Paper": "S2-ALPHA", "Beta Paper": "S2-BETA"}.get(title)
 
 
 def _fake_get_references(s2_id: str):
+    """Stand in for Semantic Scholar reference lookup, keyed by S2 ID."""
     # Both included papers cite the same external paper; alpha also cites beta.
     if s2_id == "S2-ALPHA":
         return ["S2-BETA", "S2-EXTERNAL"]
@@ -92,6 +97,7 @@ def _fake_get_references(s2_id: str):
 @patch("tools.citation_network._get_references", side_effect=_fake_get_references)
 @patch("tools.citation_network._find_s2_id", side_effect=_fake_find_s2_id)
 def test_build_citation_network_external_counts(mock_find, mock_refs, mock_sleep):
+    """References to papers outside the included set are tallied in external_counts for gap-finding."""
     G, node_meta, external_counts = build_citation_network(_PAPERS)
 
     assert G.number_of_nodes() == 2
@@ -104,6 +110,7 @@ def test_build_citation_network_external_counts(mock_find, mock_refs, mock_sleep
 @patch("tools.citation_network._get_references", return_value=[])
 @patch("tools.citation_network._find_s2_id", return_value=None)
 def test_build_citation_network_no_s2_matches(mock_find, mock_refs, mock_sleep):
+    """When no paper resolves to a Semantic Scholar ID, the graph still has all nodes but no edges or external counts."""
     G, node_meta, external_counts = build_citation_network(_PAPERS)
 
     assert G.number_of_nodes() == 2
@@ -118,6 +125,7 @@ def test_build_citation_network_no_s2_matches(mock_find, mock_refs, mock_sleep):
 @patch("tools.citation_network.time.sleep", return_value=None)
 @patch("tools.citation_network._get_paper_metadata")
 def test_find_gap_candidates_filters_and_sorts(mock_meta, mock_sleep):
+    """Candidates below min_citations are dropped, and survivors are sorted by descending cited_by_count."""
     mock_meta.side_effect = lambda s2_id: {
         "S2-A": {"title": "Paper A", "year": 2018, "venue": "Journal A", "url": "https://example.com/a"},
         "S2-B": {"title": "Paper B", "year": 2019, "venue": "Journal B", "url": "https://example.com/b"},
@@ -136,6 +144,7 @@ def test_find_gap_candidates_filters_and_sorts(mock_meta, mock_sleep):
 @patch("tools.citation_network.time.sleep", return_value=None)
 @patch("tools.citation_network._get_paper_metadata")
 def test_find_gap_candidates_respects_max_candidates(mock_meta, mock_sleep):
+    """max_candidates caps the result list even when more candidates pass the citation threshold."""
     mock_meta.side_effect = lambda s2_id: {"title": s2_id, "year": 2020, "venue": "", "url": ""}
 
     external_counts = {f"S2-{i}": 10 - i for i in range(10)}
@@ -149,10 +158,12 @@ def test_find_gap_candidates_respects_max_candidates(mock_meta, mock_sleep):
 @patch("tools.citation_network.time.sleep", return_value=None)
 @patch("tools.citation_network._get_paper_metadata", return_value=None)
 def test_find_gap_candidates_no_metadata_skipped(mock_meta, mock_sleep):
+    """A candidate is dropped entirely if Semantic Scholar metadata can't be fetched for it."""
     results = find_gap_candidates({"S2-A": 5}, min_citations=2)
 
     assert results == []
 
 
 def test_find_gap_candidates_empty_input():
+    """An empty external_counts dict yields an empty result list (no calls needed)."""
     assert find_gap_candidates({}) == []

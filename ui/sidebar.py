@@ -1,5 +1,14 @@
 """
 ui/sidebar.py — BeeSearch sidebar: hardware detection, model settings.
+─────────────────────────────────────────────────────────────────────────
+Renders the global Streamlit sidebar shown above both modes.
+
+Called once per run from `app.py::main()`, before either mode's tab
+container, so it has no access to mode-specific state. Returns a flat
+`settings` dict that both `projects.mode1_systematic_review` and
+`projects.mode2_notebook` (and everything they call) treat as the single
+source of truth for model choice, context window, RAG, document parsing,
+and temperature-level settings.
 """
 
 from __future__ import annotations
@@ -22,6 +31,14 @@ cfg = get_settings()
 
 @st.cache_data(ttl=30, show_spinner=False)
 def _load_system_info():
+    """Detect hardware and query Ollama for available models, cached 30s.
+
+    The short TTL keeps the (cheap) hardware probe and (network) Ollama
+    `/api/tags` calls from re-running on every sidebar widget interaction,
+    while still picking up newly-pulled models within half a minute.
+    Call `st.cache_data.clear()` after actions that should invalidate it
+    immediately (e.g. the "Refresh" buttons, applying a RAM override).
+    """
     hw = detect_hardware()
     available = get_available_models(cfg.ollama_base_url)
     rec = recommend_config(hw, available)
@@ -30,6 +47,40 @@ def _load_system_info():
 
 
 def render_sidebar() -> dict:
+    """Render the full sidebar and return the settings dict for the active mode.
+
+    Reads/writes a layered set of `st.session_state` keys:
+
+    - ``hw_apply_model`` / ``hw_apply_ctx`` / ``hw_apply_all`` — one-shot
+      "pending apply" signals written by the Apply/Apply All buttons on a
+      *previous* run; this function pops them at the top of the *next* run
+      and copies their values into the real `sidebar_*` widget-backing keys
+      below, then lets Streamlit's normal widget binding take over. This
+      indirection exists because a button click can't safely mutate a
+      `key=`-bound widget's own state in the same run that widget renders.
+    - ``sidebar_model``, ``sidebar_num_ctx``, ``sidebar_temperature_level``,
+      ``sidebar_hybrid_top_k``, ``sidebar_max_results``,
+      ``sidebar_chunk_size``/``sidebar_chunk_overlap``,
+      ``sidebar_large_doc_threshold``, ``sidebar_embed_model``,
+      ``sidebar_use_docling``, ``sidebar_use_ocr``,
+      ``sidebar_include_crossref`` — the actual widget-bound values; each is
+      both read (as the widget's prior value) and written (by the widget
+      itself) every render.
+    - ``sidebar_top_k_applied`` / ``sidebar_max_results_applied`` /
+      ``sidebar_chunk_size_applied`` / ``sidebar_chunk_overlap_applied`` /
+      ``sidebar_large_doc_threshold_applied`` — staged values from "Apply All
+      Recommended Settings", consumed (popped) as `value=` defaults for
+      sliders that have no `hw_apply_*`-style direct key to write into.
+    - ``hw_ram_override_gb`` — persists the manual RAM override (for Docker
+      hosts that under-report host RAM) across reruns.
+    - ``_shutdown_confirm`` — gates the two-step "Shut Down Safely" button.
+
+    Returns:
+        dict with keys: model, num_ctx, embed_model, hybrid_top_k,
+        max_results, include_web, include_crossref, chunk_size,
+        chunk_overlap, use_docling, use_ocr, large_doc_page_threshold,
+        style_profile, temperature_level.
+    """
     with st.sidebar:
         st.title("Settings")
 
@@ -188,6 +239,7 @@ def render_sidebar() -> dict:
                 st.session_state["sidebar_model"] = available_models[0]
 
             def _model_label(name: str) -> str:
+                """Selectbox format_func: append "(recommended)" to the hardware-recommended model."""
                 return f"{name} (recommended)" if name == rec.get("model") else name
 
             model = st.selectbox("Active model", options=available_models,
@@ -224,6 +276,8 @@ def render_sidebar() -> dict:
         if "sidebar_num_ctx" in st.session_state:
             applied = st.session_state["sidebar_num_ctx"]
             if applied not in ctx_options:
+                # select_slider raises if its bound session_state value isn't
+                # exactly one of `options` — snap to the closest valid step.
                 st.session_state["sidebar_num_ctx"] = min(ctx_options, key=lambda x: abs(x - applied))
         num_ctx = st.select_slider("Tokens", options=ctx_options, key="sidebar_num_ctx")
 

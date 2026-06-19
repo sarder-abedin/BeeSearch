@@ -41,31 +41,40 @@ class _TextExtractor(HTMLParser):
     """Reduces an HTML document to readable text, dropping markup/chrome."""
 
     def __init__(self) -> None:
+        """Initialize parser state: skip-tag depth counter and text chunks."""
         super().__init__()
         self._skip_depth = 0
         self._chunks: List[str] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:
+        """HTMLParser callback: enter a skip region or emit a block-level newline."""
         if tag in _SKIP_TAGS:
+            # Use a depth counter rather than a bool so nested skip tags
+            # (e.g. <script> inside <noscript>) don't prematurely re-enable
+            # data capture on the inner tag's matching end tag.
             self._skip_depth += 1
         elif tag in _BLOCK_TAGS:
             self._chunks.append("\n")
 
     def handle_startendtag(self, tag: str, attrs) -> None:
+        """HTMLParser callback for self-closing tags, e.g. `<br/>`."""
         if tag in _BLOCK_TAGS:
             self._chunks.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
+        """HTMLParser callback: leave a skip region or emit a block-level newline."""
         if tag in _SKIP_TAGS:
             self._skip_depth = max(0, self._skip_depth - 1)
         elif tag in _BLOCK_TAGS:
             self._chunks.append("\n")
 
     def handle_data(self, data: str) -> None:
+        """HTMLParser callback: capture text nodes unless inside a skip region."""
         if not self._skip_depth and data.strip():
             self._chunks.append(data)
 
     def text(self) -> str:
+        """Join captured chunks, decode entities, and collapse blank/whitespace lines."""
         raw = unescape("".join(self._chunks))
         lines = (re.sub(r"[ \t]+", " ", ln).strip() for ln in raw.splitlines())
         return "\n".join(ln for ln in lines if ln)

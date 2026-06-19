@@ -1,6 +1,17 @@
-"""tools/session_db.py
-SQLite-backed session storage shared by all memory classes.
-Single DB file: outputs/memory/sessions.db
+"""
+tools/session_db.py
+─────────────────────
+SQLite-backed session storage shared by all "*_memory.py" persistence
+classes across BeeSearch's pipelines.
+
+This is lower-level than (and underlies) the agents/*_memory.py modules:
+it owns the single DB file (default `outputs/memory/sessions.db`), the
+WAL-mode connection/transaction helper, and the DDL for every pipeline's
+table — not just Research Notebook's `notebooks`/`notebook_chunks`, but
+also grammar-checker, "wisdom", storyteller, style-profile, proposal, and
+generic research-session tables. Each owning module is responsible for
+its own row-level read/write logic; this module only provides the shared
+plumbing (`_tx`, `pack`/`unpack`, `init_db`).
 """
 from __future__ import annotations
 import sqlite3
@@ -11,20 +22,34 @@ from typing import Any
 try:
     import orjson
     def _dumps(obj: Any) -> bytes:
+        """Serialize `obj` to bytes using orjson (fast path when available)."""
         return orjson.dumps(obj, option=orjson.OPT_NON_STR_KEYS | orjson.OPT_PASSTHROUGH_DATETIME)
     def _loads(data) -> Any:
+        """Deserialize orjson-encoded bytes back into a Python object."""
         return orjson.loads(data)
 except ImportError:
     import json as _j
     def _dumps(obj: Any) -> bytes:
+        """Serialize `obj` to bytes using stdlib json (fallback when orjson isn't installed)."""
+        # default=str covers values orjson would otherwise handle natively
+        # (e.g. datetimes) so both code paths accept the same inputs.
         return _j.dumps(obj, default=str, ensure_ascii=False).encode()
     def _loads(data) -> Any:
+        """Deserialize stdlib-json-encoded bytes back into a Python object."""
         return _j.loads(data)
 
 _DEFAULT_DB = Path("outputs/memory/sessions.db")
 
 @contextmanager
 def _tx(db_path: Path | None = None):
+    """Open a WAL-mode SQLite connection as a transaction context manager.
+
+    Commits on clean exit, rolls back on any exception, and always closes
+    the connection. `check_same_thread=False` because Streamlit/CLI memory
+    classes may open connections from callback threads. Defaults to
+    `_DEFAULT_DB` when `db_path` is omitted, creating parent directories
+    as needed.
+    """
     path = db_path or _DEFAULT_DB
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), check_same_thread=False)
@@ -42,13 +67,18 @@ def _tx(db_path: Path | None = None):
         conn.close()
 
 def pack(obj: Any) -> bytes:
+    """Serialize `obj` for storage in a BLOB column (`data_json`/`meta_json`)."""
     return _dumps(obj)
 
 def unpack(data) -> Any:
+    """Deserialize a BLOB column's contents, returning `{}` for `None`/empty values."""
     if data is None:
         return {}
     return _loads(data)
 
+# Schema for every pipeline that persists through session_db, not only
+# Research Notebook's notebooks/notebook_chunks tables — kept in one
+# script so init_db() can create the whole DB in a single executescript().
 _DDL = """
 CREATE TABLE IF NOT EXISTS grammar_sessions (
     session_id   TEXT PRIMARY KEY,

@@ -86,6 +86,7 @@ def _build_converter(use_ocr: bool, models_path: Path):
 
 
 def _get_converter(use_ocr: bool, models_path: Path):
+    """Return the cached DocumentConverter for this (use_ocr, models_path) combo, building it on first use."""
     key = (use_ocr, str(models_path.resolve()))
     if key not in _converter_cache:
         _converter_cache[key] = _build_converter(use_ocr, models_path)
@@ -251,6 +252,10 @@ class DoclingProcessor:
         max_raw_chars: int = 0,
         models_path: Optional[Union[str, Path]] = None,
     ):
+        """
+        Configure OCR, the raw-text size cap, and where Docling's ML model
+        weights are cached on disk (defaults to the project models dir).
+        """
         self.use_ocr = use_ocr
         self.max_raw_chars = max_raw_chars
         self.models_path = Path(models_path or _default_models_path())
@@ -262,6 +267,15 @@ class DoclingProcessor:
         file_path: Union[str, Path],
         file_obj: Optional[IO[bytes]] = None,
     ) -> ProcessedDocument:
+        """
+        Process one uploaded file into a ProcessedDocument.
+
+        CSV files are handled directly (no Docling model needed); every other
+        supported extension is routed through the Docling conversion pipeline.
+
+        Raises:
+            ValueError: if the file extension isn't in SUPPORTED_EXTENSIONS.
+        """
         path = Path(file_path)
         ext = path.suffix.lower()
         doc_id = _stable_id(path.name)
@@ -311,6 +325,7 @@ class DoclingProcessor:
         file_obj: Optional[IO[bytes]],
         doc_id: str,
     ) -> ProcessedDocument:
+        """Run the Docling conversion + chunking pipeline and assemble a ProcessedDocument."""
         converter = _get_converter(self.use_ocr, self.models_path)
 
         # Docling requires a real file path — write in-memory streams to a temp file
@@ -417,6 +432,7 @@ class DoclingProcessor:
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _default_models_path() -> Path:
+    """Return the configured Docling models directory, or a relative fallback if settings can't be read."""
     try:
         from config.settings import get_settings
         return Path(get_settings().docling_models_path)

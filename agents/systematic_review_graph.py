@@ -1,4 +1,40 @@
-"""agents/systematic_review_graph.py — LangGraph for Mode 7 Systematic Review"""
+"""
+agents/systematic_review_graph.py
+────────────────────────────────────
+Assembles the LangGraph StateGraph for the Systematic Literature Review (Mode 7).
+
+Graph structure (linear — one path only)
+─────────────────────────────────────────
+
+  START
+    │
+    ▼
+  [query_generation]    ← LLM expands the research question into search queries
+    │
+    ▼
+  [literature_search]   ← Google Scholar, arXiv, Semantic Scholar (+ CrossRef)
+    │
+    ▼
+  [screening]            ← title/abstract screening against inclusion/exclusion criteria
+    │
+    ▼
+  [evidence_extraction]  ← pulls structured findings from included papers
+    │
+    ▼
+  [synthesis]             ← narrative synthesis, themes, gaps, PRISMA flow counts
+    │
+    ▼
+  [sr_eval]               ← LLM self-evaluates synthesis quality
+    │
+   END
+
+Invocation model
+─────────────────
+One call to `run_systematic_review()` runs the full pipeline once. The
+compiled graph is cached in the module-level `_graph` singleton (built via
+`build_systematic_review_graph()`) and reused across calls, unlike the
+Notebook/Story graphs which recompile per invocation.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +57,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_systematic_review_graph() -> StateGraph:
+    """Construct and compile the Systematic Review graph."""
     graph = StateGraph(SystematicReviewState)
     graph.add_node("query_generation", query_generation_node)
     graph.add_node("literature_search", literature_search_node)
@@ -44,6 +81,7 @@ _graph = None
 
 
 def _get_graph():
+    """Return the cached compiled graph, building it on first call."""
     global _graph
     if _graph is None:
         _graph = build_systematic_review_graph()
@@ -54,7 +92,18 @@ def run_systematic_review(
     initial_state: SystematicReviewState,
     stream_callback: Optional[Callable[[str, Dict], None]] = None,
 ) -> SystematicReviewState:
-    """Run the full systematic review graph and return the final state."""
+    """Run the full systematic review graph and return the final state.
+
+    Parameters
+    ----------
+    initial_state   : created by systematic_review_state.create_systematic_review_state()
+    stream_callback : optional callable(node_name, partial_state) for progress
+
+    Returns
+    -------
+    Final SystematicReviewState with included/excluded papers, evidence table,
+    and narrative synthesis populated.
+    """
     graph = _get_graph()
     final_state = dict(initial_state)
 

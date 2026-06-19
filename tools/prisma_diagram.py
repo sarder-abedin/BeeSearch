@@ -1,9 +1,21 @@
-"""tools/prisma_diagram.py — Generate PRISMA flow diagram in Mermaid and DOT formats"""
+"""
+tools/prisma_diagram.py
+────────────────────────
+Generate a PRISMA flow diagram (record-screening funnel) in two textual
+formats: Mermaid (for inline rendering in the Streamlit UI/Markdown) and
+Graphviz DOT (for the PRISMA DOCX/PDF report exports).
+
+Both functions take the same ``flow`` dict — keys ``identified``,
+``screened``, ``eligibility``, ``included`` — and derive the two "excluded"
+counts (at screening, at full-text eligibility) by subtraction, so callers
+only need to track the four PRISMA stage counts they already have.
+"""
 from __future__ import annotations
 from typing import Dict
 
 
 def generate_prisma_mermaid(flow: Dict[str, int]) -> str:
+    """Render ``flow`` as a Mermaid ``flowchart TD`` diagram (string)."""
     identified = flow.get("identified", 0)
     screened = flow.get("screened", 0)
     eligibility = flow.get("eligibility", 0)
@@ -33,6 +45,7 @@ def generate_prisma_mermaid(flow: Dict[str, int]) -> str:
 
 
 def generate_prisma_dot(flow: Dict[str, int]) -> str:
+    """Render ``flow`` as a Graphviz DOT digraph (string), for PRISMA report exports."""
     identified = flow.get("identified", 0)
     screened = flow.get("screened", 0)
     eligibility = flow.get("eligibility", 0)

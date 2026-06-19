@@ -1,10 +1,31 @@
-"""tools/zotero_importer.py — BibTeX/.bib file parser and notebook importer"""
+"""
+tools/zotero_importer.py
+─────────────────────────
+BibTeX/.bib file parser and Research Notebook importer.
+
+Lets users bring an existing Zotero/EndNote/Mendeley export straight into a
+notebook: ``parse_bibtex`` turns raw ``.bib`` text into entry dicts with a
+small regex-based parser (no external BibTeX library dependency), and
+``import_bibtex_to_notebook`` turns each entry into a notebook source so it
+becomes retrievable in Notebook Chat like any uploaded PDF.
+"""
 from __future__ import annotations
 import logging, re
 from typing import Any, Dict, List, Tuple
 logger = logging.getLogger(__name__)
 
 def parse_bibtex(bibtex_content: str) -> List[Dict[str, Any]]:
+    """
+    Parse raw BibTeX text into a list of entry dicts.
+
+    Each entry always has ``type`` (e.g. "article") and ``key`` (the BibTeX
+    citation key), plus whatever fields the entry defines (``title``,
+    ``author``, ``year``, ``doi``, ``abstract``, ...). Field values can be
+    wrapped in ``{...}`` (braces are stripped, including one level of
+    nesting, and LaTeX commands like ``\\textbf`` are dropped) or in
+    ``"..."`` (used as-is, only filled in if a braced version wasn't
+    already found for that field).
+    """
     entries = []
     pattern = re.compile(r"@(\w+)\s*\{\s*([^,\s]+)\s*,\s*(.*?)\n\s*\}", re.DOTALL | re.MULTILINE)
     for match in pattern.finditer(bibtex_content):
@@ -22,6 +43,18 @@ def parse_bibtex(bibtex_content: str) -> List[Dict[str, Any]]:
     return entries
 
 def import_bibtex_to_notebook(bibtex_content: str, notebook_id: str, settings: dict) -> Tuple[int, List[str]]:
+    """
+    Import every entry in a BibTeX string into a notebook as a source.
+
+    Each entry is rendered into a small plain-text document (title, authors,
+    year, journal, DOI, abstract, notes), chunked the same way an uploaded
+    PDF would be, and added via ``NotebookMemory.add_source(...)``. Successful
+    imports invalidate that notebook's cached hybrid store so the next query
+    picks up the new chunks. Per-entry failures are collected as error
+    strings rather than aborting the whole import.
+
+    Returns ``(added_count, error_messages)``.
+    """
     from agents.notebook_memory import NotebookMemory
     from tools.document_tools import DocumentProcessor, ProcessedDocument
     from config.settings import get_settings as _cfg

@@ -31,6 +31,7 @@ class OllamaEmbedder:
     """Thin wrapper around Ollama's /api/embed endpoint."""
 
     def __init__(self, model: str, base_url: str):
+        """Store the embedding model name and Ollama server URL (no network calls yet)."""
         self.model = model
         self.base_url = base_url.rstrip("/")
         self._dim: int | None = None  # cached after first call

@@ -28,6 +28,7 @@ LEVELS = ["precise", "focused", "balanced", "creative"]
 
 @pytest.mark.parametrize("level", LEVELS)
 def test_notebook_chat_llm_applies_temperature_level(level):
+    """The Notebook Chat answer LLM's temperature kwarg reflects state['temperature_level'] for every level."""
     state = create_notebook_state(
         user_message="What is X?", notebook_id="nb1", temperature_level=level,
     )
@@ -40,6 +41,7 @@ def test_notebook_chat_llm_applies_temperature_level(level):
 
 @pytest.mark.parametrize("level", LEVELS)
 def test_storyteller_llm_applies_temperature_level(level):
+    """The Explain/storyteller LLM's temperature kwarg reflects state['temperature_level'] for every level."""
     state = create_story_state(
         user_message="Explain X", session_id="s1", temperature_level=level,
     )
@@ -52,6 +54,7 @@ def test_storyteller_llm_applies_temperature_level(level):
 
 @pytest.mark.parametrize("level", LEVELS)
 def test_notebook_advanced_make_llm_applies_temperature_level(level):
+    """The advanced-tools (summary/FAQ/etc.) LLM factory's temperature kwarg reflects settings['temperature_level']."""
     settings = {"model": "llama3.1:8b", "num_ctx": 8192, "temperature_level": level}
     with patch("agents.notebook_advanced.ChatOllama") as mock_chat:
         from agents.notebook_advanced import _make_llm
@@ -62,6 +65,7 @@ def test_notebook_advanced_make_llm_applies_temperature_level(level):
 
 @pytest.mark.parametrize("level", LEVELS)
 def test_pipeline_make_llm_applies_temperature_level(level):
+    """The 7-agent pipeline's LLM factory's temperature kwarg reflects settings['temperature_level']."""
     settings = {"model": "llama3.1:8b", "num_ctx": 8192, "temperature_level": level}
     with patch("langchain_ollama.ChatOllama") as mock_chat:
         from agents.notebook_pipeline_nodes import _make_llm
@@ -71,11 +75,13 @@ def test_pipeline_make_llm_applies_temperature_level(level):
 
 
 def test_notebook_state_defaults_to_focused_when_unspecified():
+    """create_notebook_state() defaults temperature_level to 'focused' when the caller omits it."""
     state = create_notebook_state(user_message="Q", notebook_id="nb1")
     assert state["temperature_level"] == DEFAULT_TEMPERATURE_LEVEL
 
 
 def test_story_state_defaults_to_focused_when_unspecified():
+    """create_story_state() defaults temperature_level to 'focused' when the caller omits it."""
     state = create_story_state(user_message="Q", session_id="s1")
     assert state["temperature_level"] == DEFAULT_TEMPERATURE_LEVEL
 

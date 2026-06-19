@@ -33,6 +33,11 @@ _SYSTEM_PROMPT = (
 
 
 def _make_llm(model_name: str, num_ctx: int) -> ChatOllama:
+    """Build a deterministic ChatOllama client capped to a small context window.
+
+    Context is capped at 4096 tokens since inputs here are short
+    user-entered strings, not full documents — keeps this fast.
+    """
     import httpx
     return ChatOllama(
         model=model_name or cfg.ollama_model,

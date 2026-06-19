@@ -1,4 +1,13 @@
-"""tools/research_gaps.py — Research gap mapper"""
+"""
+tools/research_gaps.py
+─────────────────────────
+Research gap mapper for the Systematic Review pipeline.
+
+Asks the LLM to categorize unanswered questions in the reviewed evidence
+across five gap types (population, methodology, outcome, context,
+temporal) and rank the top three by priority, building on any gaps
+already identified earlier in the SR run.
+"""
 from __future__ import annotations
 import json, logging, re
 from typing import Any, Dict, List
@@ -9,10 +18,18 @@ logger = logging.getLogger(__name__)
 cfg = get_settings()
 
 def _llm(model_name: str, num_ctx: int) -> ChatOllama:
+    """Build a low-temperature ChatOllama client for structured gap analysis."""
     import httpx
     return ChatOllama(model=model_name or cfg.ollama_model, base_url=cfg.ollama_base_url, temperature=0.2, num_predict=1024, num_ctx=num_ctx or cfg.num_ctx, sync_client_kwargs={"timeout": httpx.Timeout(300.0)})
 
 def map_research_gaps(evidence_table: List[Dict[str, Any]], research_question: str, existing_gaps: List[str], model_name: str, num_ctx: int) -> Dict[str, Any]:
+    """Categorize research gaps across population/methodology/outcome/context/temporal axes.
+
+    Sends only the first 15 evidence-table rows and 10 existing gaps to
+    bound the prompt. On a parsing failure, falls back to a result dict
+    that just echoes the first 3 `existing_gaps` as `priority_gaps` rather
+    than returning nothing.
+    """
     llm = _llm(model_name, num_ctx)
     evidence_summary = "\n".join(f"[{e.get('citation_key','')}] {e.get('study_design','')} — {e.get('key_finding','')[:120]}" for e in evidence_table[:15])
     existing_text = "\n".join(f"- {g}" for g in existing_gaps[:10]) or "(none)"

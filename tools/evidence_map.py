@@ -22,6 +22,9 @@ from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Ordinal mapping so quality levels can be averaged into a single numeric
+# colour value per cell; 1-3 range matches the colorbar/colormap bounds used
+# by both renderers below.
 _QUALITY_SCORE = {"High": 3.0, "Medium": 2.0, "Low": 1.0}
 
 
@@ -100,6 +103,8 @@ def evidence_map_to_plotly_html(map_data: Dict[str, Any]) -> str:
         y=map_data["y_vals"],
         mode="markers",
         marker=dict(
+            # Scale factor 18 + floor 12 keep single-study bubbles visible
+            # while still letting bubble area communicate relative study counts.
             size=[max(s * 18, 12) for s in map_data["sizes"]],
             color=map_data["colors"],
             colorscale=[[0, "#EF4444"], [0.5, "#F59E0B"], [1, "#10B981"]],

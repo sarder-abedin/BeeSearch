@@ -359,6 +359,7 @@ def render_rag_reflection(rag_reflection_info, key_suffix: str = "") -> None:
 # ── Key findings + report ──────────────────────────────────────────────────────
 
 def render_key_findings(findings: list) -> None:
+    """Render a numbered "Key Findings" list; no-op if `findings` is empty."""
     if not findings:
         return
     st.subheader("Key Findings")
@@ -496,6 +497,11 @@ def render_feedback_section(
 # ── Grammar check gate (optional pre-submission query correction) ──────────────
 
 def _run_grammar_check(text: str, settings: dict, context_hint: str = "") -> dict:
+    """Thin wrapper around `tools.grammar_check.check_and_fix_grammar`, pulling
+    model/context settings out of the sidebar `settings` dict.
+
+    Shared by `render_query_gate()` and `render_chat_gate()` below.
+    """
     from tools.grammar_check import check_and_fix_grammar
     return check_and_fix_grammar(
         text,

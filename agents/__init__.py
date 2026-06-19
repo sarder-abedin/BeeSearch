@@ -1,3 +1,17 @@
+"""
+agents/__init__.py
+───────────────────
+Public re-export surface for the `agents` package.
+
+Pulls the state/graph/memory entry points for all three LangGraph pipelines —
+Systematic Review (Mode 7), Research Notebook (Mode 8) Q&A, and the Notebook
+7-agent pipeline — into `agents.*` so callers (UI tabs, `main.py`, CLI tools)
+don't need to know each pipeline's submodule layout. Story (Mode 5) and the
+Research Report workflow (`agents/graph.py` / `agents/state.py`) are imported
+directly by their callers instead of being re-exported here, since both
+degrade gracefully (warn + hide their UI tab) if missing.
+"""
+
 from agents.systematic_review_state import SystematicReviewState, create_systematic_review_state
 from agents.systematic_review_graph import build_systematic_review_graph, run_systematic_review
 from agents.notebook_state import NotebookState, create_notebook_state

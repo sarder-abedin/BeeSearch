@@ -42,6 +42,7 @@ _SentenceTransformer = None
 
 
 def _get_chroma():
+    """Import and cache the ``chromadb`` module on first use, so importing this module stays cheap."""
     global _chromadb
     if _chromadb is None:
         import chromadb
@@ -50,6 +51,7 @@ def _get_chroma():
 
 
 def _get_st():
+    """Import and cache ``sentence_transformers.SentenceTransformer`` on first use."""
     global _SentenceTransformer
     if _SentenceTransformer is None:
         from sentence_transformers import SentenceTransformer
@@ -66,16 +68,19 @@ class LocalEmbeddingFunction:
     """
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        """Store the sentence-transformers model name (no model load yet)."""
         self.model_name = model_name
         self._model = None  # Lazy load on first call
 
     def _load(self):
+        """Load the sentence-transformers model on first use, then cache it on `self._model`."""
         if self._model is None:
             logger.info("Loading embedding model: %s", self.model_name)
             ST = _get_st()
             self._model = ST(self.model_name)
 
     def __call__(self, input: List[str]) -> List[List[float]]:  # noqa: A002
+        """ChromaDB EmbeddingFunction hook: embed a batch of texts into a list of float vectors."""
         self._load()
         embeddings = self._model.encode(input, show_progress_bar=False)
         return embeddings.tolist()
@@ -95,6 +100,7 @@ class VectorStoreManager:
     """
 
     def __init__(self):
+        """Read persistence/embedding settings; defers actually opening ChromaDB until first use."""
         cfg = get_settings()
         self._persist_dir = cfg.chroma_persist_dir
         self._collection_name = cfg.chroma_collection_name
