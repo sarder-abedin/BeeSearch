@@ -13,7 +13,7 @@
 # Pull a different model:
 #   docker compose exec ollama ollama pull mistral-nemo:12b
 #
-# ⚠️  Apple Silicon Mac (M1/M2/M3): the ollama/ollama image runs under
+# Apple Silicon Mac (M1/M2/M3): the ollama/ollama image runs under
 #     x86 emulation and will fail its healthcheck. Install native Ollama
 #     (https://ollama.com/download), pull your model, then use the
 #     standalone Mac file instead (do NOT combine with this file):
