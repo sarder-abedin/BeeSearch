@@ -56,14 +56,10 @@ def search_crossref(query: str, max_results: int = 10) -> list[dict]:
 
 @mcp.tool()
 def web_search(query: str, max_results: int = 5) -> list[dict]:
-    """Search the web using DuckDuckGo. Returns title, url, and snippet."""
-    from ddgs import DDGS
-    with DDGS() as ddgs:
-        raw = list(ddgs.text(query, max_results=max_results))
-    return [
-        {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", ""), "source": "duckduckgo"}
-        for r in raw
-    ]
+    """Search the web using DuckDuckGo. Returns title, url, and snippet. Returns an empty list on failure (e.g. no results, rate-limiting) rather than raising."""
+    from tools.search_tools import WebSearcher
+    results = WebSearcher().search(query, max_results=max_results)
+    return [{"title": r.title, "url": r.url, "snippet": r.snippet, "source": r.source} for r in results]
 
 
 # ── Notebook RAG query ─────────────────────────────────────────────────────

@@ -126,6 +126,16 @@ def _step_document_ingestion(state: dict) -> dict:
     return state
 
 
+def _clean_generated_query(line: str) -> str:
+    """Strip bullets/numbering and wrapping quote characters from one LLM-generated query line.
+
+    LLMs commonly wrap each generated query in straight or curly quotes; left in
+    place, those quotes turn the query into an exact-phrase search against arXiv/
+    Google Scholar, which reliably returns 0 results for any specific phrase.
+    """
+    return line.strip().lstrip("•-*0123456789.) ").strip("'\"“”‘’")
+
+
 def _step_query_generation(state: dict) -> dict:
     """Generate up to 3 academic search queries from the goal, or skip the LLM call in pure-document mode."""
     goal = state["goal"]
@@ -141,10 +151,7 @@ def _step_query_generation(state: dict) -> dict:
     try:
         raw = _invoke(_llm(state, temperature=0.2, num_predict=200), system,
                       f"Research goal: {goal}")
-        queries = [
-            q.strip().lstrip("•-*0123456789.) ").strip("'\"“”‘’")
-            for q in raw.splitlines() if q.strip()
-        ]
+        queries = [_clean_generated_query(q) for q in raw.splitlines() if q.strip()]
         queries = [q for q in queries if q]
         state["search_queries"] = queries[:3] or [goal]
     except Exception as e:
