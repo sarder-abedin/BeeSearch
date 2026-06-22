@@ -6,7 +6,7 @@ Two search back-ends that power the agent's external knowledge:
   1. AcademicSearcher  — queries arXiv + Semantic Scholar + CrossRef
                          → returns peer-reviewed, citable papers
 
-  2. WebSearcher       — queries Google via FastAPI Google Search Service
+  2. WebSearcher       — queries the web via DuckDuckGo (ddgs), no API key needed
                          → useful when academic coverage is thin
 
 TUTORIAL NOTE

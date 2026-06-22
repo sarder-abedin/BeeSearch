@@ -24,7 +24,7 @@ class NotebookState(TypedDict, total=False):
     num_ctx: int                       # LLM context window (tokens)
     embed_model: str                   # Ollama embedding model for retrieval
     top_k: int                         # Number of chunks to retrieve
-    include_web_search: bool           # Auto-search Google for each query
+    include_web_search: bool           # Auto-search the web (DuckDuckGo) for each query
     temperature_level: str             # "precise" | "focused" | "balanced" | "creative"
 
     # ── Loaded from memory / retrieval ────────────────────────
