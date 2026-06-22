@@ -155,6 +155,44 @@ def context_loader_node(state: StoryState) -> Dict[str, Any]:
 _COVERAGE_THRESHOLD = 6  # Score below this triggers online search (0–10 scale)
 
 
+def _build_web_query(question: str, doc_context: str, model_name: str, num_ctx: int) -> str:
+    """Rewrite a conversational question into a self-contained search query.
+
+    Questions like "What's the state of the art compared to this approach?"
+    mean nothing to a web/academic search engine — it has no idea what "this
+    approach" refers to, so the search comes back irrelevant even though it
+    technically succeeds. Grounding the rewrite in a snippet of the uploaded
+    document context lets the LLM name the real topic before the query
+    reaches DuckDuckGo/arXiv/Semantic Scholar. Falls back to the raw question
+    when there's no document context to ground it in, or if the rewrite call
+    itself fails.
+    """
+    if not doc_context.strip():
+        return question
+    try:
+        import httpx
+        llm = ChatOllama(
+            model=model_name or cfg.ollama_model,
+            base_url=cfg.ollama_base_url,
+            temperature=0.0,
+            num_predict=40,
+            num_ctx=min(num_ctx, 4096),
+            sync_client_kwargs={"timeout": httpx.Timeout(30.0)},
+        )
+        system = (
+            "Rewrite the question as a short, self-contained search query "
+            "(max 12 words). Replace vague references like 'this work'/'this "
+            "approach'/'this problem' with the actual topic, inferred from the "
+            "context. Output ONLY the query — no quotes, no explanation."
+        )
+        human = f"CONTEXT:\n{doc_context[:300]}\n\nQUESTION: {question}"
+        rewritten = _call(llm, system, human)
+        return rewritten.strip("'\"“”‘’") or question
+    except Exception as e:
+        logger.warning("Web query rewrite failed in router, using raw question: %s", e)
+        return question
+
+
 def source_router_node(state: StoryState) -> Dict[str, Any]:
     """
     Assess how well the uploaded documents cover the user's question.
@@ -221,9 +259,13 @@ def source_router_node(state: StoryState) -> Dict[str, Any]:
 
         from tools.search_tools import AcademicSearcher, WebSearcher
 
+        search_query = _build_web_query(
+            question, doc_context, state.get("model_name", cfg.ollama_model), state.get("num_ctx", cfg.num_ctx)
+        )
+
         # Academic search (arXiv + Semantic Scholar + Google Scholar)
         try:
-            papers = AcademicSearcher().search(question, max_per_source=3)[:5]
+            papers = AcademicSearcher().search(search_query, max_per_source=3)[:5]
             for p in papers:
                 if p.title:
                     online_results.append({
@@ -243,7 +285,7 @@ def source_router_node(state: StoryState) -> Dict[str, Any]:
 
         # Web search (DuckDuckGo — white papers, blogs, tutorials, etc.)
         try:
-            web_hits = WebSearcher().search(question, max_results=4)
+            web_hits = WebSearcher().search(search_query, max_results=4)
             for w in web_hits:
                 if w.url and w.title:
                     online_results.append({
