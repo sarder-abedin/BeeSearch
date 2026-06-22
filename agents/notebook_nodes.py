@@ -113,6 +113,44 @@ def _rebuild_docs_from_chunks(notebook: Dict[str, Any]) -> List[_RebuiltDoc]:
 
 # ── Node 1: Retrieve ───────────────────────────────────────────────────────────
 
+def _build_web_query(state: NotebookState, query: str, notebook_chunks: List[Dict[str, Any]]) -> str:
+    """Rewrite a conversational question into a self-contained web search query.
+
+    Questions like "Explain the limitation of this work" mean nothing to a web
+    search engine — it has no idea what "this work" refers to, so the search
+    comes back irrelevant even though it technically "succeeds" (200 OK, N
+    results). Grounding the rewrite in a snippet of the notebook's own
+    retrieved content lets the LLM name the real topic instead. Falls back to
+    the raw query when there's no notebook context to ground it in, or if the
+    rewrite call itself fails.
+    """
+    if not notebook_chunks:
+        return query
+    topic_hint = " ".join(c.get("text", "") for c in notebook_chunks[:2])[:300]
+    try:
+        import httpx
+        llm = ChatOllama(
+            model=state.get("model_name", cfg.ollama_model),
+            base_url=cfg.ollama_base_url,
+            temperature=0.0,
+            num_predict=40,
+            num_ctx=state.get("num_ctx", cfg.num_ctx),
+            sync_client_kwargs={"timeout": httpx.Timeout(30.0)},
+        )
+        system = (
+            "Rewrite the question as a short, self-contained web search query "
+            "(max 12 words). Replace vague references like 'this work'/'this "
+            "paper'/'this problem' with the actual topic, inferred from the "
+            "context. Output ONLY the query — no quotes, no explanation."
+        )
+        human = f"CONTEXT:\n{topic_hint}\n\nQUESTION: {query}"
+        rewritten = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
+        return rewritten.strip("'\"“”‘’") or query
+    except Exception as e:
+        logger.warning("Web query rewrite failed, using raw question: %s", e)
+        return query
+
+
 def retrieve_node(state: NotebookState) -> Dict[str, Any]:
     """
     Load the notebook, ensure the hybrid index is built, and retrieve the most
@@ -219,7 +257,8 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
     if state.get("include_web_search", False):
         try:
             from tools.search_tools import WebSearcher
-            web_results = WebSearcher().search(query, max_results=5)
+            web_query = _build_web_query(state, query, retrieved)
+            web_results = WebSearcher().search(web_query, max_results=5)
             for i, wr in enumerate(web_results):
                 retrieved.append({
                     "chunk_id": f"web_{i}",
