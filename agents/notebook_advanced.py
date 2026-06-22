@@ -105,6 +105,99 @@ def _sources_context(
     return "\n\n".join(parts)
 
 
+def _build_numbered_excerpts(
+    notebook: Dict[str, Any],
+    max_chars_per_doc: int = _MAX_CHARS_PER_DOC,
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Build a context block with one numbered, page-tagged tag per CHUNK rather
+    than per document — mirroring the Chat tab's citation convention
+    (notebook_nodes.py::_build_context_block) instead of _sources_context's
+    one-tag-per-document scheme.
+
+    Without page-level tags, a multi-page source only ever has one citable
+    number, so an LLM writing a "formal literature review" still invents its
+    own per-claim bracket numbers (academic habit) that don't correspond to
+    anything real — and then can't write an accurate References list for
+    them either. Numbering by chunk gives the model real, distinct, citable
+    excerpts, and lets the caller rebuild an accurate References list from
+    whichever numbers it actually used (see _build_references_section)
+    instead of trusting its self-written one.
+
+    Returns (context_block, excerpts) where excerpts[i] is the chunk backing
+    tag [i+1].
+    """
+    sources = notebook.get("sources", [])
+    chunks = notebook.get("chunks", [])
+
+    by_doc: Dict[str, List[Dict[str, Any]]] = {}
+    for ch in chunks:
+        by_doc.setdefault(ch["doc_id"], []).append(ch)
+
+    excerpts: List[Dict[str, Any]] = []
+    lines: List[str] = []
+    total_chars = 0
+    for src in sources:
+        doc_chunks = sorted(by_doc.get(src["doc_id"], []), key=lambda c: c.get("chunk_index", 0))
+        doc_chars = 0
+        for ch in doc_chunks:
+            if doc_chars >= max_chars_per_doc or total_chars >= _MAX_TOTAL_CHARS:
+                break
+            text = ch.get("text", "").strip()
+            excerpts.append(ch)
+            page = ch.get("page_num", 0)
+            page_label = f"p. {page}" if isinstance(page, int) and page >= 0 else "n/a"
+            doc_name = ch.get("doc_name") or src.get("filename", "unknown")
+            lines.append(f"[{len(excerpts)}] (source: {doc_name}, {page_label})\n{text}")
+            doc_chars += len(text)
+            total_chars += len(text)
+
+    return "\n\n".join(lines), excerpts
+
+
+_REF_HEADING_RE = re.compile(
+    r"\n+(?:#{1,4}\s*References\b.*|\*\*References\*\*:?.*)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_llm_references_section(body: str) -> str:
+    """Cut off any References/Bibliography section the LLM wrote on its own.
+
+    The model is told not to write one (see generate_literature_review's
+    CITATION RULES), but instructions aren't guarantees — this is a
+    defensive backstop so a stray self-written list never ends up coexisting
+    with the accurate, code-generated one appended afterward.
+    """
+    match = _REF_HEADING_RE.search(body)
+    return body[: match.start()].rstrip() if match else body.rstrip()
+
+
+def _build_references_section(body: str, excerpts: List[Dict[str, Any]]) -> str:
+    """
+    Rebuild the References list from the excerpt numbers actually cited in
+    *body*, instead of trusting the LLM to write its own — which is what let
+    inline citations like [1]-[7] coexist with a References list collapsed
+    to one inaccurate, undifferentiated line.
+    """
+    cited_nums = sorted({int(n) for n in re.findall(r"\[(\d+)\]", body)})
+    lines: List[str] = []
+    for n in cited_nums:
+        if 1 <= n <= len(excerpts):
+            ch = excerpts[n - 1]
+            page = ch.get("page_num", 0)
+            page_label = f"p. {page}" if isinstance(page, int) and page >= 0 else "n/a"
+            lines.append(f"[{n}] {ch.get('doc_name', 'unknown')} ({page_label})")
+    if not lines:
+        seen: List[str] = []
+        for ch in excerpts:
+            name = ch.get("doc_name", "unknown")
+            if name not in seen:
+                seen.append(name)
+        lines = [f"- {name}" for name in seen]
+    return "## References\n" + "\n".join(lines)
+
+
 # ── DOT helpers ───────────────────────────────────────────────────────────────
 
 def _safe_dot(text: str, maxlen: int = 40) -> str:
@@ -331,10 +424,12 @@ def generate_literature_review(
         return "", "No sources in this notebook."
 
     source_names = ", ".join(s["filename"] for s in notebook["sources"])
-    context = _sources_context(notebook)
+    context, excerpts = _build_numbered_excerpts(notebook)
 
     system = (
         "You are an academic researcher writing a formal literature review.\n"
+        "The SOURCES below are numbered excerpts, each tagged with its source "
+        "filename and page number.\n"
         "Structure the review in markdown with these sections:\n"
         "# Literature Review\n"
         "## 1. Introduction\n"
@@ -349,16 +444,25 @@ def generate_literature_review(
         "Strengths, limitations, and gaps in the reviewed literature.\n"
         "## 6. Conclusion\n"
         "Synthesis of contributions and directions for future work.\n\n"
-        "Use formal academic tone. Attribute claims to specific source filenames."
+        "CITATION RULES:\n"
+        "- Cite every claim inline with the bracketed excerpt number it came "
+        "from, e.g. \"...reduces error [2].\" You may cite multiple excerpts "
+        "for one claim, like [1][3].\n"
+        "- Never cite a number that was not provided in SOURCES.\n"
+        "- Do NOT write your own References or Bibliography section — one is "
+        "generated automatically from the excerpt numbers you cite.\n"
+        "Use formal academic tone."
     )
     human = (
         f"SOURCES: {source_names}\n\n{context}\n\n"
-        "Write the formal literature review in markdown."
+        "Write the formal literature review in markdown, sections 1-6 only "
+        "(no References section)."
     )
 
     try:
         result = _invoke(_make_llm(settings, temperature=0.2, num_predict=_max_predict(settings)), system, human)
-        return result, ""
+        body = _strip_llm_references_section(result)
+        return body + "\n\n" + _build_references_section(body, excerpts), ""
     except Exception as e:
         logger.error("Literature review generation failed: %s", e)
         return "", f"Literature review generation failed: {e}"
