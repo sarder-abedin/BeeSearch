@@ -193,20 +193,31 @@ def _step_academic_search(state: dict) -> dict:
 
 
 def _step_web_search(state: dict) -> dict:
-    """Search DuckDuckGo for the first 2 queries; no-op unless `include_web_search` is True."""
+    """Search DuckDuckGo for the first 2 queries; no-op unless `include_web_search` is True.
+
+    Sets `web_search_status` to "disabled"/"ok"/"empty"/"error" so the UI can tell
+    "web search was never requested" apart from "it ran and found nothing" or "it
+    ran and failed" — without this, a report with no [Web N] references looks the
+    same in all three cases even though only one of them means the toggle did
+    nothing useful.
+    """
     if not state.get("include_web_search"):
         state["web_results"] = []
+        state["web_search_status"] = "disabled"
         return state
 
     from tools.search_tools import WebSearcher
     searcher = WebSearcher()
     results: list = []
+    had_error = False
     for query in (state.get("search_queries") or [state["goal"]])[:2]:
         try:
             results.extend(searcher.search(query, max_results=3))
         except Exception as e:
             logger.warning("[Research Report] Web search failed: %s", e)
+            had_error = True
     state["web_results"] = results[:6]
+    state["web_search_status"] = "ok" if results else ("error" if had_error else "empty")
     return state
 
 

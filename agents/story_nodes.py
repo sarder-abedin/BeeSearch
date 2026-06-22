@@ -265,6 +265,10 @@ def source_router_node(state: StoryState) -> Dict[str, Any]:
         "coverage_score": coverage_score,
         "used_docs": bool(doc_context.strip()),
         "used_online": len(online_results) > 0,
+        # True whenever low coverage triggered a search — independent of whether it
+        # found anything. Without this, "search ran and found nothing" is
+        # indistinguishable from "coverage was fine, search never ran" downstream.
+        "search_attempted": coverage_score < _COVERAGE_THRESHOLD,
         "reason": reason,
         "sources_searched": sources_searched,
         "online_count": len(online_results),
