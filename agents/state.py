@@ -42,6 +42,7 @@ def create_initial_state(
         "search_queries": [],
         "academic_papers": [],
         "web_results": [],
+        "web_search_status": "disabled",
         # outputs
         "report": "",
         "key_findings": [],

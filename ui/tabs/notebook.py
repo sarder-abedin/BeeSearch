@@ -1231,6 +1231,12 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
     if not result:
         return
 
+    web_status = result.get("web_search_status", "disabled")
+    if web_status == "empty":
+        st.warning("Web search was enabled but found no additional results — this report uses only academic/notebook sources.")
+    elif web_status == "error":
+        st.warning("Web search was enabled but failed — this report uses only academic/notebook sources.")
+
     from ui.helpers import render_key_findings, render_references, render_report
     render_key_findings(result.get("key_findings", []))
     st.divider()
@@ -1416,6 +1422,12 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
                 f"({online_count} source(s) from {src_str}). "
                 f"Each online claim is cited with [Source N].",
                 icon=None,
+            )
+        elif source_decision.get("search_attempted"):
+            st.warning(
+                f"Document coverage: {score}/10 — {reason}  \n"
+                f"Online search was attempted but found no additional results — "
+                f"this answer uses only your documents."
             )
         else:
             st.caption(f"Answered from your documents (coverage {score}/10)")
