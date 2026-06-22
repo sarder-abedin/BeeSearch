@@ -141,7 +141,11 @@ def _step_query_generation(state: dict) -> dict:
     try:
         raw = _invoke(_llm(state, temperature=0.2, num_predict=200), system,
                       f"Research goal: {goal}")
-        queries = [q.strip().lstrip("•-*0123456789.) ") for q in raw.splitlines() if q.strip()]
+        queries = [
+            q.strip().lstrip("•-*0123456789.) ").strip("'\"“”‘’")
+            for q in raw.splitlines() if q.strip()
+        ]
+        queries = [q for q in queries if q]
         state["search_queries"] = queries[:3] or [goal]
     except Exception as e:
         logger.warning("[Research Report] Query generation failed: %s", e)
