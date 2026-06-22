@@ -453,18 +453,93 @@ import re  # noqa: E402  (used in AcademicSearcher.search)
 
 # ── Web Searcher ──────────────────────────────────────────────────────────────
 
+# Domains that reliably carry peer-reviewed, preprint, or other primary
+# research content. DuckDuckGo ranks for general relevance/SEO signals, which
+# regularly surfaces SEO-optimized summary blogs and content farms ahead of
+# the primary sources a researcher actually wants — these lists let
+# WebSearcher re-rank toward research-grade domains without hiding anything
+# DuckDuckGo returned.
+_RESEARCH_TLDS = (".edu", ".gov", ".ac.uk", ".ac.jp", ".edu.au")
+_RESEARCH_DOMAINS = (
+    "arxiv.org", "biorxiv.org", "medrxiv.org", "ssrn.com",
+    "ncbi.nlm.nih.gov", "pubmed.ncbi.nlm.nih.gov", "scholar.google.com",
+    "semanticscholar.org", "openreview.net", "aclanthology.org",
+    "proceedings.neurips.cc", "openaccess.thecvf.com", "dl.acm.org", "acm.org",
+    "ieee.org", "ieeexplore.ieee.org",
+    "nature.com", "sciencedirect.com", "springer.com", "springeropen.com",
+    "wiley.com", "onlinelibrary.wiley.com", "jstor.org", "tandfonline.com",
+    "sagepub.com", "cambridge.org", "oup.com", "academic.oup.com",
+    "plos.org", "frontiersin.org", "mdpi.com", "researchgate.net",
+    "cell.com", "thelancet.com", "nejm.org", "bmj.com",
+)
+
+# Kept deliberately tiny — a result is only ever ranked last here, never
+# dropped, so a borderline-but-relevant hit is never hidden from the user.
+_LOW_VALUE_DOMAINS = ("pinterest.com", "quora.com")
+
+
+def _domain_of(url: str) -> str:
+    """Extract the lowercase netloc from a URL, or "" if unparseable."""
+    try:
+        from urllib.parse import urlparse
+        return urlparse(url).netloc.lower()
+    except Exception:
+        return ""
+
+
+def _matches_any_domain(domain: str, candidates: tuple) -> bool:
+    """True if *domain* equals or is a subdomain of one of *candidates* (dot-boundary safe — "fooarxiv.org" must not match "arxiv.org")."""
+    return any(domain == d or domain.endswith("." + d) for d in candidates)
+
+
+def _research_rank_score(url: str) -> int:
+    """Lower sorts first: 0 = recognized research domain, 1 = ordinary, 2 = low-value."""
+    domain = _domain_of(url)
+    if not domain:
+        return 1
+    if domain.endswith(_RESEARCH_TLDS) or _matches_any_domain(domain, _RESEARCH_DOMAINS):
+        return 0
+    if _matches_any_domain(domain, _LOW_VALUE_DOMAINS):
+        return 2
+    return 1
+
+
 class WebSearcher:
-    """Search the web using DuckDuckGo (ddgs). No API key required."""
+    """Search the web using DuckDuckGo (ddgs), re-ranked toward research-grade domains. No API key required."""
 
     def search(self, query: str, max_results: int = 5) -> List[WebResult]:
-        """Run a DuckDuckGo text search; returns an empty list (logged, not raised) on any failure."""
+        """
+        Run a DuckDuckGo text search, then deduplicate and re-rank for research use.
+
+        Over-fetches (up to 3x max_results, capped at 20) so the research-domain
+        re-rank has a real pool to work with beyond DuckDuckGo's top N, then
+        applies a stable sort by _research_rank_score — ties keep DuckDuckGo's
+        own relative order rather than guessing at topical relevance ourselves.
+        Returns an empty list (logged, not raised) on any failure.
+        """
         try:
             try:
                 from duckduckgo_search import DDGS  # duckduckgo-search package (pip name)
             except ImportError:
                 from ddgs import DDGS  # alternate package name in some installs
+            fetch_n = min(max(max_results * 3, max_results), 20)
             with DDGS() as ddgs:
-                raw = list(ddgs.text(query, max_results=max_results))
+                raw = list(ddgs.text(query, max_results=fetch_n))
+
+            seen_urls: set = set()
+            seen_titles: set = set()
+            deduped = []
+            for r in raw:
+                url = r.get("href", "")
+                title_key = re.sub(r"\W+", "", r.get("title", "").lower())[:60]
+                if not url or url in seen_urls or (title_key and title_key in seen_titles):
+                    continue
+                seen_urls.add(url)
+                if title_key:
+                    seen_titles.add(title_key)
+                deduped.append(r)
+            deduped.sort(key=lambda r: _research_rank_score(r.get("href", "")))
+
             results = [
                 WebResult(
                     title=r.get("title", ""),
@@ -472,7 +547,7 @@ class WebSearcher:
                     snippet=(r.get("body") or "")[:500],
                     source="duckduckgo",
                 )
-                for r in raw
+                for r in deduped[:max_results]
             ]
             logger.info("WebSearcher: found %d result(s) for query '%s'", len(results), query[:60])
             return results

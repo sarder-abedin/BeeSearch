@@ -377,6 +377,128 @@ _LEVEL_DESCRIPTIONS = {
 }
 
 
+# ── Citation grounding for document excerpts ─────────────────────────────────
+# Mirrors notebook_advanced.py's _build_numbered_excerpts / _build_references_section
+# / _strip_llm_references_section for Literature Review. Duplicated rather than
+# imported — each pipeline keeps its own helpers (see CLAUDE.md's per-pipeline
+# isolation convention).
+
+_DOC_EXCERPT_TAG_RE = re.compile(r"\[(\d+)\]\s*\(source:\s*([^,]+?),\s*p\.\s*(\d+)\)")
+
+
+def build_numbered_doc_context(
+    notebook: Dict[str, Any],
+    max_chars: int = 2000,
+    max_chars_per_chunk: int = 500,
+) -> str:
+    """
+    Build the Explain tab's document_context as numbered, page-tagged excerpts
+    — one tag per chunk, e.g. "[1] (source: paper.pdf, p. 1)" — instead of an
+    untagged blob of joined snippets.
+
+    Without per-chunk tags the storyteller has nothing concrete to cite when it
+    draws on the uploaded documents — the same gap that let Literature
+    Review's inline citations drift from its References list. The tags are
+    baked directly into the string StorytellerMemory persists as
+    document_context, rather than stored as a separate field, so
+    _parse_doc_excerpts can recover them again on every later turn without a
+    story-session schema change.
+    """
+    sources = notebook.get("sources", [])
+    chunks = notebook.get("chunks", [])
+
+    by_doc: Dict[str, List[Dict[str, Any]]] = {}
+    for ch in chunks:
+        by_doc.setdefault(ch["doc_id"], []).append(ch)
+
+    lines: List[str] = []
+    total_chars = 0
+    for src in sources:
+        if total_chars >= max_chars:
+            break
+        doc_chunks = sorted(by_doc.get(src["doc_id"], []), key=lambda c: c.get("chunk_index", 0))
+        for ch in doc_chunks:
+            text = ch.get("text", "").strip()[:max_chars_per_chunk]
+            if not text:
+                continue
+            if total_chars + len(text) > max_chars:
+                break
+            n = len(lines) + 1
+            page = ch.get("page_num", 0)
+            page_label = f"p. {page}" if isinstance(page, int) and page >= 0 else "n/a"
+            doc_name = ch.get("doc_name") or src.get("filename", "unknown")
+            lines.append(f"[{n}] (source: {doc_name}, {page_label})\n{text}")
+            total_chars += len(text)
+
+    return "\n\n".join(lines)
+
+
+def _parse_doc_excerpts(document_context: str) -> Dict[int, Dict[str, Any]]:
+    """
+    Recover the {excerpt_number: {"doc_name", "page_num"}} map baked into
+    document_context by build_numbered_doc_context, so the references section
+    can be rebuilt from whichever numbers the storyteller actually cited.
+
+    Sessions created before this tagging existed have no matching tags —
+    parsing returns an empty map and the storyteller falls back to its
+    pre-existing untagged behavior rather than crashing.
+    """
+    excerpts: Dict[int, Dict[str, Any]] = {}
+    for m in _DOC_EXCERPT_TAG_RE.finditer(document_context):
+        excerpts[int(m.group(1))] = {"doc_name": m.group(2).strip(), "page_num": int(m.group(3))}
+    return excerpts
+
+
+_REF_HEADING_RE = re.compile(
+    r"\n+(?:#{1,4}\s*References\b.*|\*\*References\*\*:?.*)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_llm_references_section(body: str) -> str:
+    """Cut off any References section the storyteller wrote on its own.
+
+    The system prompt says not to (see storyteller_node) — this is a
+    defensive backstop, identical in spirit to notebook_advanced.py's
+    same-named helper for Literature Review.
+    """
+    match = _REF_HEADING_RE.search(body)
+    return body[: match.start()].rstrip() if match else body.rstrip()
+
+
+def _build_references_section(
+    body: str,
+    doc_excerpts: Dict[int, Dict[str, Any]],
+    online_results: List[Dict[str, Any]],
+) -> str:
+    """
+    Rebuild the References list from whichever [n] document-excerpt numbers
+    and [Source n] online-result numbers were actually cited in *body* —
+    instead of trusting the model's own self-written list.
+
+    Returns "" when nothing was cited. Unlike Literature Review (which is
+    always about its sources), a conversational Explain-tab turn may
+    legitimately cite nothing — e.g. a follow-up answered from general
+    knowledge — so omitting the section entirely is correct here rather than
+    falling back to a source list.
+    """
+    lines: List[str] = []
+    for n in sorted({int(x) for x in re.findall(r"\[(\d+)\]", body)}):
+        ex = doc_excerpts.get(n)
+        if ex:
+            page = ex.get("page_num", -1)
+            page_label = f"p. {page}" if isinstance(page, int) and page >= 0 else "n/a"
+            lines.append(f"[{n}] {ex.get('doc_name', 'unknown')} ({page_label})")
+    for n in sorted({int(x) for x in re.findall(r"\[Source (\d+)\]", body)}):
+        if 1 <= n <= len(online_results):
+            r = online_results[n - 1]
+            url = r.get("url", "")
+            lines.append(f"[Source {n}] {r.get('title', 'unknown')}" + (f" — {url}" if url else ""))
+    if not lines:
+        return ""
+    return "**References:**\n" + "\n".join(lines)
+
+
 def storyteller_node(state: StoryState) -> Dict[str, Any]:
     """
     Generate a research explanation in the requested style.
@@ -396,6 +518,7 @@ def storyteller_node(state: StoryState) -> Dict[str, Any]:
     topic = state.get("topic", "the research topic")
     concepts_covered = state.get("concepts_covered", [])
     doc_context = state.get("document_context", "")
+    doc_excerpts = _parse_doc_excerpts(doc_context)
     history = state.get("conversation_history", [])
 
     # Format conversation history for the prompt
@@ -412,7 +535,14 @@ def storyteller_node(state: StoryState) -> Dict[str, Any]:
     # Document context block
     doc_block = ""
     if doc_context:
-        doc_block = f"\n\nDOCUMENT CONTEXT (quote short passages when relevant):\n{doc_context}"
+        if doc_excerpts:
+            doc_block = (
+                "\n\nDOCUMENT CONTEXT — numbered excerpts tagged with source filename "
+                "and page. Cite inline with its number (e.g. [2]) whenever you draw on "
+                f"one; never invent a number not listed here:\n{doc_context}"
+            )
+        else:
+            doc_block = f"\n\nDOCUMENT CONTEXT (quote short passages when relevant):\n{doc_context}"
 
     # Online results block (when source router fetched supplementary material)
     online_results: List[Dict[str, Any]] = state.get("online_results", [])
@@ -436,6 +566,11 @@ def storyteller_node(state: StoryState) -> Dict[str, Any]:
         )
         coverage_score = source_decision.get("coverage_score", 5)
         gap_reason = source_decision.get("reason", "the documents do not fully cover this topic")
+        doc_citation_instruction = (
+            "Cite document excerpts inline with their [n] number whenever you draw on one."
+            if doc_excerpts else
+            "Quote brief passages where useful."
+        )
         attribution_format = f"""
 
 CRITICAL — PER-SECTION SOURCE ATTRIBUTION REQUIRED:
@@ -443,7 +578,7 @@ The uploaded documents scored only {coverage_score}/10 coverage for this questio
 You MUST structure your response using these exact labelled sections in this order:
 
 **From your documents:**
-Explain what the uploaded documents actually say about this question. Quote brief passages where useful.
+Explain what the uploaded documents actually say about this question. {doc_citation_instruction}
 If the documents say very little, keep this section short and honest — do not pad it.
 
 **Why online search was needed:**
@@ -454,11 +589,9 @@ Fill the gap using the online sources provided. Apply the chosen style and audie
 Cite every claim from an online source with [Source N] placed immediately after it.
 Only use sources that are genuinely relevant — skip irrelevant ones.
 
-**References:**
-List only the online sources you actually cited, in this format:
-[Source N] Title — URL (Authors, Year if available)
-
-After the References section, end with the suggested_questions JSON and nothing else."""
+Do NOT write your own References section — one listing every [n] and [Source N] you
+actually cited above is generated automatically. After your last content section,
+end with the suggested_questions JSON and nothing else."""
 
     # Concepts already covered
     covered_block = ""
@@ -481,8 +614,8 @@ CORE RULES:
 3. AUDIENCE LEVEL — {level_instruction}
 4. {"Follow the per-section attribution format above." if online_results else "Write 3–6 paragraphs only — no lengthy essays. Be concise and memorable."}
 5. Build on the previous conversation — reference and connect to what was discussed before.
-6. {"Each section should be written in the chosen style and at the chosen audience level." if online_results else "Quote short passages from the provided document context when they are directly relevant."}
-7. At the very end of your response (after any References section), append EXACTLY this JSON (no other text after it):
+6. {"Each section should be written in the chosen style and at the chosen audience level." if online_results else ("Cite document excerpts inline with their [n] number whenever you draw on one; never invent a number not listed in DOCUMENT CONTEXT. Do not write your own References section — one is generated automatically from whichever numbers you cite." if doc_excerpts else "Quote short passages from the provided document context when they are directly relevant.")}
+7. At the very end of your response, append EXACTLY this JSON (no other text after it):
    {{"suggested_questions": ["Question 1?", "Question 2?", "Question 3?"]}}
    The questions should be natural follow-ups a curious reader would want to ask next.
 8. Do NOT start your response with "Certainly!" or "Of course!" or similar filler phrases.
@@ -515,6 +648,14 @@ Remember to end with the suggested_questions JSON."""
     if not suggested_questions:
         logger.warning("suggested_questions: no parseable block found — raw tail: %s",
                        raw_response[-120:])
+
+    # Drop any References section the model wrote on its own (it's told not
+    # to, but instructions aren't guarantees) and replace it with one rebuilt
+    # from whichever [n]/[Source N] numbers it actually cited in the body.
+    main_response = _strip_llm_references_section(main_response)
+    references_section = _build_references_section(main_response, doc_excerpts, online_results)
+    if references_section:
+        main_response = main_response + "\n\n" + references_section
 
     # Second micro LLM call: extract newly explained concept names
     new_concepts: List[str] = []

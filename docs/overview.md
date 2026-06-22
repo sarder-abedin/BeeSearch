@@ -156,6 +156,22 @@ ingest → summarize → retrieve → verify_citations → build_kg → generate
 | 6 | `generate_study_guide` | Key concepts, glossary, Q&A, summary → MD + DOCX + PDF |
 | 7 | `generate_podcast` | Two-speaker dialogue (HOST: Alex, EXPERT: Dr. Jordan) → TXT |
 
+### Explain / Storyteller pipeline (5 nodes)
+
+```
+context_loader → source_router → storyteller → memory_saver → story_eval
+```
+
+| Node | What happens |
+|------|-------------|
+| `context_loader` | Loads conversation history + persisted `document_context` from `StorytellerMemory` (SQLite) |
+| `source_router` | LLM scores document coverage 0–10 for the question; below 6, automatically runs an academic search (arXiv + Semantic Scholar + Google Scholar) and a web search (DuckDuckGo) — no user toggle, unlike Chat/Research Report |
+| `storyteller` | Explains at the chosen style/level, citing document excerpts as `[n]` and online results as `[Source n]`; a code-rebuilt References list replaces anything the LLM wrote itself |
+| `memory_saver` | Persists the turn + extracted concepts to `StorytellerMemory` |
+| `story_eval` | Non-blocking quality self-evaluation micro call |
+
+Document excerpts are numbered and page-tagged (`build_numbered_doc_context`) the same way the Q&A pipeline and Literature Review tag theirs, so every `[n]` the storyteller cites resolves to a real chunk and page.
+
 ### Advanced analysis (one-shot tools)
 
 | Feature | CLI flag | Output |
@@ -210,6 +226,12 @@ A batched LLM call (`temperature=0.0`, `num_ctx=4096`) returns `{"grades": [true
 
 ---
 
+## Web search re-ranking (`tools/search_tools.py`)
+
+`WebSearcher` over-fetches from DuckDuckGo (up to 3× the requested count, capped at 20), deduplicates by URL and normalised title, then applies a stable sort: recognised research domains/TLDs (arxiv.org, PubMed, IEEE Xplore, Nature, ScienceDirect, `.edu`, `.gov`, …) rank first, a short low-signal list (Pinterest, Quora) ranks last, everything else keeps DuckDuckGo's original order. Results are only ever reordered, never dropped, for being non-academic.
+
+---
+
 ## Quality self-evaluation
 
 `agents/eval_nodes.py` — runs after every pipeline, non-blocking.
@@ -219,6 +241,7 @@ A batched LLM call (`temperature=0.0`, `num_ctx=4096`) returns `{"grades": [true
 | Systematic Review | `search_comprehensiveness` · `screening_rigor` · `evidence_quality` · `synthesis_depth` · `gap_identification` |
 | Research Notebook Q&A | `answer_grounding` · `citation_accuracy` · `relevance` |
 | Research Notebook Pipeline | `summary_quality` · `citation_coverage` · `study_guide_quality` |
+| Explain | `clarity` · `style_adherence` · `overall` |
 
 ---
 

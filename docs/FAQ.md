@@ -11,7 +11,7 @@ A: Run `docker compose up --build` from the project root. This starts two servic
 ---
 
 **Q: Does this send my documents to any server?**
-A: No. Documents are processed entirely locally — parsed with Docling (or pdfplumber when Docling is disabled), embedded with a local Ollama model, stored in a local ChromaDB instance, and analysed by a local Ollama LLM. The only network calls are to Google Scholar, arXiv, Semantic Scholar, and CrossRef — these receive only your search queries, not your documents.
+A: No. Documents are processed entirely locally — parsed with Docling (or pdfplumber when Docling is disabled), embedded with a local Ollama model, stored in a local ChromaDB instance, and analysed by a local Ollama LLM. The only network calls are to Google Scholar, arXiv, Semantic Scholar, CrossRef, and — only when web search is enabled or automatically triggered (see "Can I use BeeSearch entirely offline?" below) — DuckDuckGo. All of these receive only your search queries, never your document text.
 
 ---
 
@@ -110,5 +110,15 @@ A: After every retrieval call, a single batched LLM call (`temperature=0.0`) gra
 
 ---
 
+**Q: How trustworthy are the citations in Chat, Literature Review, and Explain?**
+A: All three are grounded the same way under the hood: every retrievable excerpt (a chunk, not a whole document) gets its own number and a real page reference baked in *before* the LLM ever sees it, and the prompt instructs it to cite only those numbers. After the LLM responds, BeeSearch discards any References list it wrote and rebuilds one in code from whichever numbers were actually used in the body text — the model's self-written list is never trusted. A citation number the model invents with no matching excerpt (e.g. a hallucinated `[99]`) is silently dropped instead of shown with made-up source details.
+
+---
+
+**Q: How does BeeSearch rank web search results?**
+A: `WebSearcher` (DuckDuckGo) fetches more results than requested, deduplicates them by URL and normalised title, then re-ranks: recognised research domains (arxiv.org, PubMed, IEEE Xplore, Nature, ScienceDirect, `.edu`/`.gov`, and similar) move to the front, a short list of low-signal sites (Pinterest, Quora) moves to the back, and everything else keeps DuckDuckGo's own relative order. Nothing is ever dropped for being non-academic — only reordered — so a relevant blog or vendor page is never hidden, just deprioritised behind primary sources.
+
+---
+
 **Q: Can I use BeeSearch entirely offline?**
-A: Almost. The LLM and embedding model run fully offline via Ollama. The only online calls are to academic APIs (Google Scholar, arXiv, Semantic Scholar, CrossRef) — these are used exclusively by the Systematic Literature Review to find papers. The Research Notebook with your own uploaded documents works entirely offline once Ollama and the embedding model are pulled.
+A: Almost. The LLM and embedding model run fully offline via Ollama. Online calls happen in two places: (1) the Systematic Literature Review always queries Google Scholar, arXiv, Semantic Scholar, and CrossRef to find papers; (2) in the Research Notebook, the Chat and Research Report tabs only search the web (DuckDuckGo) when you turn on their "Auto web search" / "Include web search" toggle (off by default), while the Explain tab automatically runs a web + academic search whenever your uploaded sources don't sufficiently cover a question — this one has no off switch. Leave both Notebook toggles off to keep Chat and Research Report fully offline.

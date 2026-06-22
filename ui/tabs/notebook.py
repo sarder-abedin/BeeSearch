@@ -1252,6 +1252,7 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
     try:
         from agents.story_graph import run_story_turn
         from agents.story_memory import StorytellerMemory
+        from agents.story_nodes import build_numbered_doc_context
         from agents.story_state import create_story_state
     except ModuleNotFoundError:
         st.info(
@@ -1348,16 +1349,9 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
 
     # Auto-create session if none exists
     if not effective_sid:
-        # Build doc context from notebook chunks (first 500 chars per chunk, max 2000 total)
-        doc_context_parts = []
-        total_chars = 0
-        for c in notebook.get("chunks", []):
-            snippet = c.get("text", "")[:500]
-            if total_chars + len(snippet) > 2000:
-                break
-            doc_context_parts.append(snippet)
-            total_chars += len(snippet)
-        doc_context = "\n\n---\n".join(doc_context_parts)[:2000]
+        # Numbered, page-tagged excerpts (max 500 chars/chunk, 2000 total) so the
+        # storyteller can cite real sources/pages instead of quoting untagged text.
+        doc_context = build_numbered_doc_context(notebook)
         doc_names = [s["filename"] for s in notebook.get("sources", [])]
 
         effective_sid = memory.new_session(
