@@ -215,7 +215,7 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
                 retrieved = stored_chunks[:top_k]
             retrieval_mode = "fallback"
 
-    # Optional automatic Google search — supplements notebook sources.
+    # Optional automatic web search (DuckDuckGo) — supplements notebook sources.
     if state.get("include_web_search", False):
         try:
             from tools.search_tools import WebSearcher
@@ -228,7 +228,7 @@ def retrieve_node(state: NotebookState) -> Dict[str, Any]:
                     "page_num": -1,
                     "chunk_index": i,
                     "text": wr.snippet or wr.title,
-                    "metadata": {"url": wr.url, "source": "google"},
+                    "metadata": {"url": wr.url, "source": "duckduckgo"},
                 })
             if web_results:
                 retrieval_mode = retrieval_mode + "+web" if retrieval_mode != "empty" else "web"
@@ -326,7 +326,7 @@ def answer_node(state: NotebookState) -> Dict[str, Any]:
             msg = (
                 "This notebook has no sources yet. Upload a document (PDF, DOCX, TXT, "
                 "or Markdown), add a web page on the left, or enable **Auto web search** "
-                "to let the agent search Google automatically."
+                "to let the agent search the web (DuckDuckGo) automatically."
             )
         return {
             "assistant_response": msg,

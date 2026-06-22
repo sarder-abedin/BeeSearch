@@ -101,14 +101,18 @@ def _build_academic_context(papers: list) -> str:
     return "\n\n".join(parts)
 
 
-def _build_web_context(web_results: list) -> str:
-    """Format up to 5 web search results (title/snippet/url) into a labelled context block."""
+def _build_web_context(web_results: list, ref_offset: int = 0) -> str:
+    """Format up to 5 web search results (title/snippet/url) into a labelled context block.
+
+    `ref_offset` (the number of academic papers already numbered) continues the
+    numbering so inline [Web N] citations match the combined references list.
+    """
     parts: list[str] = []
     for i, r in enumerate(web_results[:5], 1):
         title = getattr(r, "title", "")
         snippet = getattr(r, "snippet", "")
         url = getattr(r, "url", "")
-        parts.append(f"[Web {i}: {title}]\n{snippet}\n{url}")
+        parts.append(f"[Web {ref_offset + i}: {title}]\n{snippet}\n{url}")
     return "\n\n".join(parts)
 
 
@@ -197,15 +201,19 @@ def _step_web_search(state: dict) -> dict:
 
 def _step_document_analysis(state: dict) -> dict:
     """Build the academic and web context blocks for the upcoming report-generation step."""
-    state["_academic_context"] = _build_academic_context(state.get("academic_papers") or [])
-    state["_web_context"] = _build_web_context(state.get("web_results") or [])
+    papers = state.get("academic_papers") or []
+    state["_academic_context"] = _build_academic_context(papers)
+    state["_web_context"] = _build_web_context(state.get("web_results") or [], ref_offset=len(papers))
     return state
 
 
 def _step_reference_compilation(state: dict) -> dict:
-    """Build the `references` list (with APA-style citation strings) from the found academic papers."""
+    """Build the `references` list (with APA-style citation strings) from the academic
+    papers and web search results found. Web results are numbered continuing after the
+    papers so their [Web N] inline citations match this combined list."""
     refs: list[dict] = []
-    for i, p in enumerate(state.get("academic_papers") or [], 1):
+    papers = state.get("academic_papers") or []
+    for i, p in enumerate(papers, 1):
         authors = getattr(p, "authors", None) or []
         year = getattr(p, "year", "") or ""
         title = getattr(p, "title", "") or ""
@@ -236,6 +244,25 @@ def _step_reference_compilation(state: dict) -> dict:
             "citation_count": citation_count,
             "apa": apa,
         })
+
+    for j, r in enumerate(state.get("web_results") or [], 1):
+        title = getattr(r, "title", "") or "Untitled page"
+        url = getattr(r, "url", "") or ""
+        snippet = (getattr(r, "snippet", "") or "")[:250]
+        refs.append({
+            "ref_num": len(papers) + j,
+            "title": title,
+            "authors": [],
+            "journal": "",
+            "year": "",
+            "doi": "",
+            "url": url,
+            "abstract_snippet": snippet,
+            "source": "web",
+            "citation_count": None,
+            "apa": f"{title}. Retrieved from {url}" if url else title,
+        })
+
     state["references"] = refs
     return state
 
@@ -274,7 +301,10 @@ def _step_report_generation(state: dict) -> dict:
         "## Conclusions\n"
         "## Limitations\n\n"
         "Rules:\n"
-        "- Cite sources inline as [Source N] or [Paper N] where relevant.\n"
+        "- Cite sources inline as [Source N] for notebook excerpts, [Paper N] for "
+        "academic literature, or [Web N] for web sources — matching the numbers "
+        "shown in the context below. Use [Web N] citations when web sources are "
+        "provided; do not ignore them in favor of other source types.\n"
         "- Under Key Findings, use a numbered list (1. finding text).\n"
         "- Be analytical and critical, not just descriptive.\n"
         "- Do not fabricate information not present in the sources."

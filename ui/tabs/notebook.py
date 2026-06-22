@@ -1146,7 +1146,7 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
         "Include web search",
         value=False,
         key=f"nb_rpt_web_{active_id}",
-        help="Also search the web via Google",
+        help="Also search the web via DuckDuckGo",
     )
 
     sources = notebook.get("sources", [])
@@ -1728,11 +1728,11 @@ for conversational science communication with multiple explanation styles.
                 if auto_web_search:
                     st.info(
                         "No uploaded sources — that's fine. "
-                        "**Auto web search** is on: the agent will search Google for each question."
+                        "**Auto web search** is on: the agent will search the web (DuckDuckGo) for each question."
                     )
                 else:
                     st.info("No sources yet. Add files or a web page above, "
-                            "or enable **Auto web search** to let the agent search Google.")
+                            "or enable **Auto web search** to let the agent search the web (DuckDuckGo).")
 
             # ── Notebook actions ──────────────────────────────
             st.divider()
@@ -1822,7 +1822,7 @@ for conversational science communication with multiple explanation styles.
                 if not notebook.get("sources") and not auto_web:
                     st.warning(
                         "Add at least one source before asking questions, "
-                        "or enable **Auto web search** above to let the agent search Google."
+                        "or enable **Auto web search** above to let the agent search the web (DuckDuckGo)."
                     )
                 else:
                     with st.chat_message("user"):

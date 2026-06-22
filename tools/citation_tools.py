@@ -105,7 +105,7 @@ def ref_to_bibtex(ref: Dict, key: str | None = None) -> str:
 
     # Entry type
     source = ref.get("source", "")
-    if source == "arxiv":
+    if source in ("arxiv", "web"):
         entry_type = "misc"
     else:
         entry_type = "article"
@@ -142,6 +142,8 @@ def ref_to_bibtex(ref: Dict, key: str | None = None) -> str:
         fields.append(f"  note      = {{arXiv preprint}}")
     elif source == "semantic_scholar":
         fields.append(f"  note      = {{Semantic Scholar}}")
+    elif source == "web":
+        fields.append(f"  note      = {{Web resource}}")
 
     body = ",\n".join(fields)
     return f"@{entry_type}{{{key},\n{body}\n}}"
@@ -177,7 +179,7 @@ def ref_to_ris(ref: Dict) -> str:
     Convert a single reference dict to a RIS format block.
 
     RIS is a tagged text format:
-      TY  - <type>      (JOUR = journal, RPRT = report/preprint)
+      TY  - <type>      (JOUR = journal, RPRT = report/preprint, ELEC = web page)
       AU  - <author>    (one line per author)
       TI  - <title>
       PY  - <year>
@@ -187,7 +189,12 @@ def ref_to_ris(ref: Dict) -> str:
       ER  -              (end of record — mandatory)
     """
     source = ref.get("source", "")
-    ris_type = "RPRT" if source == "arxiv" else "JOUR"
+    if source == "arxiv":
+        ris_type = "RPRT"
+    elif source == "web":
+        ris_type = "ELEC"
+    else:
+        ris_type = "JOUR"
 
     lines: list[str] = [f"TY  - {ris_type}"]
 

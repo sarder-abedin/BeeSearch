@@ -227,7 +227,7 @@ def render_citation_downloads(references: list, key_suffix: str = "") -> None:
 def render_references(references: list, key_suffix: str = "") -> None:
     """Render the reference list with citation export + expandable entries."""
     if not references:
-        st.info("No academic references found for this run.")
+        st.info("No references found for this run.")
         return
 
     st.subheader(f"References ({len(references)})")
@@ -238,13 +238,15 @@ def render_references(references: list, key_suffix: str = "") -> None:
         "arxiv": "arXiv preprint",
         "semantic_scholar": "Peer-reviewed",
         "crossref": "CrossRef",
+        "web": "Web result",
     }
 
     for ref in references:
         with st.expander(f"[{ref['ref_num']}] {ref['title'][:80]}"):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.markdown(f"**Authors:** {'; '.join(ref['authors'][:5])}")
+                if ref.get("authors"):
+                    st.markdown(f"**Authors:** {'; '.join(ref['authors'][:5])}")
                 st.markdown(f"**Journal/Venue:** {ref.get('journal') or 'N/A'}")
                 st.markdown(f"**Year:** {ref.get('year') or 'N/A'}")
                 if ref.get("doi"):
