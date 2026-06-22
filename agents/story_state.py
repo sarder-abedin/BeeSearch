@@ -44,6 +44,11 @@ class StoryState(TypedDict, total=False):
     online_results: List[Dict]             # Academic + web results fetched when docs insufficient
     source_decision: Dict                  # {coverage_score, used_docs, used_online, reason, ...}
 
+    # ── Repeated-clarification handling ───────────────────────
+    is_repeat_clarification: bool          # True when this question repeats/rephrases a recent one
+    repeated_question: str                 # The earlier question text it matched, if any
+    concept_visual_html: str               # Interactive Pyvis concept-map HTML (only set on repeats)
+
     # ── Quality Evaluation ────────────────────────────────────
     eval_result: Dict[str, Any]            # {clarity, style_adherence, overall, summary}
 
@@ -85,6 +90,9 @@ def create_story_state(
         new_concepts=[],
         online_results=[],
         source_decision={},
+        is_repeat_clarification=False,
+        repeated_question="",
+        concept_visual_html="",
         eval_result={},
         current_step="start",
         completed_steps=[],

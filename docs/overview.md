@@ -156,21 +156,26 @@ ingest → summarize → retrieve → verify_citations → build_kg → generate
 | 6 | `generate_study_guide` | Key concepts, glossary, Q&A, summary → MD + DOCX + PDF |
 | 7 | `generate_podcast` | Two-speaker dialogue (HOST: Alex, EXPERT: Dr. Jordan) → TXT |
 
-### Explain / Storyteller pipeline (5 nodes)
+### Explain / Storyteller pipeline (7 nodes)
 
 ```
-context_loader → source_router → storyteller → memory_saver → story_eval
+context_loader → repetition_tracker → source_router → storyteller
+  → concept_visualizer → memory_saver → story_eval
 ```
 
 | Node | What happens |
 |------|-------------|
 | `context_loader` | Loads conversation history + persisted `document_context` from `StorytellerMemory` (SQLite) |
+| `repetition_tracker` | Zero-LLM-call heuristic (word-overlap + confusion phrases like "I don't understand") detects a repeated/rephrased question and, if found, overrides `explanation_style` to one different from what the previous answer used |
 | `source_router` | LLM scores document coverage 0–10 for the question; below 6, automatically runs an academic search (arXiv + Semantic Scholar + Google Scholar) and a web search (DuckDuckGo) — no user toggle, unlike Chat/Research Report |
-| `storyteller` | Explains at the chosen style/level, citing document excerpts as `[n]` and online results as `[Source n]`; a code-rebuilt References list replaces anything the LLM wrote itself |
-| `memory_saver` | Persists the turn + extracted concepts to `StorytellerMemory` |
+| `storyteller` | Explains at the chosen style/level, citing document excerpts as `[n]` and online results as `[Source n]`; a code-rebuilt References list replaces anything the LLM wrote itself. On a detected repeat, the prompt asks for a genuinely different angle, not reworded text |
+| `concept_visualizer` | No-op unless a repeat was detected; otherwise renders an interactive Pyvis concept map (hub-and-spoke HTML) as a second, visual explanation modality. Any failure is a safe no-op |
+| `memory_saver` | Persists the turn + extracted concepts + the `explanation_style` actually used to `StorytellerMemory` |
 | `story_eval` | Non-blocking quality self-evaluation micro call |
 
 Document excerpts are numbered and page-tagged (`build_numbered_doc_context`) the same way the Q&A pipeline and Literature Review tag theirs, so every `[n]` the storyteller cites resolves to a real chunk and page.
+
+When a user repeats or rephrases a question — or signals confusion directly ("I don't understand", "still lost", …) — the Explain tab automatically switches explanation style (e.g. simple → analogy) and adds an interactive concept map alongside the new explanation. This is always-on, with no UI toggle, matching the tab's existing automatic online-search behavior.
 
 ### Advanced analysis (one-shot tools)
 
