@@ -396,15 +396,32 @@ Answer using only the sources above, with inline [n] citations. End with the sug
 
     main_response, suggested_questions = extract_suggested_questions(raw)
     citations = _extract_citations(main_response, chunks)
+    final_response = main_response + _web_search_status_note(state.get("retrieval_mode", ""))
 
     return {
-        "assistant_response": main_response,
+        "assistant_response": final_response,
         "citations": citations,
         "suggested_questions": suggested_questions,
         "current_step": "answer",
         "completed_steps": state.get("completed_steps", []) + ["answer"],
         "progress_pct": 80,
     }
+
+
+def _web_search_status_note(retrieval_mode: str) -> str:
+    """A footnote telling the user what auto web search did this turn, when it didn't contribute.
+
+    Without this, a question answered purely from notebook sources looks identical
+    whether web search was off, found nothing, or errored — leaving the user unable
+    to tell whether "Auto web search" is actually doing anything.
+    """
+    if "web_error" in retrieval_mode:
+        return ("\n\n*(Auto web search was enabled but failed for this question — "
+                 "this answer uses only your notebook sources.)*")
+    if "web_empty" in retrieval_mode:
+        return ("\n\n*(Auto web search ran but found no additional results for this "
+                 "question — this answer uses only your notebook sources.)*")
+    return ""
 
 
 def _extract_citations(answer: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

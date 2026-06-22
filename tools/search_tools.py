@@ -98,7 +98,7 @@ class WebResult:
     title: str
     url: str
     snippet: str
-    source: str = "google"
+    source: str = "duckduckgo"
 
 
 # ── arXiv Searcher ────────────────────────────────────────────────────────────
@@ -465,7 +465,7 @@ class WebSearcher:
                 from ddgs import DDGS  # alternate package name in some installs
             with DDGS() as ddgs:
                 raw = list(ddgs.text(query, max_results=max_results))
-            return [
+            results = [
                 WebResult(
                     title=r.get("title", ""),
                     url=r.get("href", ""),
@@ -474,8 +474,16 @@ class WebSearcher:
                 )
                 for r in raw
             ]
+            logger.info("WebSearcher: found %d result(s) for query '%s'", len(results), query[:60])
+            return results
         except Exception as e:
-            logger.warning("DuckDuckGo web search failed: %s", e)
+            # Some ddgs/duckduckgo_search versions raise on "no results" instead of
+            # returning an empty list — that's a normal outcome, not a failure, so
+            # it's logged at info rather than warning level.
+            if "no results" in str(e).lower():
+                logger.info("WebSearcher: 0 results for query '%s'", query[:60])
+            else:
+                logger.warning("WebSearcher: web search failed for query '%s': %s", query[:60], e)
             return []
 
 
