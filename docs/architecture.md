@@ -292,6 +292,52 @@ START
 
 **State type:** `NotebookPipelineState` (`agents/notebook_pipeline_state.py`)
 
+### 2c — Explain / Storyteller (StoryState)
+
+Single-turn graph invocation per user message, like 2a — but the source mix (own documents vs. online search) is decided automatically per question rather than fixed up front.
+
+```
+START
+  │
+  ▼
+[context_loader]
+  │  • Loads conversation history + document_context from StorytellerMemory (SQLite)
+  │  • document_context is a flat string with [n] (source: filename, p. X) tags
+  │    baked in at session creation — no separate chunk-mapping table needed
+  │
+  ▼
+[source_router]
+  │  • Fast LLM call (temperature=0) scores 0-10 how well document_context
+  │    covers the question
+  │  • Score < 6 (_COVERAGE_THRESHOLD): runs AcademicSearcher (arXiv +
+  │    Semantic Scholar + Google Scholar) and WebSearcher (DuckDuckGo) —
+  │    unconditionally, no user toggle (unlike Chat/Research Report's
+  │    opt-in "Auto web search" / "Include web search")
+  │
+  ▼
+[storyteller]
+  │  • Explains at the chosen style/level (ELI5 … expert) and length
+  │  • Cites document excerpts as [n], online results as [Source n]
+  │  • _strip_llm_references_section discards any References list the LLM
+  │    wrote itself; _build_references_section rebuilds one from whichever
+  │    [n]/[Source n] numbers were actually used in the body
+  │
+  ▼
+[memory_saver]
+  │  • StorytellerMemory.add_turn() for user + assistant turns
+  │  • Extracts and stores newly-covered concepts
+  │
+  ▼
+[story_eval]
+  │  • Non-blocking quality self-evaluation micro call
+  │
+ END  (StoryState → story_sessions table in sessions.db)
+```
+
+**State type:** `StoryState` (`agents/story_state.py`)
+
+**Memory:** `outputs/memory/sessions.db` — `story_sessions` table (`agents/story_memory.py::StorytellerMemory`), independent of the `notebooks` table — deliberately not linked by `notebook_id`, to avoid contaminating the shared `research_docs` vector collection.
+
 ### Advanced analysis (one-shot tools)
 
 Available from CLI flags and UI tab buttons.
@@ -447,6 +493,7 @@ After every pipeline completes, a dedicated eval node makes a single micro LLM c
 | Systematic Review | `search_comprehensiveness`, `screening_rigor`, `evidence_quality`, `synthesis_depth`, `gap_identification` |
 | Notebook Q&A | `answer_grounding`, `citation_accuracy`, `relevance` |
 | Notebook Pipeline | `summary_quality`, `citation_coverage`, `study_guide_quality` |
+| Explain | `clarity`, `style_adherence`, `overall` |
 
 Result stored in `state["eval_result"]`. Displayed as a collapsible expander in the UI (colour-coded: 4–5 green, 3 yellow, 1–2 red) and as a Rich table in the CLI.
 
@@ -499,6 +546,14 @@ All `@retry` decorators use `retry=retry_if_exception(_is_retryable)` rather tha
 
 The `tools` package uses `__getattr__` for deferred loading. No submodule is imported until the name is first accessed. The loaded value is cached so subsequent accesses are O(1). This ensures importing lightweight tools (e.g. `citation_tools`) does not trigger `faiss`, `chromadb`, or `langchain_ollama`.
 
+### Citation Grounding (`notebook_advanced.py`, `story_nodes.py`)
+
+Both Literature Review and the Explain tab once let the LLM cite freely (`[1]`, `[2]`, …) while writing its own References list from a prompt that only gave it one citable number per *document* — the two never matched. Both now follow the same fix as the Chat tab (`notebook_nodes.py::_build_context_block`): number every individual chunk (not document) with its real page tag, bake the tags directly into the persisted context string, and after generation regex-extract whichever numbers the LLM actually used to rebuild an accurate References list in code. The LLM's own References section is always discarded, never trusted. Out-of-range/hallucinated numbers are dropped silently rather than rendered with invented source details. The Explain tab additionally unifies two citation namespaces — `[n]` for document excerpts and `[Source n]` for online search results — into one rebuilt list.
+
+### Research-Domain Re-ranking (`tools/search_tools.py`)
+
+`WebSearcher` wraps plain DuckDuckGo search, which ranks for generic relevance/SEO signals rather than research value. `search()` now over-fetches (up to 3× `max_results`, capped at 20), deduplicates by URL and normalised title, and applies a *stable* sort keyed on `_research_rank_score()`: 0 for a recognised research domain or TLD (arxiv.org, PubMed, IEEE Xplore, Nature, ScienceDirect, `.edu`, `.gov`, …), 2 for a short list of low-signal domains (Pinterest, Quora), 1 for everything else. Ties keep DuckDuckGo's original relative order. Domain matching (`_matches_any_domain`) is dot-boundary-safe (`"fooarxiv.org"` must not match `"arxiv.org"`). Results are only ever reordered, never dropped, for being non-research — a borderline-but-relevant hit is never hidden.
+
 ---
 
 ## File Map
@@ -535,6 +590,11 @@ BeeSearch/
 │   ├── notebook_pipeline_nodes.py  ← 7 pipeline nodes
 │   ├── notebook_advanced.py        ← Advanced notebook features
 │   │
+│   ├── story_state.py              ← StoryState TypedDict (Explain tab, internally "Mode 5")
+│   ├── story_graph.py              ← build_story_graph() + run_story_turn()
+│   ├── story_nodes.py              ← context_loader, source_router, storyteller, memory_saver nodes
+│   ├── story_memory.py             ← StorytellerMemory (SQLite, independent of NotebookMemory)
+│   │
 │   ├── self_reflective_rag.py  ← grade_chunks(), grade_papers(), self_reflective_retrieve()
 │   ├── eval_nodes.py           ← Quality self-evaluation nodes; non-blocking micro LLM call
 │   └── feedback_agent.py       ← refine_with_feedback(); up to 3 rounds
@@ -553,7 +613,7 @@ BeeSearch/
 │   ├── docling_processor.py    ← Advanced Docling parser
 │   ├── hybrid_store.py         ← HybridStore: FAISS + ChromaDB + BM25 + RRF
 │   ├── embeddings.py           ← OllamaEmbedder (batched /api/embed)
-│   ├── search_tools.py         ← GoogleScholarSearcher + arXiv + Semantic Scholar + CrossRef
+│   ├── search_tools.py         ← GoogleScholarSearcher + arXiv + Semantic Scholar + CrossRef + WebSearcher (DuckDuckGo, research-domain re-ranked)
 │   ├── session_db.py           ← SQLite backend: init_db(), pack/unpack, DDL
 │   ├── web_loader.py           ← URL → Document
 │   ├── export_tools.py         ← DOCX + PDF export
@@ -574,8 +634,12 @@ BeeSearch/
 │   ├── prisma_report_<id>.pdf
 │   └── pipeline_study_guide_<name>.md/docx/pdf
 │
-├── tests/
-│   └── test_citation_network.py  ← Unit tests: gap-finder + isolated papers
+├── tests/                       ← pytest unit tests, one file per concern, e.g.:
+│   ├── test_citation_network.py            ← Gap-finder + isolated papers
+│   ├── test_literature_review_citations.py ← Citation grounding (Literature Review)
+│   ├── test_explain_citation_grounding.py  ← Citation grounding (Explain tab)
+│   ├── test_search_tools.py                ← WebSearcher dedup + research-domain re-rank
+│   └── test_temperature_levels.py          ← Response Tuning (Precise/Focused/Balanced/Creative)
 │
 ├── docker-compose.yml
 ├── .env.example

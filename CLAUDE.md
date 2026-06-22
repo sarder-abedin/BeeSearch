@@ -114,6 +114,17 @@ Focused / Balanced / Creative). It's called from the `_llm`/`_make_llm` factorie
 faithfulness checks) are always forced to `0.0` regardless of level — this is
 deliberate, not a bug.
 
+### Citation grounding
+
+Notebook Chat (`notebook_nodes.py::_build_context_block`), Literature Review
+(`notebook_advanced.py::_build_numbered_excerpts`), and the Explain tab
+(`story_nodes.py::build_numbered_doc_context`) all follow the same pattern: number
+every individual chunk (not document) with its real page tag, bake the tag into the
+context string handed to the LLM, then after generation regex-rebuild the References
+list in code from whichever numbers the LLM actually cited — never trust the LLM's
+own self-written references. When adding citations to a new pipeline, follow this
+pattern rather than letting the LLM free-write its own References section.
+
 ### Hybrid RAG + Self-Reflective RAG
 
 - `tools/hybrid_store.py::HybridStore` — dense FAISS (`IndexFlatIP`, in-memory,

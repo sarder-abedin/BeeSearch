@@ -32,6 +32,8 @@ Local AI tools for systematic literature review and source-grounded research not
 - **Concept Drift** — TF-IDF vocabulary shift across 5-year buckets, pure stdlib
 - **Hybrid RAG** — FAISS dense + BM25 sparse, fused with Reciprocal Rank Fusion
 - **Self-Reflective RAG** — post-retrieval LLM grader removes irrelevant papers/chunks
+- **Grounded citations everywhere** — Chat, Literature Review, and Explain all number real source excerpts before the LLM sees them, then rebuild the References list in code from what was actually cited, never from the LLM's own list
+- **Research-aware web search** — optional DuckDuckGo search (Chat, Research Report, Explain) re-ranks results toward arXiv/PubMed/IEEE/.edu/.gov and similar research-grade domains
 - **7-agent Notebook Pipeline** — ingest → summarize → retrieve → verify_citations → build_kg → study_guide → podcast
 - **Section-by-Section Breakdown** — auto-detects document structure (heuristic + LLM fallback); summarises each section at novice / intermediate / expert level; generates claim-based critical questions per section; interactive Q&A anchored to each section
 - **Expert Reviewer Mode** — per-section critique modelled on top journal/conference reviews: strengths, weaknesses, limitations, and actionable improvement guidance
@@ -376,6 +378,8 @@ python main.py --notebook --notebook-id <id> --temperature-level creative
 | **Citation Timeline** | Cited works by year, parsed from each source's bibliography, with one-line gists (optional Semantic Scholar abstract enrichment) |
 | **Study Comparison** | Side-by-side study table |
 | **Pipeline** | 7-agent automated analysis |
+| **Research Report** | Structured report grounded in your sources, optionally augmented with arXiv/Semantic Scholar papers and/or a DuckDuckGo web search |
+| **Explain** | Conversational, audience-tunable explanations of your sources with numbered citations; automatically searches online when your documents don't sufficiently cover a question |
 
 ---
 
