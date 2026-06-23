@@ -9,6 +9,7 @@ citation download buttons, reference lists, key findings, and report display.
 
 from __future__ import annotations
 
+import base64
 import io
 import logging
 import os
@@ -95,6 +96,8 @@ def process_uploads(uploaded_files, settings: dict) -> list:
                 max_pages=300,
             )
             doc = processor.process_file(Path(f.name), file_obj=file_obj)
+            if Path(f.name).suffix.lower() == ".pdf":
+                doc.raw_bytes = bytes(f.getbuffer())
             processed.append(doc)
             st.success(f"{f.name} — {doc.total_chunks} chunks extracted")
         except Exception as e:
@@ -261,6 +264,27 @@ def render_references(references: list, key_suffix: str = "") -> None:
                 if ref.get("citation_count") is not None:
                     st.metric("Citations", ref["citation_count"])
             st.code(ref["apa"], language=None)
+
+
+# ── PDF jump-navigation ────────────────────────────────────────────────────────
+
+def render_pdf_page_viewer(file_bytes: bytes, page: int = 1, height: int = 600) -> None:
+    """
+    Render a PDF inline, jumped to a specific 1-based page, using the
+    browser's own built-in PDF viewer via a data-URI <iframe> — no new
+    dependency (e.g. PyMuPDF, streamlit-pdf-viewer) required.
+
+    Relies on browsers honoring the standard `#page=N` fragment on a PDF
+    URL; on a viewer that ignores it, this degrades to opening at page 1
+    rather than failing outright.
+    """
+    b64 = base64.b64encode(file_bytes).decode("ascii")
+    page = max(1, page)
+    st.components.v1.html(
+        f'<iframe src="data:application/pdf;base64,{b64}#page={page}" '
+        f'width="100%" height="{height}" style="border:none;"></iframe>',
+        height=height,
+    )
 
 
 # ── Quality evaluation ────────────────────────────────────────────────────────

@@ -50,10 +50,11 @@ from agents.notebook_state import create_notebook_state
 from config.settings import get_settings
 from tools.hybrid_store import _stores as _hybrid_stores
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL
+from tools.text_parsing import format_page_label
 from ui.glossary import render_glossary_expander, term_help
 from ui.helpers import (
     get_supported_file_types, process_uploads, render_eval_result, render_rag_reflection,
-    render_query_gate, render_chat_gate,
+    render_query_gate, render_chat_gate, render_pdf_page_viewer,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,8 @@ def _index_and_store(notebook_id: str, processed_docs: list, settings: dict,
     for doc in processed_docs:
         if mem.add_source(notebook_id, doc, source_type=source_type, url=url):
             added += 1
+            if getattr(doc, "raw_bytes", b""):
+                mem.add_source_file(notebook_id, doc.doc_id, doc.filename, doc.raw_bytes)
 
     if added:
         # Evict the stale in-memory store so retrieve_node rebuilds with new chunks.
@@ -89,26 +92,70 @@ def _index_and_store(notebook_id: str, processed_docs: list, settings: dict,
     return added
 
 
-def _render_citations(citations: list) -> None:
-    """Render a compact citation list under an assistant answer (Chat tab only — the
-    Explain tab's storyteller turns don't carry this field). Pure display, no
-    session_state; each citation dict comes from `final["citations"]` /
-    `turn["citations"]` produced by the notebook graph."""
+def _render_citations(citations: list, notebook_id: str = "", key_prefix: str = "") -> None:
+    """Render a compact, snippet-bearing citation list under an assistant answer or
+    document-grounded output. Shared across Chat, Literature Review, and Explain —
+    each citation dict comes from `final["citations"]` / `turn["citations"]` (Chat),
+    `_build_references_list()` (Literature Review), or the Explain storyteller, and
+    has the shape {"n", "doc_name", "page" (raw 0-based, optional), "snippet",
+    "doc_id" (optional), "url" (optional)}.
+
+    When `notebook_id` is given and a citation's `doc_id` has stored PDF bytes
+    (captured at upload time — see ui.helpers.process_uploads), a "View in PDF"
+    button jumps to the actual cited page instead of just showing the extracted
+    text snippet. `key_prefix` must be unique per call site (e.g. a turn index)
+    so repeated renders in the same session don't collide on widget keys."""
     if not citations:
         return
     with st.expander(f"Sources ({len(citations)})", expanded=False):
         for c in citations:
-            page = c.get("page", 0)
+            page = c.get("page")
             url = c.get("url", "")
+            n = c.get("n")
             if url:
-                page_label = f"[{c.get('doc_name', url)[:60]}]({url})"
-                st.markdown(f"**[{c.get('n')}]** {page_label}")
+                link_label = f"[{c.get('doc_name', url)[:60]}]({url})"
+                prefix = f"**[{n}]**" if n is not None else "**•**"
+                st.markdown(f"{prefix} {link_label}")
+            elif n is not None:
+                st.markdown(f"**[{n}] {c.get('doc_name', 'unknown')}** · {format_page_label(page)}")
             else:
-                page_label = f"p.{page}" if isinstance(page, int) and page >= 0 else "n/a"
-                st.markdown(f"**[{c.get('n')}] {c.get('doc_name', 'unknown')}** · {page_label}")
+                st.markdown(f"**• {c.get('doc_name', 'unknown')}**")
             snippet = c.get("snippet", "")
             if snippet:
                 st.caption(snippet)
+            doc_id = c.get("doc_id", "")
+            if notebook_id and doc_id and isinstance(page, int) and page >= 0:
+                toggle_key = f"_pdfview_{key_prefix}_{c.get('n')}_{doc_id}_{page}"
+                if st.button("View in PDF", key=f"{toggle_key}_btn"):
+                    st.session_state[toggle_key] = not st.session_state.get(toggle_key, False)
+                if st.session_state.get(toggle_key):
+                    src_file = NotebookMemory().get_source_file(notebook_id, doc_id)
+                    if src_file:
+                        render_pdf_page_viewer(src_file["file_bytes"], page=page + 1)
+                    else:
+                        st.caption("Original PDF not available for this source.")
+
+
+def _with_doc_ids(citations: list, notebook: dict) -> list:
+    """Return a copy of `citations` with `doc_id` injected by matching each
+    citation's `doc_name` against this notebook's sources.
+
+    Explain's citations come from regex-parsing the storyteller's tagged
+    document_context (see story_nodes._build_citations_list), which only
+    carries doc_name/page — not doc_id the way Literature Review's
+    chunk-derived excerpts do. _render_citations needs doc_id to offer the
+    "View in PDF" jump button, so this fills it in just before rendering
+    without mutating the citation dicts persisted in StorytellerMemory.
+    """
+    name_to_id = {s.get("filename"): s.get("doc_id") for s in notebook.get("sources", [])}
+    result = []
+    for c in citations:
+        c2 = dict(c)
+        doc_id = name_to_id.get(c2.get("doc_name"))
+        if doc_id:
+            c2["doc_id"] = doc_id
+        result.append(c2)
+    return result
 
 
 # ── Advanced-feature tab helpers ────────────────────────────────────────────────
@@ -590,30 +637,52 @@ def _tab_faq(active_id: str, notebook: dict, settings: dict) -> None:
 
 
 def _tab_literature_review(active_id: str, notebook: dict, settings: dict) -> None:
-    """Render the Literature Review tab: generate a formal academic-style review and export it."""
+    """Render the Literature Review tab: generate a formal academic-style review and export it.
+
+    generate_literature_review returns a 3-tuple (body, references_list, error)
+    rather than the (result, error) pair _gen_button expects from every other
+    advanced tab, since the References section is now structured data for the
+    snippet-expander UI (_render_citations) instead of markdown text baked
+    into the body — so this tab drives its own Generate/Clear buttons instead
+    of sharing _gen_button.
+    """
     st.markdown(
         "Generates a formal academic-style literature review with structured "
         "sections: introduction, background, methodology, key findings, "
         "critical analysis, and conclusion."
     )
     cache_key = f"nb_litreview_{active_id}"
-    from agents.notebook_advanced import generate_literature_review
+    from agents.notebook_advanced import generate_literature_review, references_list_to_markdown
 
-    result, _ = _gen_button(
-        "Generate Literature Review", f"nb_gen_lr_{active_id}", cache_key,
-        settings, active_id, generate_literature_review,
-    )
-    if result:
-        st.markdown(result)
+    col_gen, col_clr = st.columns([4, 1])
+    btn_label = "Regenerate Literature Review" if cache_key in st.session_state else "Generate Literature Review"
+    if col_gen.button(btn_label, key=f"nb_gen_lr_{active_id}", type="primary", use_container_width=True):
+        with st.spinner("Working…"):
+            body, references, err = generate_literature_review(active_id, settings)
+        if err:
+            st.error(err)
+        else:
+            st.session_state[cache_key] = {"body": body, "references": references}
+    if col_clr.button("Clear", key=f"nb_gen_lr_{active_id}_clr"):
+        st.session_state.pop(cache_key, None)
+        st.rerun()
+
+    cached = st.session_state.get(cache_key)
+    if cached:
+        body = cached["body"]
+        references = cached["references"]
+        st.markdown(body)
+        _render_citations(references, notebook_id=active_id, key_prefix=f"litreview_{active_id}")
         nb_name = notebook.get("name", "notebook")
+        full_md = body + "\n\n" + references_list_to_markdown(references)
         st.download_button(
             "Download (.md)",
-            data=result,
+            data=full_md,
             file_name=f"literature_review_{nb_name}.md",
             mime="text/markdown",
             key=f"nb_dl_lr_{active_id}",
         )
-        _docx_pdf_buttons(result, f"literature_review_{nb_name}", f"nb_lr_{active_id}")
+        _docx_pdf_buttons(full_md, f"literature_review_{nb_name}", f"nb_lr_{active_id}")
 
 
 def _tab_mindmap(active_id: str, notebook: dict, settings: dict) -> None:
@@ -1012,7 +1081,7 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
         st.caption(f"Retrieval mode: **{mode}** · {len(chunks)} chunk(s) retrieved")
         for i, chunk in enumerate(chunks, 1):
             with st.expander(
-                f"[{i}] {chunk.get('doc_name', '')} — p.{chunk.get('page_num', '?')}"
+                f"[{i}] {chunk.get('doc_name', '')} — {format_page_label(chunk.get('page_num'))}"
             ):
                 st.markdown(chunk.get("text", ""))
 
@@ -1327,6 +1396,11 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
                 with st.chat_message(role):
                     st.markdown(turn.get("content", ""))
                     if role == "assistant":
+                        _render_citations(
+                            _with_doc_ids(turn.get("citations") or [], notebook),
+                            notebook_id=active_id,
+                            key_prefix=f"explain_{active_id}_{turn_idx}",
+                        )
                         qs = turn.get("suggested_questions") or []
                         if qs:
                             st.markdown("**Follow-up questions:**")
@@ -1442,6 +1516,11 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
                     "below takes a different angle than before."
                 )
         st.markdown(final.get("assistant_response", ""))
+        _render_citations(
+            _with_doc_ids(final.get("citations") or [], notebook),
+            notebook_id=active_id,
+            key_prefix=f"explain_{active_id}_new",
+        )
         new_qs = final.get("suggested_questions", [])
         if new_qs:
             st.markdown("**Follow-up questions:**")
@@ -1519,7 +1598,7 @@ def _render_cross_notebook_search(memory: NotebookMemory, settings: dict) -> Non
                 for i, hit in enumerate(results):
                     header = (
                         f"[{hit['notebook_name'][:28]}] {hit['doc_name'][:42]} "
-                        f"— p.{hit['page_num']} · {hit['matched_terms']} term(s) matched"
+                        f"— {format_page_label(hit['page_num'])} · {hit['matched_terms']} term(s) matched"
                     )
                     with st.expander(header):
                         st.markdown(hit["snippet"])
@@ -1822,7 +1901,8 @@ for conversational science communication with multiple explanation styles.
                     with st.chat_message(role):
                         st.markdown(turn.get("content", ""))
                         if role == "assistant":
-                            _render_citations(turn.get("citations") or [])
+                            _render_citations(turn.get("citations") or [], notebook_id=active_id,
+                                               key_prefix=f"chat_{active_id}_{turn_idx}")
                             qs = turn.get("suggested_questions") or []
                             for q_idx, q in enumerate(qs):
                                 if st.button(q, key=f"nb_sq_{active_id}_{turn_idx}_{q_idx}"):
@@ -1887,7 +1967,8 @@ for conversational science communication with multiple explanation styles.
 
                     with st.chat_message("assistant"):
                         st.markdown(final.get("assistant_response", ""))
-                        _render_citations(final.get("citations", []))
+                        _render_citations(final.get("citations", []), notebook_id=active_id,
+                                           key_prefix=f"chat_{active_id}_new")
                         for q_idx, q in enumerate(final.get("suggested_questions", [])):
                             if st.button(q, key=f"nb_newsq_{active_id}_{q_idx}"):
                                 st.session_state["nb_pending_q"] = q

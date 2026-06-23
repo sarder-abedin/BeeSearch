@@ -170,6 +170,7 @@ class StorytellerMemory:
         content: str,
         suggested_questions: Optional[List[str]] = None,
         explanation_style: Optional[str] = None,
+        citations: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """
         Append a single conversation turn to the session.
@@ -185,6 +186,9 @@ class StorytellerMemory:
                                look back at what was already tried. Turns saved before
                                this field existed simply have no key — callers read it
                                with .get(), never assume its presence.
+        citations           : For assistant turns — structured doc/online citations
+                               actually cited this turn (see story_nodes._build_citations_list).
+                               Turns saved before this field existed have no key.
         """
         data = self.load(session_id)
         if data is None:
@@ -197,6 +201,7 @@ class StorytellerMemory:
             "timestamp": _now(),
             "suggested_questions": suggested_questions,
             "explanation_style": explanation_style,
+            "citations": citations,
         }
         data.setdefault("conversation", []).append(turn)
         now = _now()

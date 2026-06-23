@@ -60,6 +60,7 @@ class ProcessedDocument:
     chunks: List[DocumentChunk]
     raw_text: str          # Full concatenated text (for summary prompts)
     content_md5: str = ""  # MD5 of first 50 000 chars of raw_text for cache invalidation
+    raw_bytes: bytes = b""  # Original uploaded file bytes, for PDF jump-navigation (PDFs only)
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────

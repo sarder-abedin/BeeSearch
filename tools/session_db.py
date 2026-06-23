@@ -178,6 +178,16 @@ CREATE TABLE IF NOT EXISTS notebook_chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_nb ON notebook_chunks(notebook_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_pk ON notebook_chunks(notebook_id, chunk_id);
+
+CREATE TABLE IF NOT EXISTS notebook_source_files (
+    doc_id      TEXT PRIMARY KEY,
+    notebook_id TEXT NOT NULL REFERENCES notebooks(notebook_id) ON DELETE CASCADE,
+    filename    TEXT NOT NULL,
+    mime_type   TEXT DEFAULT 'application/pdf',
+    file_bytes  BLOB NOT NULL,
+    added_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_source_files_nb ON notebook_source_files(notebook_id);
 """
 
 def init_db(db_path: Path | None = None) -> None:
