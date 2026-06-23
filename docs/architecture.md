@@ -306,6 +306,17 @@ START
   │    baked in at session creation — no separate chunk-mapping table needed
   │
   ▼
+[repetition_tracker]
+  │  • Zero-LLM-call heuristic: Jaccard word-overlap (≥0.4) between this
+  │    question and recent prior user questions, OR an explicit confusion-
+  │    phrase match ("I don't understand", "still confused", …)
+  │  • Requires at least one prior assistant turn — a session's first
+  │    message can never be "a repeat"
+  │  • On a detected repeat, overrides explanation_style to something
+  │    different from the style the previous answer actually used
+  │    (_next_explanation_strategy rotates simple→analogy→walkthrough→debate→…)
+  │
+  ▼
 [source_router]
   │  • Fast LLM call (temperature=0) scores 0-10 how well document_context
   │    covers the question
@@ -321,10 +332,27 @@ START
   │  • _strip_llm_references_section discards any References list the LLM
   │    wrote itself; _build_references_section rebuilds one from whichever
   │    [n]/[Source n] numbers were actually used in the body
+  │  • On a repeat (is_repeat_clarification), the system prompt adds an
+  │    instruction to use a genuinely different angle, not just reworded text
+  │
+  ▼
+[concept_visualizer]
+  │  • No-op (zero LLM calls) unless is_repeat_clarification is True
+  │  • On a repeat: a second LLM call extracts a hub-and-spoke breakdown
+  │    {"central", "related": [{"label", "relation"}]} of the concept just
+  │    explained, rendered via Pyvis into a self-contained interactive HTML
+  │    string (concept_visual_html) — a different modality (diagram vs.
+  │    prose) when a different writing style alone may still not land
+  │  • Any failure (LLM, JSON parse, pyvis missing) is a safe no-op —
+  │    never blocks the primary explanation already produced
+  │  • concept_visual_html is ephemeral, like online_results/source_decision
+  │    — not persisted to StorytellerMemory, only rendered for this turn
   │
   ▼
 [memory_saver]
-  │  • StorytellerMemory.add_turn() for user + assistant turns
+  │  • StorytellerMemory.add_turn() for user + assistant turns, including
+  │    which explanation_style was actually used (so a future repeat can
+  │    rotate away from it)
   │  • Extracts and stores newly-covered concepts
   │
   ▼
@@ -334,9 +362,10 @@ START
  END  (StoryState → story_sessions table in sessions.db)
 ```
 
-**State type:** `StoryState` (`agents/story_state.py`)
+**State type:** `StoryState` (`agents/story_state.py`) — includes `is_repeat_clarification`,
+`repeated_question`, and `concept_visual_html` for the repetition/visualization feature.
 
-**Memory:** `outputs/memory/sessions.db` — `story_sessions` table (`agents/story_memory.py::StorytellerMemory`), independent of the `notebooks` table — deliberately not linked by `notebook_id`, to avoid contaminating the shared `research_docs` vector collection.
+**Memory:** `outputs/memory/sessions.db` — `story_sessions` table (`agents/story_memory.py::StorytellerMemory`), independent of the `notebooks` table — deliberately not linked by `notebook_id`, to avoid contaminating the shared `research_docs` vector collection. Each assistant turn also records `explanation_style` (the style actually used, which `repetition_tracker` may have overridden) so later turns can detect what was already tried.
 
 ### Advanced analysis (one-shot tools)
 
@@ -592,7 +621,7 @@ BeeSearch/
 │   │
 │   ├── story_state.py              ← StoryState TypedDict (Explain tab, internally "Mode 5")
 │   ├── story_graph.py              ← build_story_graph() + run_story_turn()
-│   ├── story_nodes.py              ← context_loader, source_router, storyteller, memory_saver nodes
+│   ├── story_nodes.py              ← context_loader, repetition_tracker, source_router, storyteller, concept_visualizer, memory_saver nodes
 │   ├── story_memory.py             ← StorytellerMemory (SQLite, independent of NotebookMemory)
 │   │
 │   ├── self_reflective_rag.py  ← grade_chunks(), grade_papers(), self_reflective_retrieve()
@@ -638,6 +667,7 @@ BeeSearch/
 │   ├── test_citation_network.py            ← Gap-finder + isolated papers
 │   ├── test_literature_review_citations.py ← Citation grounding (Literature Review)
 │   ├── test_explain_citation_grounding.py  ← Citation grounding (Explain tab)
+│   ├── test_explain_repetition.py          ← Repeated-clarification detection + concept visualizer (Explain tab)
 │   ├── test_search_tools.py                ← WebSearcher dedup + research-domain re-rank
 │   └── test_temperature_levels.py          ← Response Tuning (Precise/Focused/Balanced/Creative)
 │

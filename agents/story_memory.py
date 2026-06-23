@@ -169,6 +169,7 @@ class StorytellerMemory:
         role: str,
         content: str,
         suggested_questions: Optional[List[str]] = None,
+        explanation_style: Optional[str] = None,
     ) -> None:
         """
         Append a single conversation turn to the session.
@@ -178,6 +179,12 @@ class StorytellerMemory:
         role                : "user" or "assistant"
         content             : The message text
         suggested_questions : For assistant turns — list of 2–3 follow-up questions
+        explanation_style   : For assistant turns — the style actually used (which may
+                               differ from the user's selected style when
+                               repetition_tracker_node overrode it). Lets later turns
+                               look back at what was already tried. Turns saved before
+                               this field existed simply have no key — callers read it
+                               with .get(), never assume its presence.
         """
         data = self.load(session_id)
         if data is None:
@@ -189,6 +196,7 @@ class StorytellerMemory:
             "content": content,
             "timestamp": _now(),
             "suggested_questions": suggested_questions,
+            "explanation_style": explanation_style,
         }
         data.setdefault("conversation", []).append(turn)
         now = _now()

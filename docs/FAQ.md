@@ -115,6 +115,11 @@ A: All three are grounded the same way under the hood: every retrievable excerpt
 
 ---
 
+**Q: What happens if I ask the Explain tab the same question twice, or say I don't understand?**
+A: The `repetition_tracker` node detects this automatically — no toggle needed. It compares your message to recent prior questions (word-overlap similarity) and checks for confusion phrases ("I don't understand", "still lost", "explain it differently", and similar). If either matches, two things happen: the next explanation is generated in a genuinely different style (e.g. switching from a plain explanation to an analogy, a step-by-step walkthrough, or a for/against debate, rotating away from whichever style the previous answer used) instead of just rewording the same text, and an interactive concept map (a central concept with its directly related ideas, rendered with Pyvis) appears alongside the new explanation as a second, visual way into the idea. Detection requires at least one prior answer in the session — your very first message can't be "a repeat." Either step failing (LLM error, missing `pyvis`) silently falls back to a normal explanation with no concept map — it never blocks the response.
+
+---
+
 **Q: How does BeeSearch rank web search results?**
 A: `WebSearcher` (DuckDuckGo) fetches more results than requested, deduplicates them by URL and normalised title, then re-ranks: recognised research domains (arxiv.org, PubMed, IEEE Xplore, Nature, ScienceDirect, `.edu`/`.gov`, and similar) move to the front, a short list of low-signal sites (Pinterest, Quora) moves to the back, and everything else keeps DuckDuckGo's own relative order. Nothing is ever dropped for being non-academic — only reordered — so a relevant blog or vendor page is never hidden, just deprioritised behind primary sources.
 

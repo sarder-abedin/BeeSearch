@@ -1274,15 +1274,16 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
     memory = StorytellerMemory()
     nb_name = notebook.get("name", "Notebook")
 
+    style_labels = {
+        "simple":      "Simple Language",
+        "analogy":     "Extended Analogy",
+        "walkthrough": "Step-by-Step",
+        "debate":      "For vs. Against",
+    }
     explanation_style = st.radio(
         "Explanation style",
         options=["simple", "analogy", "walkthrough", "debate"],
-        format_func=lambda x: {
-            "simple":      "Simple Language",
-            "analogy":     "Extended Analogy",
-            "walkthrough": "Step-by-Step",
-            "debate":      "For vs. Against",
-        }[x],
+        format_func=lambda x: style_labels[x],
         horizontal=True,
         key=f"nb_explain_style_{active_id}",
     )
@@ -1427,6 +1428,19 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
             st.caption(f"Answered from your documents (coverage {score}/10)")
 
     with st.chat_message("assistant"):
+        if final.get("is_repeat_clarification"):
+            used_style = final.get("explanation_style", explanation_style)
+            if used_style != explanation_style:
+                st.caption(
+                    f"This looked like a repeat of an earlier question, so this answer "
+                    f"uses \"{style_labels.get(used_style, used_style)}\" instead of your "
+                    f"selected style — explaining it differently, not just rewording it."
+                )
+            else:
+                st.caption(
+                    "This looked like a repeat of an earlier question — the explanation "
+                    "below takes a different angle than before."
+                )
         st.markdown(final.get("assistant_response", ""))
         new_qs = final.get("suggested_questions", [])
         if new_qs:
@@ -1435,6 +1449,10 @@ def _tab_explain(active_id: str, notebook: dict, settings: dict) -> None:
                 if st.button(q, key=f"nb_exp_newsq_{active_id}_{q_idx}"):
                     st.session_state[f"nb_explain_pending_{active_id}"] = q
                     st.rerun()
+        concept_html = final.get("concept_visual_html", "")
+        if concept_html:
+            st.markdown("**Visualizing this concept:**")
+            st.components.v1.html(concept_html, height=440, scrolling=False)
 
     st.rerun()
 

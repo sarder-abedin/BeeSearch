@@ -1,15 +1,19 @@
 """
 agents/story_nodes.py
 ──────────────────────
-Three nodes that form the Research Partner (Storytelling) workflow.
+The six nodes that form the Research Partner (Storytelling) workflow.
 
-  START → context_loader → storyteller → memory_saver → END
+  START → context_loader → repetition_tracker → source_router → storyteller
+        → concept_visualizer → memory_saver → END
 
 Node responsibilities
 ─────────────────────
-  context_loader  : Load conversation history + document context from memory
-  storyteller     : Generate an explanation in the requested style + follow-up questions
-  memory_saver    : Persist the new user + assistant turns back to memory
+  context_loader      : Load conversation history + document context from memory
+  repetition_tracker  : Detect a repeated/rephrased question and pick a different style
+  source_router       : LLM scores doc coverage (0-10); fetches online results if < 6
+  storyteller         : Generate an explanation in the requested style + follow-up questions
+  concept_visualizer  : On a detected repeat, render an interactive concept map
+  memory_saver        : Persist the new user + assistant turns back to memory
 
 TUTORIAL NOTE — Temperature choice
 ────────────────────────────────────
@@ -146,11 +150,141 @@ def context_loader_node(state: StoryState) -> Dict[str, Any]:
         "topic": session.get("topic", state.get("topic", "")),
         "current_step": "context_loader",
         "completed_steps": state.get("completed_steps", []) + ["context_loader"],
-        "progress_pct": 20,
+        "progress_pct": 15,
     }
 
 
-# ── Node 1.5: Source Router ───────────────────────────────────────────────────
+# ── Node 2: Repetition Tracker ────────────────────────────────────────────────
+
+# Framing words ("what", "how", "explain") get dropped before comparing two
+# questions — keeping them would make almost any two questions look similar,
+# since framing words recur constantly while the topic words ("backpropagation",
+# "gradient") are what actually makes two questions the same underlying ask.
+_SIMILARITY_STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "what", "how", "why", "when", "where", "who", "which",
+    "does", "do", "did", "doesn't", "dont", "don't",
+    "can", "could", "would", "should", "will",
+    "you", "i", "me", "my", "we", "us", "it", "its",
+    "this", "that", "these", "those", "of", "to", "in", "on", "for", "with",
+    "and", "or", "but", "so", "please", "again",
+}
+
+_QUESTION_SIMILARITY_THRESHOLD = 0.4  # Fraction of shared meaningful tokens (Jaccard)
+
+_CONFUSION_PHRASES = (
+    "i don't understand", "i dont understand", "i'm confused", "im confused",
+    "doesn't make sense", "doesnt make sense", "don't get it", "dont get it",
+    "what do you mean", "still confused", "still don't", "still dont",
+    "i'm lost", "im lost", "still lost", "not clicking", "doesn't click", "can you clarify",
+    "could you clarify", "explain differently", "explain it differently",
+    "simpler terms", "in other words", "rephrase", "explain again",
+    "say that again", "not clear", "unclear",
+)
+
+# Rotation the storyteller cycles through on a detected repeat. Reuses the
+# user-facing styles from _STYLE_DESCRIPTIONS below — "explain it differently"
+# then needs no new prompt vocabulary, just a different entry from this list.
+_STYLE_ROTATION = ["simple", "analogy", "walkthrough", "debate"]
+
+
+def _tokenize_for_similarity(text: str) -> set:
+    """Lowercase, alphanumeric-only tokens with framing stopwords removed."""
+    return {
+        w for w in re.findall(r"[a-z0-9]+", text.lower())
+        if w not in _SIMILARITY_STOPWORDS and len(w) > 1
+    }
+
+
+def _question_similarity(a: str, b: str) -> float:
+    """Jaccard overlap of meaningful tokens between two questions.
+
+    Word-overlap is more forgiving of reordering and rephrasing than a raw
+    character/sequence comparison — two paraphrases of the same question
+    often share few consecutive characters but the same handful of topic words.
+    """
+    tokens_a, tokens_b = _tokenize_for_similarity(a), _tokenize_for_similarity(b)
+    if not tokens_a or not tokens_b:
+        return 0.0
+    return len(tokens_a & tokens_b) / len(tokens_a | tokens_b)
+
+
+def _is_confusion_phrase(message: str) -> bool:
+    """Whether the message explicitly signals the user is still confused."""
+    lowered = message.strip().lower()
+    return any(phrase in lowered for phrase in _CONFUSION_PHRASES)
+
+
+def _similar_to_recent_question(message: str, history: List[Dict]) -> str:
+    """Return the most recent prior user question similar enough to *message*
+    to count as a repeat/rephrase, or "" if none matches."""
+    for turn in reversed(history):
+        if turn.get("role") != "user":
+            continue
+        prior = turn.get("content", "")
+        if prior and _question_similarity(message, prior) >= _QUESTION_SIMILARITY_THRESHOLD:
+            return prior
+    return ""
+
+
+def _next_explanation_strategy(requested: str, last_used: str) -> str:
+    """Pick a style different from last_used.
+
+    Prefers the user's currently selected style unless that's exactly the one
+    that already failed to land, in which case it rotates to the next style
+    in _STYLE_ROTATION.
+    """
+    if requested != last_used:
+        return requested
+    idx = _STYLE_ROTATION.index(last_used) if last_used in _STYLE_ROTATION else -1
+    return _STYLE_ROTATION[(idx + 1) % len(_STYLE_ROTATION)]
+
+
+def repetition_tracker_node(state: StoryState) -> Dict[str, Any]:
+    """
+    Detect whether this question repeats or re-asks for clarification on
+    something already answered this session, and if so override
+    explanation_style to something different from the immediately preceding answer.
+
+    "Explain it differently" only works if the style actually changes — without
+    this override, storyteller_node would run again with the same user-selected
+    style and likely reproduce an explanation similar to the one that already
+    didn't land. Detection requires at least one prior assistant turn: confusion
+    language or topical overlap on a user's very first message in a session has
+    nothing to be "a repeat of" yet.
+    """
+    logger.info("[Story Node 2] Repetition Tracker")
+    message = state.get("user_message", "")
+    history = state.get("conversation_history", [])
+
+    has_prior_assistant_turn = any(t.get("role") == "assistant" for t in history)
+    matched_prior = _similar_to_recent_question(message, history) if has_prior_assistant_turn else ""
+    is_repeat = has_prior_assistant_turn and (bool(matched_prior) or _is_confusion_phrase(message))
+
+    effective_style = state.get("explanation_style", "simple")
+    if is_repeat:
+        last_assistant_style = ""
+        for turn in reversed(history):
+            if turn.get("role") == "assistant":
+                last_assistant_style = turn.get("explanation_style") or ""
+                break
+        # If we don't know what style was used last time, we can't guarantee
+        # a different one — keep the user's current selection rather than guess.
+        if last_assistant_style:
+            effective_style = _next_explanation_strategy(effective_style, last_assistant_style)
+        logger.info("  Repeat clarification detected — style: %s", effective_style)
+
+    return {
+        "is_repeat_clarification": is_repeat,
+        "repeated_question": matched_prior,
+        "explanation_style": effective_style,
+        "current_step": "repetition_tracker",
+        "completed_steps": state.get("completed_steps", []) + ["repetition_tracker"],
+        "progress_pct": 25,
+    }
+
+
+# ── Node 3: Source Router ─────────────────────────────────────────────────────
 
 _COVERAGE_THRESHOLD = 6  # Score below this triggers online search (0–10 scale)
 
@@ -330,7 +464,7 @@ def source_router_node(state: StoryState) -> Dict[str, Any]:
     }
 
 
-# ── Node 2: Storyteller ────────────────────────────────────────────────────────
+# ── Node 4: Storyteller ────────────────────────────────────────────────────────
 
 _STYLE_DESCRIPTIONS = {
     "simple": (
@@ -601,6 +735,17 @@ end with the suggested_questions JSON and nothing else."""
             f"{', '.join(concepts_covered[:20])}"
         )
 
+    repeat_instruction = ""
+    if state.get("is_repeat_clarification"):
+        repeat_instruction = (
+            "\n10. This question repeats or re-asks for clarification on something "
+            "already discussed — the previous explanation did not land. Do NOT just "
+            "reword the same explanation. Use a genuinely different angle (a "
+            "different analogy, a concrete worked example, or a different entry "
+            "point into the idea) and briefly acknowledge you're taking a different "
+            "approach before diving in."
+        )
+
     online_note = (
         " When online sources are provided, follow the attribution format below."
         if online_results else ""
@@ -619,7 +764,7 @@ CORE RULES:
    {{"suggested_questions": ["Question 1?", "Question 2?", "Question 3?"]}}
    The questions should be natural follow-ups a curious reader would want to ask next.
 8. Do NOT start your response with "Certainly!" or "Of course!" or similar filler phrases.
-9. The topic being explored is: {topic}{_clarification_context(state)}"""
+9. The topic being explored is: {topic}{_clarification_context(state)}{repeat_instruction}"""
 
     human = f"""USER QUESTION: {state.get('user_message', '')}
 {history_block}{doc_block}{online_block}{covered_block}
@@ -638,7 +783,7 @@ Remember to end with the suggested_questions JSON."""
             "errors": state.get("errors", []) + [str(e)],
             "current_step": "storyteller",
             "completed_steps": state.get("completed_steps", []) + ["storyteller"],
-            "progress_pct": 70,
+            "progress_pct": 65,
         }
 
     # Parse the trailing suggested_questions block (handles markdown-bolded
@@ -693,11 +838,125 @@ EXPLANATION:
         "new_concepts": new_concepts,
         "current_step": "storyteller",
         "completed_steps": state.get("completed_steps", []) + ["storyteller"],
-        "progress_pct": 70,
+        "progress_pct": 65,
     }
 
 
-# ── Node 3: Memory Saver ───────────────────────────────────────────────────────
+# ── Node 5: Concept Visualizer ─────────────────────────────────────────────────
+# Only runs its LLM extraction + Pyvis render when is_repeat_clarification is
+# True — most turns skip it entirely, since the extraction call has a real cost
+# and a second explanation of something the user already understood doesn't
+# need a diagram. Any failure (LLM, JSON parse, or pyvis missing) is a safe
+# no-op: it never blocks the primary explanation already produced upstream.
+
+def _safe_label(text: Any, maxlen: int = 60) -> str:
+    """Trim/clean an LLM-extracted label for safe use as a pyvis node label."""
+    return re.sub(r"\s+", " ", str(text)).strip()[:maxlen]
+
+
+def _extract_concept_graph_data(user_message: str, explanation_text: str, state: StoryState) -> Dict[str, Any]:
+    """
+    Ask the LLM for a small hub-and-spoke breakdown of the concept just
+    explained: one central concept plus 3-6 directly related ideas.
+
+    Uses a fixed low temperature via a directly-constructed ChatOllama rather
+    than _llm()/apply_temperature_level — mirrors the same choice already made
+    for source_router's coverage scoring and storyteller's concept-extraction
+    micro-call: structured-JSON extraction needs reliable parsing, not
+    response-tuning variety.
+    """
+    import httpx
+    llm = ChatOllama(
+        model=state.get("model_name", cfg.ollama_model),
+        base_url=cfg.ollama_base_url,
+        temperature=0.2,
+        num_predict=512,
+        num_ctx=min(state.get("num_ctx", cfg.num_ctx), 4096),
+        sync_client_kwargs={"timeout": httpx.Timeout(60.0)},
+    )
+    system = (
+        "You are a concept-map extractor. From the explanation, identify the "
+        "ONE central concept and 3-6 directly related ideas.\n"
+        "Output ONLY valid JSON, no code fences:\n"
+        '{"central": "Concept Name", "related": [\n'
+        '  {"label": "Related idea", "relation": "short verb phrase"}\n'
+        "]}\n\n"
+        "Rules:\n"
+        "- central: 2-5 words.\n"
+        "- 3 to 6 related items, each label 2-5 words.\n"
+        "- relation: a short verb phrase describing how it connects to the "
+        "central concept (e.g. 'enables', 'depends on', 'is a type of').\n"
+        "- Output ONLY the JSON object."
+    )
+    human = f"QUESTION: {user_message}\n\nEXPLANATION:\n{explanation_text[:1500]}"
+    raw = _call(llm, system, human)
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        raise ValueError("No JSON object found in concept-graph extraction response")
+    return json.loads(match.group(0))
+
+
+def _concept_graph_to_pyvis_html(data: Dict[str, Any]) -> str:
+    """Convert the LLM's {"central", "related": [...]}  JSON into an
+    interactive Pyvis HTML string — a hub-and-spoke map of one concept,
+    deliberately simpler than notebook_advanced.py's general knowledge-graph
+    extraction since Explain is about clarifying a single recurring question,
+    not mapping a whole document's entities."""
+    try:
+        from pyvis.network import Network
+    except ImportError:
+        raise ImportError("pip install pyvis")
+
+    central = _safe_label(data.get("central") or "Concept")
+    related = [item for item in (data.get("related") or [])[:6] if isinstance(item, dict)]
+
+    net = Network(height="420px", width="100%", directed=True, bgcolor="#0F172A", font_color="white")
+    net.barnes_hut(spring_length=140)
+    net.add_node(central, label=central, color="#3B82F6", size=28, title="Central concept")
+
+    seen = {central}
+    for item in related:
+        label = _safe_label(item.get("label", ""))
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        relation = _safe_label(item.get("relation", ""), maxlen=40)
+        net.add_node(label, label=label, color="#10B981", size=18, title=relation)
+        net.add_edge(central, label, label=relation, color="#6B7280", arrows="to")
+
+    return net.generate_html()
+
+
+def concept_visualizer_node(state: StoryState) -> Dict[str, Any]:
+    """
+    On a detected repeat, render an interactive concept map as a second,
+    visual modality of explanation — a different writing style alone may
+    still not land, but a different modality (diagram vs. prose) often will.
+    """
+    logger.info("[Story Node 5] Concept Visualizer")
+    base = {
+        "current_step": "concept_visualizer",
+        "completed_steps": state.get("completed_steps", []) + ["concept_visualizer"],
+        "progress_pct": 80,
+    }
+    if not state.get("is_repeat_clarification"):
+        return {**base, "concept_visual_html": ""}
+
+    try:
+        data = _extract_concept_graph_data(
+            state.get("user_message", ""),
+            state.get("assistant_response", ""),
+            state,
+        )
+        html = _concept_graph_to_pyvis_html(data)
+    except Exception as e:
+        logger.warning("Concept visualization skipped (%s)", e)
+        return {**base, "concept_visual_html": ""}
+
+    return {**base, "concept_visual_html": html}
+
+
+# ── Node 6: Memory Saver ───────────────────────────────────────────────────────
 
 def memory_saver_node(state: StoryState) -> Dict[str, Any]:
     """
@@ -706,7 +965,7 @@ def memory_saver_node(state: StoryState) -> Dict[str, Any]:
     Appends two turns: the user message and the assistant response.
     Also updates the list of concepts covered in this session.
     """
-    logger.info("[Story Node 3] Memory Saver")
+    logger.info("[Story Node 6] Memory Saver")
     session_id = state.get("session_id", "")
 
     if not session_id:
@@ -723,12 +982,15 @@ def memory_saver_node(state: StoryState) -> Dict[str, Any]:
         content=state.get("user_message", ""),
     )
 
-    # Save assistant turn with suggested questions
+    # Save assistant turn with suggested questions. explanation_style records
+    # whichever style was actually used (possibly overridden by
+    # repetition_tracker_node), so the next repeat can rotate to a different one.
     _get_memory().add_turn(
         session_id,
         role="assistant",
         content=state.get("assistant_response", ""),
         suggested_questions=state.get("suggested_questions", []),
+        explanation_style=state.get("explanation_style", ""),
     )
 
     # Update concepts covered

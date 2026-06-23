@@ -384,7 +384,7 @@ python main.py --notebook --notebook-id <id> --temperature-level creative
 | **Study Comparison** | Side-by-side study table |
 | **Pipeline** | 7-agent automated analysis |
 | **Research Report** | Structured report grounded in your sources, optionally augmented with arXiv/Semantic Scholar papers and/or a DuckDuckGo web search |
-| **Explain** | Conversational, audience-tunable explanations of your sources with numbered citations; automatically searches online when your documents don't sufficiently cover a question |
+| **Explain** | Conversational, audience-tunable explanations of your sources with numbered citations; automatically searches online when your documents don't sufficiently cover a question; detects when you repeat or rephrase a question (or say "I don't understand") and responds with a different explanation style plus an interactive concept map |
 
 ---
 

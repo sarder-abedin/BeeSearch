@@ -9,16 +9,22 @@ Graph structure (linear — one path only)
   START
     │
     ▼
-  [context_loader]   ← load conversation history + doc context from memory
+  [context_loader]      ← load conversation history + doc context from memory
     │
     ▼
-  [source_router]    ← LLM scores doc coverage (0-10); fetches online results if < 6
+  [repetition_tracker]  ← detect a repeated/rephrased question; pick a different style
     │
     ▼
-  [storyteller]      ← generate explanation + suggested questions via LLM
+  [source_router]       ← LLM scores doc coverage (0-10); fetches online results if < 6
     │
     ▼
-  [memory_saver]     ← persist user + assistant turns back to JSON file
+  [storyteller]         ← generate explanation + suggested questions via LLM
+    │
+    ▼
+  [concept_visualizer]  ← on a detected repeat, render an interactive concept map
+    │
+    ▼
+  [memory_saver]        ← persist user + assistant turns back to JSON file
     │
    END
 
@@ -38,7 +44,14 @@ from typing import Any, Dict
 from langgraph.graph import END, START, StateGraph
 
 from agents.eval_nodes import story_eval_node
-from agents.story_nodes import context_loader_node, memory_saver_node, source_router_node, storyteller_node
+from agents.story_nodes import (
+    concept_visualizer_node,
+    context_loader_node,
+    memory_saver_node,
+    repetition_tracker_node,
+    source_router_node,
+    storyteller_node,
+)
 from agents.story_state import StoryState
 
 logger = logging.getLogger(__name__)
@@ -48,18 +61,22 @@ def build_story_graph() -> StateGraph:
     """Construct and compile the Research Partner graph."""
     graph = StateGraph(StoryState)
 
-    graph.add_node("context_loader", context_loader_node)
-    graph.add_node("source_router",  source_router_node)
-    graph.add_node("storyteller",    storyteller_node)
-    graph.add_node("memory_saver",   memory_saver_node)
-    graph.add_node("story_eval",     story_eval_node)
+    graph.add_node("context_loader",     context_loader_node)
+    graph.add_node("repetition_tracker", repetition_tracker_node)
+    graph.add_node("source_router",      source_router_node)
+    graph.add_node("storyteller",        storyteller_node)
+    graph.add_node("concept_visualizer", concept_visualizer_node)
+    graph.add_node("memory_saver",       memory_saver_node)
+    graph.add_node("story_eval",         story_eval_node)
 
-    graph.add_edge(START,            "context_loader")
-    graph.add_edge("context_loader", "source_router")
-    graph.add_edge("source_router",  "storyteller")
-    graph.add_edge("storyteller",    "memory_saver")
-    graph.add_edge("memory_saver",   "story_eval")
-    graph.add_edge("story_eval",     END)
+    graph.add_edge(START,                "context_loader")
+    graph.add_edge("context_loader",     "repetition_tracker")
+    graph.add_edge("repetition_tracker", "source_router")
+    graph.add_edge("source_router",      "storyteller")
+    graph.add_edge("storyteller",        "concept_visualizer")
+    graph.add_edge("concept_visualizer", "memory_saver")
+    graph.add_edge("memory_saver",       "story_eval")
+    graph.add_edge("story_eval",         END)
 
     return graph.compile()
 

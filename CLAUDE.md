@@ -125,6 +125,43 @@ list in code from whichever numbers the LLM actually cited — never trust the L
 own self-written references. When adding citations to a new pipeline, follow this
 pattern rather than letting the LLM free-write its own References section.
 
+### Explain tab: repeated-clarification detection + concept visualization
+
+The Explain pipeline (`agents/story_graph.py`) runs `context_loader → repetition_tracker
+→ source_router → storyteller → concept_visualizer → memory_saver → story_eval`.
+`repetition_tracker_node` and `concept_visualizer_node` (`agents/story_nodes.py`) detect
+when a user re-asks the same question or signals confusion ("I don't understand",
+"still lost", …), and respond with both a different explanation style and an
+interactive concept map — always on, no UI toggle, matching the tab's existing
+automatic online-search behavior.
+
+- **Detection is zero-LLM-call and deterministic**: Jaccard word-overlap similarity
+  (stopword-stripped, threshold `0.4`, calibrated against real paraphrase pairs) between
+  the current question and recent prior user questions, OR a match against
+  `_CONFUSION_PHRASES`. Requires at least one prior assistant turn — a session's first
+  message can never be "a repeat." An embeddings-based approach was considered and
+  rejected: the added latency/fallback-handling would change the node's character for a
+  problem word-overlap already solves well enough.
+- **Style rotation reuses existing styles** (`simple`, `analogy`, `walkthrough`,
+  `debate`) rather than inventing new categories — `_next_explanation_strategy` honors
+  the user's current radio selection unless it matches what was already tried last turn,
+  in which case it rotates to the next style in `_STYLE_ROTATION`, wrapping around. If
+  the previous turn's `explanation_style` is unknown (sessions saved before this feature
+  existed), the node keeps the user's current selection rather than guessing.
+- **Concept visualization mirrors `tools/citation_network.py::network_to_pyvis_html`**:
+  same Pyvis constructor/styling pattern, simplified to a single hub-and-spoke star graph
+  (one central concept + up to 6 related nodes) since no graph algorithms run on it.
+  Only triggers on a detected repeat — most turns skip its LLM extraction call entirely.
+- **Fails safe like the rest of the codebase**: any failure in extraction, JSON parsing,
+  or a missing `pyvis` import is caught and never blocks the primary explanation already
+  produced by `storyteller_node` — same philosophy as `self_reflective_rag`'s "any
+  grading failure is a safe no-op."
+- **`concept_visual_html` is ephemeral**, like the pre-existing `online_results`/
+  `source_decision` fields — available in `StoryState` for the current turn's UI render
+  only, never persisted to `StorytellerMemory` (avoids SQLite bloat from Pyvis HTML
+  blobs). `explanation_style` *is* persisted per assistant turn (`StorytellerMemory.
+  add_turn(..., explanation_style=...)`) so future turns know what was already tried.
+
 ### Hybrid RAG + Self-Reflective RAG
 
 - `tools/hybrid_store.py::HybridStore` — dense FAISS (`IndexFlatIP`, in-memory,
