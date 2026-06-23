@@ -919,6 +919,7 @@ def _cmd_list_notebooks():
 def _cmd_search_notebooks(query: str, limit: int = 20) -> None:
     """One-shot 'search across everything I've ever uploaded' — every notebook, every source."""
     from agents.notebook_memory import NotebookMemory
+    from tools.text_parsing import format_page_label
     query = query.strip()
     if not query:
         console.print("[yellow]Provide a search query, e.g. --search-notebooks \"transformer attention\"[/yellow]")
@@ -939,7 +940,7 @@ def _cmd_search_notebooks(query: str, limit: int = 20) -> None:
     for h in hits:
         console.print(
             f"\n  [cyan][{h['notebook_id']}] {h['notebook_name'][:32]}[/cyan] · "
-            f"{h['doc_name'][:44]} (p.{h['page_num']}) "
+            f"{h['doc_name'][:44]} ({format_page_label(h['page_num'])}) "
             f"— {h['matched_terms']} term(s) matched"
         )
         console.print(f"    [dim]{h['snippet']}[/dim]")
@@ -1001,11 +1002,12 @@ def _cmd_notebook_advanced(notebook_id: str, feature: str, args) -> None:
         console.print(f"\n[green]Saved:[/green] {p}")
 
     elif feature == "review":
-        from agents.notebook_advanced import generate_literature_review
+        from agents.notebook_advanced import generate_literature_review, references_list_to_markdown
         with console.status("[bold blue]Generating literature review…[/bold blue]"):
-            result, err = generate_literature_review(notebook_id, settings)
+            body, references, err = generate_literature_review(notebook_id, settings)
         if err:
             console.print(f"[red]{err}[/red]"); return
+        result = body + "\n\n" + references_list_to_markdown(references)
         console.print(Markdown(result))
         p = out_dir / f"literature_review_{notebook_id}.md"
         p.write_text(result, encoding="utf-8")
@@ -1241,6 +1243,7 @@ def _cmd_notebook(args) -> None:
     from agents.notebook_state import create_notebook_state
     from agents.notebook_graph import run_notebook_turn
     from config.settings import get_settings
+    from tools.text_parsing import format_page_label
 
     settings_cfg = get_settings()
     _use_docling = not getattr(args, "no_docling", False)
@@ -1502,7 +1505,7 @@ def _cmd_notebook(args) -> None:
                         for h in hits:
                             console.print(
                                 f"  [cyan][{h['notebook_name'][:24]}][/cyan] "
-                                f"{h['doc_name'][:40]} (p.{h['page_num']}) "
+                                f"{h['doc_name'][:40]} ({format_page_label(h['page_num'])}) "
                                 f"— {h['matched_terms']} term(s) matched"
                             )
                             console.print(f"    [dim]{h['snippet']}[/dim]")

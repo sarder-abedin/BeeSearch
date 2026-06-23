@@ -38,7 +38,7 @@ from agents.story_memory import StorytellerMemory
 from agents.story_state import StoryState
 from config.settings import get_settings
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
-from tools.text_parsing import extract_suggested_questions
+from tools.text_parsing import extract_suggested_questions, format_page_label
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -517,7 +517,10 @@ _LEVEL_DESCRIPTIONS = {
 # imported — each pipeline keeps its own helpers (see CLAUDE.md's per-pipeline
 # isolation convention).
 
-_DOC_EXCERPT_TAG_RE = re.compile(r"\[(\d+)\]\s*\(source:\s*([^,]+?),\s*p\.\s*(\d+)\)")
+_DOC_EXCERPT_BLOCK_RE = re.compile(
+    r"\[(\d+)\]\s*\(source:\s*([^,]+?),\s*p\.\s*(\d+)\)\n(.*?)(?=\n\n\[\d+\]\s*\(source:|\Z)",
+    re.DOTALL,
+)
 
 
 def build_numbered_doc_context(
@@ -558,8 +561,7 @@ def build_numbered_doc_context(
             if total_chars + len(text) > max_chars:
                 break
             n = len(lines) + 1
-            page = ch.get("page_num", 0)
-            page_label = f"p. {page}" if isinstance(page, int) and page >= 0 else "n/a"
+            page_label = format_page_label(ch.get("page_num"))
             doc_name = ch.get("doc_name") or src.get("filename", "unknown")
             lines.append(f"[{n}] (source: {doc_name}, {page_label})\n{text}")
             total_chars += len(text)
@@ -569,17 +571,28 @@ def build_numbered_doc_context(
 
 def _parse_doc_excerpts(document_context: str) -> Dict[int, Dict[str, Any]]:
     """
-    Recover the {excerpt_number: {"doc_name", "page_num"}} map baked into
-    document_context by build_numbered_doc_context, so the references section
-    can be rebuilt from whichever numbers the storyteller actually cited.
+    Recover the {excerpt_number: {"doc_name", "page_num", "snippet"}} map
+    baked into document_context by build_numbered_doc_context, so the
+    citations list can be rebuilt from whichever numbers the storyteller
+    actually cited.
+
+    page_num is recovered as the raw 0-based value: the tag itself shows the
+    1-based page a user would see in their PDF (via format_page_label), so
+    the displayed digit is converted back by -1 here — matching the rest of
+    the codebase's "raw stays raw until final display" convention and
+    feeding the same raw value the PDF jump-navigation button needs.
 
     Sessions created before this tagging existed have no matching tags —
     parsing returns an empty map and the storyteller falls back to its
     pre-existing untagged behavior rather than crashing.
     """
     excerpts: Dict[int, Dict[str, Any]] = {}
-    for m in _DOC_EXCERPT_TAG_RE.finditer(document_context):
-        excerpts[int(m.group(1))] = {"doc_name": m.group(2).strip(), "page_num": int(m.group(3))}
+    for m in _DOC_EXCERPT_BLOCK_RE.finditer(document_context):
+        excerpts[int(m.group(1))] = {
+            "doc_name": m.group(2).strip(),
+            "page_num": int(m.group(3)) - 1,
+            "snippet": m.group(4).strip(),
+        }
     return excerpts
 
 
@@ -600,37 +613,51 @@ def _strip_llm_references_section(body: str) -> str:
     return body[: match.start()].rstrip() if match else body.rstrip()
 
 
-def _build_references_section(
+def _build_citations_list(
     body: str,
     doc_excerpts: Dict[int, Dict[str, Any]],
     online_results: List[Dict[str, Any]],
-) -> str:
+) -> List[Dict[str, Any]]:
     """
-    Rebuild the References list from whichever [n] document-excerpt numbers
+    Rebuild the citations list from whichever [n] document-excerpt numbers
     and [Source n] online-result numbers were actually cited in *body* —
     instead of trusting the model's own self-written list.
 
-    Returns "" when nothing was cited. Unlike Literature Review (which is
+    Structured output (matching ui/tabs/notebook.py::_render_citations'
+    shared {"n", "doc_name", "page", "snippet", "url"} shape) for the
+    snippet-expander UI, mirroring notebook_advanced.py's
+    _build_references_list for Literature Review — but as data the caller
+    renders/persists separately, rather than text baked into the body.
+    Document citations get an int "n" matching their inline [n] marker;
+    online citations get a "Source N" string "n" so the two independent
+    numbering schemes never collide when shown in one combined list.
+
+    Returns [] when nothing was cited. Unlike Literature Review (which is
     always about its sources), a conversational Explain-tab turn may
     legitimately cite nothing — e.g. a follow-up answered from general
-    knowledge — so omitting the section entirely is correct here rather than
-    falling back to a source list.
+    knowledge — so an empty list is correct here rather than falling back to
+    a source list.
     """
-    lines: List[str] = []
+    citations: List[Dict[str, Any]] = []
     for n in sorted({int(x) for x in re.findall(r"\[(\d+)\]", body)}):
         ex = doc_excerpts.get(n)
         if ex:
-            page = ex.get("page_num", -1)
-            page_label = f"p. {page}" if isinstance(page, int) and page >= 0 else "n/a"
-            lines.append(f"[{n}] {ex.get('doc_name', 'unknown')} ({page_label})")
+            citations.append({
+                "n": n,
+                "doc_name": ex.get("doc_name", "unknown"),
+                "page": ex.get("page_num"),
+                "snippet": ex.get("snippet", ""),
+            })
     for n in sorted({int(x) for x in re.findall(r"\[Source (\d+)\]", body)}):
         if 1 <= n <= len(online_results):
             r = online_results[n - 1]
-            url = r.get("url", "")
-            lines.append(f"[Source {n}] {r.get('title', 'unknown')}" + (f" — {url}" if url else ""))
-    if not lines:
-        return ""
-    return "**References:**\n" + "\n".join(lines)
+            citations.append({
+                "n": f"Source {n}",
+                "doc_name": r.get("title", "unknown"),
+                "snippet": r.get("snippet", ""),
+                "url": r.get("url", ""),
+            })
+    return citations
 
 
 def storyteller_node(state: StoryState) -> Dict[str, Any]:
@@ -780,6 +807,7 @@ Remember to end with the suggested_questions JSON."""
             "assistant_response": f"[Error generating response: {e}]",
             "suggested_questions": [],
             "new_concepts": [],
+            "citations": [],
             "errors": state.get("errors", []) + [str(e)],
             "current_step": "storyteller",
             "completed_steps": state.get("completed_steps", []) + ["storyteller"],
@@ -795,12 +823,11 @@ Remember to end with the suggested_questions JSON."""
                        raw_response[-120:])
 
     # Drop any References section the model wrote on its own (it's told not
-    # to, but instructions aren't guarantees) and replace it with one rebuilt
-    # from whichever [n]/[Source N] numbers it actually cited in the body.
+    # to, but instructions aren't guarantees). A structured citations list is
+    # rebuilt separately from whichever [n]/[Source N] numbers it actually
+    # cited, for the snippet-expander UI — never trust the model's own list.
     main_response = _strip_llm_references_section(main_response)
-    references_section = _build_references_section(main_response, doc_excerpts, online_results)
-    if references_section:
-        main_response = main_response + "\n\n" + references_section
+    citations = _build_citations_list(main_response, doc_excerpts, online_results)
 
     # Second micro LLM call: extract newly explained concept names
     new_concepts: List[str] = []
@@ -836,6 +863,7 @@ EXPLANATION:
         "assistant_response": main_response,
         "suggested_questions": suggested_questions,
         "new_concepts": new_concepts,
+        "citations": citations,
         "current_step": "storyteller",
         "completed_steps": state.get("completed_steps", []) + ["storyteller"],
         "progress_pct": 65,
@@ -991,6 +1019,7 @@ def memory_saver_node(state: StoryState) -> Dict[str, Any]:
         content=state.get("assistant_response", ""),
         suggested_questions=state.get("suggested_questions", []),
         explanation_style=state.get("explanation_style", ""),
+        citations=state.get("citations", []),
     )
 
     # Update concepts covered

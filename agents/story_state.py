@@ -39,6 +39,7 @@ class StoryState(TypedDict, total=False):
     assistant_response: str          # The storyteller's response text
     suggested_questions: List[str]   # 2–3 follow-up question suggestions
     new_concepts: List[str]          # Concepts newly introduced in this turn
+    citations: List[Dict[str, Any]]  # Structured doc/online citations actually cited this turn
 
     # ── Source routing ───────────────────────────────────────
     online_results: List[Dict]             # Academic + web results fetched when docs insufficient
@@ -88,6 +89,7 @@ def create_story_state(
         assistant_response="",
         suggested_questions=[],
         new_concepts=[],
+        citations=[],
         online_results=[],
         source_decision={},
         is_repeat_clarification=False,

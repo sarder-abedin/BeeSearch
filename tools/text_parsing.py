@@ -9,6 +9,9 @@ the various formats and minor JSON quirks local models tend to produce.
 
 extract_references_section() locates the bibliography at the end of an
 academic paper, for the Notebook "Citation Timeline" feature.
+
+format_page_label() converts a chunk's internal 0-based page_num into the
+1-based label a user would actually see in their PDF viewer.
 """
 
 from __future__ import annotations
@@ -148,3 +151,17 @@ def extract_references_section(text: str) -> str:
                 section = fallback
 
     return section
+
+
+def format_page_label(page_num) -> str:
+    """
+    Convert a chunk's internal 0-based ``page_num`` into the 1-based label a
+    user would see in their actual PDF viewer (e.g. ``0`` -> ``"p. 1"``).
+
+    Returns ``"n/a"`` for the "unknown page" sentinel (``-1``/``None``) or
+    any non-int input, mirroring the existing convention across the
+    document-processing pipelines.
+    """
+    if isinstance(page_num, bool) or not isinstance(page_num, int) or page_num < 0:
+        return "n/a"
+    return f"p. {page_num + 1}"

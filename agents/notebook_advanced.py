@@ -36,7 +36,7 @@ from agents.notebook_memory import NotebookMemory
 from config.settings import get_settings
 from tools.citation_network import get_paper_abstract
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
-from tools.text_parsing import extract_references_section
+from tools.text_parsing import extract_references_section, format_page_label
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -145,8 +145,7 @@ def _build_numbered_excerpts(
                 break
             text = ch.get("text", "").strip()
             excerpts.append(ch)
-            page = ch.get("page_num", 0)
-            page_label = f"p. {page}" if isinstance(page, int) and page >= 0 else "n/a"
+            page_label = format_page_label(ch.get("page_num"))
             doc_name = ch.get("doc_name") or src.get("filename", "unknown")
             lines.append(f"[{len(excerpts)}] (source: {doc_name}, {page_label})\n{text}")
             doc_chars += len(text)
@@ -173,28 +172,60 @@ def _strip_llm_references_section(body: str) -> str:
     return body[: match.start()].rstrip() if match else body.rstrip()
 
 
-def _build_references_section(body: str, excerpts: List[Dict[str, Any]]) -> str:
+def _build_references_list(body: str, excerpts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Rebuild the References list from the excerpt numbers actually cited in
     *body*, instead of trusting the LLM to write its own — which is what let
     inline citations like [1]-[7] coexist with a References list collapsed
     to one inaccurate, undifferentiated line.
+
+    Structured output (one {"n", "doc_name", "page", "snippet", "doc_id"}
+    dict per reference) for the live Streamlit view's snippet-expander UI —
+    see ui/tabs/notebook.py::_render_citations. For a flattened single
+    string (CLI / .md / .docx / .pdf export), pass the result through
+    references_list_to_markdown().
     """
     cited_nums = sorted({int(n) for n in re.findall(r"\[(\d+)\]", body)})
-    lines: List[str] = []
+    refs: List[Dict[str, Any]] = []
     for n in cited_nums:
         if 1 <= n <= len(excerpts):
             ch = excerpts[n - 1]
-            page = ch.get("page_num", 0)
-            page_label = f"p. {page}" if isinstance(page, int) and page >= 0 else "n/a"
-            lines.append(f"[{n}] {ch.get('doc_name', 'unknown')} ({page_label})")
-    if not lines:
+            refs.append({
+                "n": n,
+                "doc_name": ch.get("doc_name", "unknown"),
+                "page": ch.get("page_num"),
+                "snippet": ch.get("text", ""),
+                "doc_id": ch.get("doc_id", ""),
+            })
+    if not refs:
         seen: List[str] = []
         for ch in excerpts:
             name = ch.get("doc_name", "unknown")
             if name not in seen:
                 seen.append(name)
-        lines = [f"- {name}" for name in seen]
+                refs.append({
+                    "n": None,
+                    "doc_name": name,
+                    "page": None,
+                    "snippet": "",
+                    "doc_id": ch.get("doc_id", ""),
+                })
+    return refs
+
+
+def references_list_to_markdown(refs: List[Dict[str, Any]]) -> str:
+    """Flatten _build_references_list()'s structured output into the same
+    '## References' Markdown block the pre-snippet-expander UI used to embed
+    directly in the review body — for export paths (CLI / .md / .docx /
+    .pdf) that need one complete standalone document rather than the live
+    view's interactive expander."""
+    lines: List[str] = []
+    for ref in refs:
+        if ref.get("n") is not None:
+            page_label = format_page_label(ref.get("page"))
+            lines.append(f"[{ref['n']}] {ref.get('doc_name', 'unknown')} ({page_label})")
+        else:
+            lines.append(f"- {ref.get('doc_name', 'unknown')}")
     return "## References\n" + "\n".join(lines)
 
 
@@ -409,19 +440,24 @@ def generate_faq(
 
 def generate_literature_review(
     notebook_id: str, settings: dict
-) -> Tuple[str, str]:
+) -> Tuple[str, List[Dict[str, Any]], str]:
     """
     Generate a formal academic-style literature review from notebook sources.
 
-    Returns (review_markdown, error_string).
+    Returns (review_body_markdown, references_list, error_string), where
+    review_body_markdown excludes the References section (sections 1-6 only)
+    and references_list is the structured form consumed by the live
+    Streamlit snippet-expander view — see _build_references_list(). Callers
+    that need a single flattened document (CLI / .md / .docx / .pdf export)
+    should append _references_list_to_markdown(references_list).
     """
     mem = NotebookMemory()
     notebook = mem.load(notebook_id)
     if not notebook:
-        return "", f"Notebook '{notebook_id}' not found."
+        return "", [], f"Notebook '{notebook_id}' not found."
 
     if not notebook.get("sources"):
-        return "", "No sources in this notebook."
+        return "", [], "No sources in this notebook."
 
     source_names = ", ".join(s["filename"] for s in notebook["sources"])
     context, excerpts = _build_numbered_excerpts(notebook)
@@ -462,10 +498,10 @@ def generate_literature_review(
     try:
         result = _invoke(_make_llm(settings, temperature=0.2, num_predict=_max_predict(settings)), system, human)
         body = _strip_llm_references_section(result)
-        return body + "\n\n" + _build_references_section(body, excerpts), ""
+        return body, _build_references_list(body, excerpts), ""
     except Exception as e:
         logger.error("Literature review generation failed: %s", e)
-        return "", f"Literature review generation failed: {e}"
+        return "", [], f"Literature review generation failed: {e}"
 
 
 # ── Feature 4: Mind map ───────────────────────────────────────────────────────

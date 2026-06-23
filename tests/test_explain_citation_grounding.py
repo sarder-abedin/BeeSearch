@@ -13,11 +13,20 @@ Fix: build_numbered_doc_context tags each chunk with its real page number the
 same way notebook_advanced.py's _build_numbered_excerpts does for Literature
 Review, baking the tags directly into the string persisted as
 document_context so no story-session schema change is needed.
-_parse_doc_excerpts recovers that mapping on every later turn; _build_references_section
-rebuilds an accurate references list from whichever [n]/[Source N] numbers the
-model actually cited — covering both document excerpts and online search
-results in one unified, code-generated list. _strip_llm_references_section is
-the same defensive backstop used for Literature Review.
+_parse_doc_excerpts recovers that mapping (plus the excerpt's snippet text) on
+every later turn; _build_citations_list rebuilds an accurate, structured
+citations list from whichever [n]/[Source N] numbers the model actually
+cited — covering both document excerpts and online search results in one
+unified, code-generated list consumed by ui/tabs/notebook.py's
+snippet-expander UI (_render_citations), rather than text baked into the
+response body. _strip_llm_references_section is the same defensive backstop
+used for Literature Review, in case the model writes its own References
+section anyway despite being told not to.
+
+page_num is 0-based internally and only becomes the 1-based "p. N" a user
+sees in their PDF at the final display step (format_page_label) — these
+tests use 0-based fixtures throughout, matching test_literature_review_
+citations.py, to exercise that conversion rather than bypass it.
 
 ChatOllama is mocked — no network access or Ollama server required.
 """
@@ -27,7 +36,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agents.story_nodes import (
-    _build_references_section,
+    _build_citations_list,
     _parse_doc_excerpts,
     _strip_llm_references_section,
     build_numbered_doc_context,
@@ -53,8 +62,8 @@ def test_build_numbered_doc_context_tags_each_chunk_with_its_own_page():
     notebook = {
         "sources": [{"doc_id": "d1", "filename": "paper.pdf"}],
         "chunks": [
-            _chunk("d1", "paper.pdf", 1, 0, "First chunk text."),
-            _chunk("d1", "paper.pdf", 2, 1, "Second chunk text."),
+            _chunk("d1", "paper.pdf", 0, 0, "First chunk text."),
+            _chunk("d1", "paper.pdf", 1, 1, "Second chunk text."),
         ],
     }
     context = build_numbered_doc_context(notebook)
@@ -67,8 +76,8 @@ def test_build_numbered_doc_context_orders_chunks_by_chunk_index():
     notebook = {
         "sources": [{"doc_id": "d1", "filename": "paper.pdf"}],
         "chunks": [
-            _chunk("d1", "paper.pdf", 2, 1, "Second chunk text."),
-            _chunk("d1", "paper.pdf", 1, 0, "First chunk text."),
+            _chunk("d1", "paper.pdf", 1, 1, "Second chunk text."),
+            _chunk("d1", "paper.pdf", 0, 0, "First chunk text."),
         ],
     }
     context = build_numbered_doc_context(notebook)
@@ -81,8 +90,8 @@ def test_build_numbered_doc_context_respects_char_budget():
     notebook = {
         "sources": [{"doc_id": "d1", "filename": "paper.pdf"}],
         "chunks": [
-            _chunk("d1", "paper.pdf", 1, 0, "x" * 50),
-            _chunk("d1", "paper.pdf", 2, 1, "y" * 50),
+            _chunk("d1", "paper.pdf", 0, 0, "x" * 50),
+            _chunk("d1", "paper.pdf", 1, 1, "y" * 50),
         ],
     }
     context = build_numbered_doc_context(notebook, max_chars=50, max_chars_per_chunk=50)
@@ -92,12 +101,15 @@ def test_build_numbered_doc_context_respects_char_budget():
 # ── _parse_doc_excerpts ──────────────────────────────────────────────────────
 
 def test_parse_doc_excerpts_recovers_mapping_from_tagged_string():
+    """page_num must come back raw/0-based, undoing the +1 baked into the display tag."""
     notebook = {
         "sources": [{"doc_id": "d1", "filename": "paper.pdf"}],
         "chunks": [_chunk("d1", "paper.pdf", 3, 0, "Some text.")],
     }
     context = build_numbered_doc_context(notebook)
-    assert _parse_doc_excerpts(context) == {1: {"doc_name": "paper.pdf", "page_num": 3}}
+    assert _parse_doc_excerpts(context) == {
+        1: {"doc_name": "paper.pdf", "page_num": 3, "snippet": "Some text."}
+    }
 
 
 def test_parse_doc_excerpts_returns_empty_for_untagged_legacy_context():
@@ -117,45 +129,47 @@ def test_strip_llm_references_section_is_noop_when_absent():
     assert _strip_llm_references_section(body) == body
 
 
-# ── _build_references_section ────────────────────────────────────────────────
+# ── _build_citations_list ────────────────────────────────────────────────────
 
-def test_build_references_section_covers_both_doc_and_online_numbering():
-    """One unified list rebuilt from both citation namespaces actually used."""
-    doc_excerpts = {1: {"doc_name": "paper.pdf", "page_num": 2}}
-    online_results = [{"title": "Some Blog Post", "url": "https://example.com"}]
+def test_build_citations_list_covers_both_doc_and_online_numbering():
+    """One unified, structured list rebuilt from both citation namespaces actually used."""
+    doc_excerpts = {1: {"doc_name": "paper.pdf", "page_num": 2, "snippet": "Excerpt text."}}
+    online_results = [{"title": "Some Blog Post", "url": "https://example.com", "snippet": "Blog snippet."}]
     body = "Documents say X [1]. The web adds Y [Source 1]."
-    section = _build_references_section(body, doc_excerpts, online_results)
-    assert "[1] paper.pdf (p. 2)" in section
-    assert "[Source 1] Some Blog Post — https://example.com" in section
+    citations = _build_citations_list(body, doc_excerpts, online_results)
+
+    assert citations == [
+        {"n": 1, "doc_name": "paper.pdf", "page": 2, "snippet": "Excerpt text."},
+        {"n": "Source 1", "doc_name": "Some Blog Post", "snippet": "Blog snippet.", "url": "https://example.com"},
+    ]
 
 
-def test_build_references_section_empty_when_nothing_cited():
+def test_build_citations_list_empty_when_nothing_cited():
     """Unlike Literature Review, a conversational turn may legitimately cite nothing."""
-    assert _build_references_section("General background, no citations here.", {}, []) == ""
+    assert _build_citations_list("General background, no citations here.", {}, []) == []
 
 
-def test_build_references_section_ignores_out_of_range_numbers():
+def test_build_citations_list_ignores_out_of_range_numbers():
     """A hallucinated citation number with no backing excerpt must not crash or appear."""
-    doc_excerpts = {1: {"doc_name": "paper.pdf", "page_num": 1}}
-    section = _build_references_section("Cites [1] and an invented [99].", doc_excerpts, [])
-    assert "[1] paper.pdf" in section
-    assert "[99]" not in section
+    doc_excerpts = {1: {"doc_name": "paper.pdf", "page_num": 0, "snippet": "text"}}
+    citations = _build_citations_list("Cites [1] and an invented [99].", doc_excerpts, [])
+    assert citations == [{"n": 1, "doc_name": "paper.pdf", "page": 0, "snippet": "text"}]
 
 
 # ── storyteller_node (integration) ───────────────────────────────────────────
 
-def test_storyteller_node_rebuilds_references_from_actual_citations():
+def test_storyteller_node_rebuilds_citations_from_actual_citations():
     """
     The model cites [1]/[2] inline but writes its own incomplete References
-    line. The returned response must keep the body, drop the model's own
-    References line, and append a correct one covering every number actually
-    cited.
+    line. The returned response must keep the body and drop the model's own
+    References line; result["citations"] must cover every number actually
+    cited — not just the one the model wrote itself.
     """
     notebook = {
         "sources": [{"doc_id": "d1", "filename": "2003.04816v1.pdf"}],
         "chunks": [
-            _chunk("d1", "2003.04816v1.pdf", 1, 0, "Energy efficiency results."),
-            _chunk("d1", "2003.04816v1.pdf", 2, 1, "AoI threshold results."),
+            _chunk("d1", "2003.04816v1.pdf", 0, 0, "Energy efficiency results."),
+            _chunk("d1", "2003.04816v1.pdf", 1, 1, "AoI threshold results."),
         ],
     }
     doc_context = build_numbered_doc_context(notebook)
@@ -178,12 +192,15 @@ def test_storyteller_node_rebuilds_references_from_actual_citations():
     assert "improvement [1]" in response
     assert "threshold effect [2]" in response
     assert response.count("**References**:") == 0
-    assert "[1] 2003.04816v1.pdf (p. 1)" in response
-    assert "[2] 2003.04816v1.pdf (p. 2)" in response
+
+    assert result["citations"] == [
+        {"n": 1, "doc_name": "2003.04816v1.pdf", "page": 0, "snippet": "Energy efficiency results."},
+        {"n": 2, "doc_name": "2003.04816v1.pdf", "page": 1, "snippet": "AoI threshold results."},
+    ]
 
 
-def test_storyteller_node_omits_references_when_nothing_cited():
-    """A general-knowledge turn with no document context must not get a spurious References section."""
+def test_storyteller_node_omits_citations_when_nothing_cited():
+    """A general-knowledge turn with no document context must get no citations at all."""
     state = {
         "user_message": "What is machine learning in general?",
         "document_context": "",
@@ -199,3 +216,4 @@ def test_storyteller_node_omits_references_when_nothing_cited():
         result = storyteller_node(state)
 
     assert "References" not in result["assistant_response"]
+    assert result["citations"] == []

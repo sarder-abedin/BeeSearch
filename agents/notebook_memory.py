@@ -271,12 +271,56 @@ class NotebookMemory:
                 (notebook_id, doc_id),
             )
             conn.execute(
+                "DELETE FROM notebook_source_files WHERE notebook_id=? AND doc_id=?",
+                (notebook_id, doc_id),
+            )
+            conn.execute(
                 "UPDATE notebooks SET source_count=?, updated_at=?, meta_json=? WHERE notebook_id=?",
                 (source_count, now, pack(meta), notebook_id),
             )
 
         logger.info("Removed source %s from notebook %s", doc_id, notebook_id)
         return True
+
+    # ── Raw source-file bytes (PDF jump-navigation) ────────────
+
+    def add_source_file(self, notebook_id: str, doc_id: str, filename: str,
+                         file_bytes: bytes, mime_type: str = "application/pdf") -> bool:
+        """
+        Persist a source's original uploaded bytes, so the UI can later jump
+        to a specific page in its real PDF instead of just showing a text
+        excerpt. Skipped (returns False) when file_bytes is empty — e.g.
+        non-PDF sources, which process_uploads() never sets raw_bytes for.
+        """
+        if not file_bytes:
+            return False
+        with _tx(self._db_path) as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO notebook_source_files
+                   (doc_id, notebook_id, filename, mime_type, file_bytes, added_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (doc_id, notebook_id, filename, mime_type, file_bytes, _now()),
+            )
+        return True
+
+    def get_source_file(self, notebook_id: str, doc_id: str) -> Optional[Dict[str, Any]]:
+        """Return {"filename", "mime_type", "file_bytes"} for a stored source, or None."""
+        with _tx(self._db_path) as conn:
+            row = conn.execute(
+                """SELECT filename, mime_type, file_bytes FROM notebook_source_files
+                   WHERE notebook_id=? AND doc_id=?""",
+                (notebook_id, doc_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def delete_source_file(self, notebook_id: str, doc_id: str) -> bool:
+        """Remove a stored source file's bytes. Returns True if a row was removed."""
+        with _tx(self._db_path) as conn:
+            cursor = conn.execute(
+                "DELETE FROM notebook_source_files WHERE notebook_id=? AND doc_id=?",
+                (notebook_id, doc_id),
+            )
+            return cursor.rowcount > 0
 
     # ── Conversation ──────────────────────────────────────────
 

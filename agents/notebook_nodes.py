@@ -38,7 +38,7 @@ from agents.notebook_state import NotebookState
 from config.settings import get_settings
 from tools.hybrid_store import get_or_create_store
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
-from tools.text_parsing import extract_suggested_questions
+from tools.text_parsing import extract_suggested_questions, format_page_label
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -317,8 +317,7 @@ def _build_context_block(chunks: List[Dict[str, Any]]) -> str:
     """Number each retrieved chunk as a citable source with doc name + page."""
     lines = []
     for i, ch in enumerate(chunks, 1):
-        page = ch.get("page_num", 0)
-        page_label = f"p.{page}" if isinstance(page, int) and page >= 0 else "n/a"
+        page_label = format_page_label(ch.get("page_num"))
         lines.append(
             f"[{i}] (source: {ch.get('doc_name', 'unknown')}, {page_label})\n"
             f"{ch.get('text', '').strip()}"

@@ -246,6 +246,7 @@ def _ask_notebook(nb_id: str, question: str, args: argparse.Namespace) -> None:
     from agents.notebook_graph import run_notebook_turn
     from agents.notebook_state import create_notebook_state
     from config.settings import get_settings
+    from tools.text_parsing import format_page_label
 
     cfg = get_settings()
 
@@ -276,9 +277,10 @@ def _ask_notebook(nb_id: str, question: str, args: argparse.Namespace) -> None:
         print(f"\nSources:")
         for c in citations:
             doc = c.get("doc_name", "")
-            page = c.get("page", "")
+            page = c.get("page")
             url = c.get("url", "")
-            ref = f"[{c.get('n')}] {doc}" + (f" p.{page}" if page else "") + (f" {url}" if url else "")
+            page_str = f" {format_page_label(page)}" if page is not None else ""
+            ref = f"[{c.get('n')}] {doc}{page_str}" + (f" {url}" if url else "")
             print(f"  {ref}")
 
     suggested = final.get("suggested_questions", [])
