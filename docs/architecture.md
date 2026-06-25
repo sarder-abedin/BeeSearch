@@ -13,87 +13,68 @@ BeeSearch is a **3-mode, local-first AI research system** built on LangGraph sta
 │    code is imported)                                         │
 └────────────────────┬─────────────────────────────────────────┘
                      │
-           ┌─────────┴─────────┐
-           │                   │
-   ┌───────▼──────┐   ┌────────▼────────┐
-   │   Mode 1     │   │    Mode 2       │
-   │  Systematic  │   │  Research       │
-   │  Literature  │   │  Notebook       │
-   │  Review      │   │                 │
-   │  projects/   │   │  projects/      │
-   │  mode1_*     │   │  mode2_*        │
-   └───────┬──────┘   └────────┬────────┘
-           │                   │
-           └─────────┬─────────┘
-                     │
-         ┌───────────▼───────────┐
-         │   LangGraph graphs    │
-         │   agents/*.py         │
-         └───────────┬───────────┘
-                     │
-      ┌──────────────┼──────────────┐
-      │              │              │
- ┌────▼─────┐ ┌──────▼──────┐ ┌───▼──────────────┐
- │ Hybrid   │ │  Academic   │ │   Memory         │
- │ RAG      │ │  Search     │ │  (SQLite WAL)    │
- │ FAISS    │ │  Google     │ │   outputs/       │
- │ BM25     │ │  Scholar    │ │  memory/         │
- │ ChromaDB │ │  arXiv      │ │  sessions.db     │
- │ RRF      │ │  Semantic   │ └──────────────────┘
- │          │ │  Scholar    │
- │ Mode 2   │ │  CrossRef   │
- │ (docs)   │ │             │
- └────┬─────┘ └──────┬──────┘
-      │              │
-      └──────┬───────┘
-             │
- ┌───────────▼──────────────────────────────────┐
- │   Self-Reflective RAG  (agents/              │
- │   self_reflective_rag.py)                    │
- │                                              │
- │   grade_chunks() — Mode 2 (Notebook)        │
- │     batch LLM call grades retrieved chunks  │
- │     < 3 pass → rewrite query + cycle 2      │
- │                                              │
- │   grade_papers() — Mode 1 (SR)              │
- │     batch LLM call grades retrieved papers  │
- │     one-pass filter (no cycle)              │
- │                                              │
- │   Fallback: any failure → all items kept    │
- └───────────────────────┬──────────────────────┘
-                         │
-             ┌───────────▼──────────┐
-             │   Ollama LLM         │
-             │   (main reasoning)   │
-             └──────────────────────┘
+           ┌─────────┴─────────┬──────────────────────┐
+           │                   │                      │
+   ┌───────▼──────┐   ┌────────▼────────┐    ┌────────▼───────┐
+   │   Mode 1     │   │    Mode 2       │    │     Mode 3     │
+   │  Systematic  │   │  Research       │    │  AI Research   │
+   │  Literature  │   │  Notebook       │    │   Assistant    │
+   │  Review      │   │                 │    │  (stateless)   │
+   │  projects/   │   │  projects/      │    │   projects/    │
+   │  mode1_*     │   │  mode2_*        │    │    mode3_*     │
+   └───────┬──────┘   └────────┬────────┘    └────────┬───────┘
+           │                   │                      │
+           └─────────┬─────────┘                      │
+                     │                                │
+         ┌───────────▼───────────┐                    │ (direct call —
+         │   LangGraph graphs    │                    │  no LangGraph,
+         │   agents/*.py         │                    │  no Hybrid RAG,
+         └───────────┬───────────┘                    │  no Self-Reflective
+                     │                                │  RAG, no SQLite
+      ┌──────────────┼──────────────┐                 │  memory)
+      │              │              │                 │
+ ┌────▼─────┐ ┌──────▼──────┐ ┌───▼──────────────┐    │
+ │ Hybrid   │ │  Academic   │ │   Memory         │    │
+ │ RAG      │ │  Search     │ │  (SQLite WAL)    │    │
+ │ FAISS    │ │  Google     │ │   outputs/       │    │
+ │ BM25     │ │  Scholar    │ │  memory/         │    │
+ │ ChromaDB │ │  arXiv      │ │  sessions.db     │    │
+ │ RRF      │ │  Semantic   │ └──────────────────┘    │
+ │          │ │  Scholar    │                         │
+ │ Mode 2   │ │  CrossRef   │                         │
+ │ (docs)   │ │             │                         │
+ └────┬─────┘ └──────┬──────┘                         │
+      │              │                                │
+      └──────┬───────┘                                │
+             │                                        │
+ ┌───────────▼──────────────────────────────────┐     │
+ │   Self-Reflective RAG  (agents/              │     │
+ │   self_reflective_rag.py)                    │     │
+ │                                              │     │
+ │   grade_chunks() — Mode 2 (Notebook)        │      │
+ │     batch LLM call grades retrieved chunks  │      │
+ │     < 3 pass → rewrite query + cycle 2      │      │
+ │                                              │     │
+ │   grade_papers() — Mode 1 (SR)              │      │
+ │     batch LLM call grades retrieved papers  │      │
+ │     one-pass filter (no cycle)              │      │
+ │                                              │     │
+ │   Fallback: any failure → all items kept    │      │
+ └───────────────────────┬──────────────────────┘     │
+                         │                            │
+             ┌───────────▼──────────┐   ┌─────────────▼────────────┐
+             │   Ollama LLM         │   │  Academic Search, then   │
+             │   (main reasoning)   │   │   Ollama LLM (direct)    │
+             └──────────────────────┘   └──────────────────────────┘
 ```
 
-The diagram above covers Mode 1 and Mode 2, which share the LangGraph / Hybrid RAG /
-Self-Reflective RAG stack. **Mode 3 (AI Research Assistant) is architecturally
-separate** — no LangGraph `StateGraph`, no Hybrid RAG, no Self-Reflective RAG, and no
-SQLite memory. It is a single stateless function call:
-
-```
-┌────────────────────────────────────────────────┐
-│         Mode 3 — AI Research Assistant         │
-│          agents/research_assistant.py          │
-│            run_research_assistant()            │
-└────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────┐
-│                Academic Search                 │
-│            Google Scholar · arXiv ·            │
-│         Semantic Scholar · web search          │
-└────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────┐
-│                   Ollama LLM                   │
-│        grounded answer, then citations         │
-│         rebuilt in code from [n] used          │
-└────────────────────────────────────────────────┘
-```
+Mode 1 and Mode 2 (left and center above) share the LangGraph / Hybrid RAG /
+Self-Reflective RAG stack. Mode 3 (right) fans out from the same User Interfaces layer
+but is **architecturally separate** — no LangGraph `StateGraph`, no Hybrid RAG, no
+Self-Reflective RAG, and no SQLite memory. `run_research_assistant()`
+(`agents/research_assistant.py`) is a single stateless function call: Academic Search,
+then a grounded Ollama LLM call directly, with citations rebuilt in code from the `[n]`
+actually used — no intermediate graph.
 
 See "Mode 3: AI Research Assistant" below for source numbering, citation-rebuild, and
 CLI/UI details.
