@@ -1,9 +1,10 @@
 # BeeSearch — Technical Overview
 
-BeeSearch is a local-first AI tool for two research workflows:
+BeeSearch is a local-first AI tool for three research workflows:
 
-1. **Systematic Literature Review** — PRISMA-compliant pipeline with Google Scholar, abstract screener, and post-synthesis analysis tools
+1. **Systematic Literature Review** — PRISMA-compliant pipeline with Google Scholar, abstract screener, risk-of-bias/GRADE/contradiction quality assessment, and post-synthesis analysis tools
 2. **Research Notebook** — NotebookLM-style grounded Q&A with Hybrid RAG and a 7-agent analysis pipeline
+3. **AI Research Assistant** — stateless, free-form literature-grounded Q&A with code-rebuilt inline citations; no upload, no PRISMA workflow
 
 Everything runs locally via Ollama. No cloud LLM calls, no API keys (except CrossRef/Semantic Scholar which are free and unauthenticated).
 
@@ -13,16 +14,20 @@ Everything runs locally via Ollama. No cloud LLM calls, no API keys (except Cros
 
 ```
 BeeSearch/
-├── app.py                          ← Streamlit entry point (2 modes)
-├── main.py                         ← CLI entry point (2 modes)
+├── app.py                          ← Streamlit entry point (3 modes)
+├── main.py                         ← CLI entry point (3 modes)
 ├── requirements.txt
 ├── config/
 │   ├── settings.py                 ← Pydantic config from .env
 │   └── hardware.py                 ← Hardware detection + model recommendation
 ├── agents/
 │   ├── systematic_review_state.py  ← SR TypedDict + create_systematic_review_state()
-│   ├── systematic_review_nodes.py  ← 6 PRISMA pipeline nodes
+│   ├── systematic_review_nodes.py  ← 7 PRISMA pipeline nodes
 │   ├── systematic_review_graph.py  ← SR LangGraph StateGraph
+│   ├── risk_of_bias.py             ← RoB 2 (RCTs) / ROBINS-I (observational) per-paper assessment
+│   ├── grade_assessment.py         ← GRADE certainty-of-evidence rating for the whole body of evidence
+│   ├── contradiction_detector.py   ← Cross-paper conflict detection + 0–100 consensus score
+│   ├── research_assistant.py       ← Mode 3: stateless search → ground → answer → rebuild citations
 │   ├── notebook_state.py           ← Notebook TypedDict
 │   ├── notebook_memory.py          ← SQLite persistence (NotebookMemory)
 │   ├── notebook_nodes.py           ← 3 Q&A nodes: retrieve → answer → save
@@ -37,13 +42,17 @@ BeeSearch/
 ├── tools/
 │   ├── search_tools.py             ← Google Scholar + arXiv + Semantic Scholar + CrossRef
 │   ├── abstract_screener.py        ← LLM 0-100 paper relevance scorer
-│   ├── citation_network.py         ← Ego citation graph (networkx + Pyvis HTML)
+│   ├── citation_network.py         ← Ego citation graph (networkx + Pyvis HTML); Smart Citations stance classification (Supporting/Contrasting/Mentioning)
+│   ├── citation_context.py         ← Best-effort, open-access-only citing-sentence extraction
 │   ├── preprint_tracker.py         ← CrossRef preprint / retraction status
 │   ├── prisma_report.py            ← PRISMA 2020 DOCX (python-docx) + PDF (reportlab)
 │   ├── plain_language.py           ← Patient summary · Policy brief · Press release
 │   ├── trend_analyzer.py           ← CrossRef facet year-count trends
 │   ├── evidence_map.py             ← Plotly Population × Intervention bubble chart
 │   ├── concept_drift.py            ← TF-IDF keyword shift (pure stdlib, no scikit-learn)
+│   ├── meta_analysis.py            ← Pooled effect size + forest plot (Plotly / PNG fallback)
+│   ├── sensitivity_analysis.py     ← Leave-one-out / subgroup sensitivity scenarios
+│   ├── literature_monitor.py       ← Saved-search snapshots + "new papers since last run" diff
 │   ├── document_tools.py           ← get_processor(): Docling default, pdfplumber auto-switch for large PDFs
 │   ├── docling_processor.py        ← Advanced Docling parser
 │   ├── hybrid_store.py             ← FAISS + BM25 + ChromaDB + RRF (HybridStore)
@@ -55,25 +64,27 @@ BeeSearch/
 │   ├── clarifier.py                ← Socratic clarifying questions
 │   └── shutdown.py                 ← Safe port release + ChromaDB flush
 ├── ui/
-│   ├── landing.py                  ← 2-mode landing page
+│   ├── landing.py                  ← 3-mode landing page
 │   ├── sidebar.py                  ← Hardware detection + model/RAG settings
 │   ├── tabs/
-│   │   ├── systematic_review.py    ← SR UI (5 tabs)
-│   │   └── notebook.py             ← Notebook UI
+│   │   ├── systematic_review.py    ← SR UI (4 tabs; Explore tab has 8 deep-dive tools incl. Risk & Certainty, Citation Context)
+│   │   ├── notebook.py             ← Notebook UI
+│   │   └── research_assistant.py   ← Mode 3 single-screen UI
 │   └── theme.py
 └── projects/
     ├── mode1_systematic_review.py  ← Mode 1 Streamlit runner
-    └── mode2_notebook.py           ← Mode 2 Streamlit runner
+    ├── mode2_notebook.py           ← Mode 2 Streamlit runner
+    └── mode3_research_assistant.py ← Mode 3 Streamlit runner
 ```
 
 ---
 
 ## Mode 1 — Systematic Literature Review
 
-### Core pipeline (6 nodes)
+### Core pipeline (7 nodes)
 
 ```
-query_generation → literature_search → screening → evidence_extraction → synthesis → sr_eval
+query_generation → literature_search → screening → evidence_extraction → quality_assessment → synthesis → sr_eval
 ```
 
 | Node | What happens |
@@ -81,8 +92,9 @@ query_generation → literature_search → screening → evidence_extraction →
 | `query_generation` | LLM decomposes the research question into targeted Boolean search queries |
 | `literature_search` | Queries **Google Scholar · arXiv · Semantic Scholar · CrossRef**; LLM abstract screener (0–100) pre-ranks papers; deduplicates; applies SR-RAG `grade_papers()` filter |
 | `screening` | Each paper assessed against inclusion/exclusion criteria; excluded papers logged with reason |
-| `evidence_extraction` | Study design, quality rating (High/Medium/Low), and key finding extracted per included paper |
-| `synthesis` | LLM produces narrative synthesis, key themes, research gaps, and conclusion |
+| `evidence_extraction` | PICO fields (population/intervention/comparator/outcome), study design, quality rating (High/Medium/Low), and key finding extracted per included paper (up to `max_evidence_papers`, default 25) |
+| `quality_assessment` | Risk of bias per paper (RoB 2 for trials / ROBINS-I for observational studies), GRADE certainty of the whole body of evidence, and cross-paper contradiction detection (0–100 consensus score). Each sub-assessment is independently try/except-wrapped — any failure degrades to an empty result and never blocks the pipeline |
+| `synthesis` | LLM produces narrative synthesis, key themes, research gaps, and conclusion — fed by PICO evidence plus the GRADE certainty / risk-of-bias / contradiction results so the prose reflects how certain and how consistent the evidence actually is |
 | `sr_eval` | Five-dimension quality self-evaluation (1–5 per dimension) |
 
 ### State (`SystematicReviewState` TypedDict)
@@ -91,22 +103,34 @@ query_generation → literature_search → screening → evidence_extraction →
 
 **Post-synthesis:** `preprint_tracking`, `citation_graph_html`, `trend_data`, `evidence_map_data`, `concept_drift_data`
 
+**Quality assessment:** `rob_table`, `grade_results`, `contradictions`, `max_evidence_papers`, `max_synthesis_papers`, `max_rob_papers`
+
 ### Post-synthesis on-demand tools
+
+Picked one at a time from the **Explore** tab's tool radio (`_EXPLORE_TOOLS` in `ui/tabs/systematic_review.py`).
 
 | Tool | File | What it produces |
 |------|------|-----------------|
+| Citation Network | `tools/citation_network.py` | Pyvis HTML ego-only graph of citation links between included papers, plus an isolated-paper list and gap-finder suggestions for frequently co-cited external papers. Optional **Smart Citations**: `classify_citation_stances()` labels each edge Supporting/Contrasting/Mentioning from the two papers' abstracts, coloured on the graph |
+| Citation Context | `tools/citation_context.py` | The exact citing sentence(s) where one included paper cites another, pulled from the citing paper's open-access full text (scite.ai-style). Best-effort, open-access only — fails safe to "unavailable" when no open-access text exists |
+| Risk & Certainty | `agents/risk_of_bias.py`, `grade_assessment.py`, `contradiction_detector.py` | Same three assessments as the `quality_assessment` pipeline node, rendered from state (or recomputed on demand for older cached results) |
 | Abstract Screener | `tools/abstract_screener.py` | 0–100 relevance score + include/uncertain/exclude verdict per paper |
-| Citation Network | `tools/citation_network.py` | Pyvis HTML ego-only graph of citation links between included papers, plus an isolated-paper list and gap-finder suggestions for frequently co-cited external papers |
 | Preprint Tracker | `tools/preprint_tracker.py` | Status per paper: journal / published / preprint / retracted |
-| PRISMA Report | `tools/prisma_report.py` | DOCX + PDF with Methods → Results → Discussion scaffold |
-| Plain-Language | `tools/plain_language.py` | Patient summary · Policy brief · Press release |
 | Trend Analyzer | `tools/trend_analyzer.py` | CrossRef facet year counts; growing/declining/stable classification |
 | Evidence Map | `tools/evidence_map.py` | Plotly bubble chart (Population × Intervention); matplotlib PNG fallback |
+| Meta-Analysis | `tools/meta_analysis.py` | Pooled fixed-effect/random-effects estimate + forest plot from per-study effect sizes (editable table, optional LLM draft-from-abstracts pass) |
 | Concept Drift | `tools/concept_drift.py` | TF-IDF keyword shift across 5-year buckets; optional LLM narrative |
+
+The **Write-up & Export** tab covers the remaining, always-available outputs:
+
+| Tool | File | What it produces |
+|------|------|-----------------|
+| PRISMA Report | `tools/prisma_report.py` | DOCX + PDF with Methods → Results → Discussion scaffold |
+| Plain-Language | `tools/plain_language.py` | Patient summary · Policy brief · Press release |
 
 ### UI tabs
 
-**Synthesis** | **Evidence Table** | **Discovery** | **Trends & Analysis** | **Export & Reports**
+**Synthesis** | **Evidence** | **Explore** | **Write-up & Export**
 
 ### CLI flags
 
@@ -114,6 +138,7 @@ query_generation → literature_search → screening → evidence_extraction →
 --systematic-review / --sr    Run the pipeline (requires --goal)
 --inclusion CRITERIA...        Inclusion criteria (one string each)
 --exclusion CRITERIA...        Exclusion criteria (one string each)
+--sr-quality                    Print risk-of-bias / GRADE / contradiction results
 --sr-docx                      Generate PRISMA 2020 DOCX
 --sr-pdf                       Generate PRISMA 2020 PDF
 --sr-plain-language FORMAT     patient / policy / press / all
@@ -208,6 +233,32 @@ Notebooks are stored in `outputs/memory/sessions.db` (SQLite):
 - `notebook_chunks` table — chunk text and metadata (never loaded on list calls)
 
 Embeddings are cached in ChromaDB (`outputs/chroma_db/`) so reopening a notebook does not re-embed.
+
+---
+
+## Mode 3 — AI Research Assistant
+
+A stateless, single-screen counterpart to the two structured pipelines (`agents/research_assistant.py`). Answers a free-form research question grounded in published literature in general — no document upload, no PRISMA inclusion/exclusion criteria, no persisted session.
+
+### Flow
+
+```
+search_literature → build_numbered_sources → LLM answer → build_citations
+```
+
+| Step | What happens |
+|------|-------------|
+| `search_literature` | Queries Google Scholar · arXiv · Semantic Scholar (· CrossRef) plus an optional web search; each backend fails soft so one failing source doesn't sink the answer |
+| `build_numbered_sources` | Papers and web results are merged into a single `[n]` numbering namespace, budget-capped per source and in total, tags baked into the context string handed to the LLM |
+| LLM answer | Answers grounded only in the numbered context, citing `[n]` inline; explicitly told not to write its own References section |
+| `build_citations` | Rebuilds the citation list in code from whichever `[n]` markers the LLM actually used — hallucinated numbers are dropped, never trusted from the LLM's own output |
+
+If no sources are found, the result is marked ungrounded: the answer carries an explicit "general knowledge — verify" caveat and citations are empty.
+
+### UI / CLI
+
+- UI: single-screen tab (`ui/tabs/research_assistant.py`) — question box, "include web results" toggle, answer with inline citations, source list, suggested follow-ups
+- CLI: `python main.py --ask "..."` (`--no-web` to skip the web-search backend)
 
 ---
 

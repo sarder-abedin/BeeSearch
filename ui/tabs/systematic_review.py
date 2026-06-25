@@ -1374,6 +1374,7 @@ def tab_systematic_review(settings: dict) -> None:
             "literature_search":   "Searching Google Scholar · arXiv · Semantic Scholar · CrossRef",
             "screening":           "Screening papers by title/abstract",
             "evidence_extraction": "Extracting evidence from papers",
+            "quality_assessment":  "Assessing risk of bias, GRADE certainty, contradictions",
             "synthesis":           "Synthesising findings",
             "sr_eval":             "Evaluating review quality",
         }

@@ -2,14 +2,14 @@
 
 ## System Overview
 
-BeeSearch is a **2-mode, local-first AI research system** built on LangGraph state machines, Ollama LLMs, and Hybrid RAG. All computation runs locally — no cloud LLM, no paid API.
+BeeSearch is a **3-mode, local-first AI research system** built on LangGraph state machines, Ollama LLMs, and Hybrid RAG. All computation runs locally — no cloud LLM, no paid API.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                       User Interfaces                        │
 │   Streamlit web UI (app.py)       CLI terminal (main.py)     │
 │   Landing page → select mode      --systematic-review /      │
-│   (lazy: only selected mode       --notebook                 │
+│   (lazy: only selected mode       --notebook / --ask         │
 │    code is imported)                                         │
 └────────────────────┬─────────────────────────────────────────┘
                      │
@@ -67,6 +67,13 @@ BeeSearch is a **2-mode, local-first AI research system** built on LangGraph sta
              │   (main reasoning)   │
              └──────────────────────┘
 ```
+
+The diagram above covers Mode 1 and Mode 2, which share the LangGraph / Hybrid RAG /
+Self-Reflective RAG stack. **Mode 3 (AI Research Assistant) does not appear in it** —
+it has no LangGraph `StateGraph`, no Hybrid RAG, no Self-Reflective RAG, and no SQLite
+memory. It is a single stateless function (`run_research_assistant()`) that calls
+Academic Search directly and goes straight to the Ollama LLM; see "Mode 3: AI Research
+Assistant" below for its own flow diagram.
 
 ---
 
@@ -152,6 +159,34 @@ Triggered from the UI (button click) or CLI flags. All are independent and non-b
   │  • network_stats() names isolated papers (no in-corpus citation links)
   │  • find_gap_candidates() surfaces external papers cited by 2+ included
   │    papers but not themselves screened in (gap-finder for screening)
+  │  • Optional "Smart Citations": classify_citation_stances() labels each
+  │    edge Supporting / Contrasting / Mentioning from the two papers'
+  │    abstracts (temperature=0.0); pyvis edges coloured by stance; any
+  │    classification failure defaults that edge to neutral Mentioning
+
+[citation_context]           tools/citation_context.py
+  │  • Best-effort, open-access-only citing-sentence extraction (scite.ai-style)
+  │  • find_citation_mentions() is the pure, tested core: matches the cited
+  │    paper's first-author surname + year, or distinctive title tokens,
+  │    against sentences in the citing paper's text
+  │  • _fetch_fulltext() is the only networked part — open-access PDF
+  │    (pdfplumber) or HTML (regex-stripped); fails safe to "unavailable"
+  │    when no open-access full text exists
+
+[reference_checking]         agents/risk_of_bias.py, grade_assessment.py,
+                              contradiction_detector.py
+  │  • Same three assessments as the core pipeline's quality_assessment node,
+  │    exposed as an on-demand Explore tool ("Risk & Certainty")
+  │  • Renders rob_table / grade_results / contradictions directly from
+  │    final_state when the pipeline already computed them; a button
+  │    recomputes on demand for older cached results that predate this node
+
+[meta_analysis]               tools/meta_analysis.py
+  │  • Pools per-study effect sizes (fixed-effect / random-effects,
+  │    generic inverse-variance) into a forest plot
+  │  • Editable data_editor for effect/CI/N per study; optional LLM
+  │    "draft from abstracts" pass via extract_effect_size_row()
+  │  • Heterogeneity stats (I², Q); Plotly forest plot, matplotlib PNG fallback
 
 [preprint_tracker]           tools/preprint_tracker.py
   │  • CrossRef title search per included paper
@@ -190,7 +225,9 @@ Triggered from the UI (button click) or CLI flags. All are independent and non-b
 
 State fields: `research_question`, `inclusion_criteria`, `exclusion_criteria`, `model_name`, `num_ctx`, `session_id`, `search_queries`, `raw_papers`, `screener_scores`, `included_papers`, `excluded_papers`, `evidence_table`, `narrative_synthesis`, `key_themes`, `research_gaps`, `conclusion`, `limitations`, `prisma_flow`, `eval_result`, `rag_reflection_info`, `progress_pct`, `status_detail`, `errors`, `preprint_tracking`, `citation_graph_html`, `trend_data`, `evidence_map_data`, `concept_drift_data`, `rob_table`, `grade_results`, `contradictions`, `max_evidence_papers`, `max_synthesis_papers`, `max_rob_papers`
 
-**Output tabs (UI):** Synthesis | Evidence Table | Discovery | Trends & Analysis | Export & Reports
+**Output tabs (UI):** Synthesis | Evidence | Explore | Write-up & Export
+
+**Explore tab tools** (`_EXPLORE_TOOLS` in `ui/tabs/systematic_review.py`, pick one at a time): Citation Network · Citation Context · Risk & Certainty · Preprint Status · Research Trends · Evidence Map · Meta-Analysis · Concept Drift
 
 **CLI:**
 ```bash
@@ -207,6 +244,11 @@ python main.py --systematic-review \
   --sr-plain-language all \
   --sr-trends --sr-preprints --sr-concept-drift \
   --sr-author "A. Researcher" --sr-institution "Example University"
+
+# Print risk-of-bias / GRADE / contradiction results to the console
+python main.py --systematic-review \
+  --goal "Mindfulness-based interventions for anxiety" \
+  --sr-quality
 ```
 
 ---
@@ -681,6 +723,9 @@ BeeSearch/
 │   ├── trend_analyzer.py       ← CrossRef facet year-count trends
 │   ├── evidence_map.py         ← Plotly Population × Intervention bubble chart
 │   ├── concept_drift.py        ← TF-IDF keyword shift across 5-year buckets
+│   ├── meta_analysis.py        ← Pooled effect size + forest plot (fixed/random-effects)
+│   ├── sensitivity_analysis.py ← Leave-one-out / subgroup sensitivity scenarios (library-level, no UI/CLI hook yet)
+│   ├── literature_monitor.py   ← Saved-search snapshots + new-papers-since-last-run diff (library-level, no UI/CLI hook yet)
 │   │
 │   ├── document_tools.py       ← get_processor() auto-selects Docling or pdfplumber by page count
 │   ├── docling_processor.py    ← Advanced Docling parser
@@ -713,7 +758,11 @@ BeeSearch/
 │   ├── test_explain_citation_grounding.py  ← Citation grounding (Explain tab)
 │   ├── test_explain_repetition.py          ← Repeated-clarification detection + concept visualizer (Explain tab)
 │   ├── test_search_tools.py                ← WebSearcher dedup + research-domain re-rank
-│   └── test_temperature_levels.py          ← Response Tuning (Precise/Focused/Balanced/Creative)
+│   ├── test_temperature_levels.py          ← Response Tuning (Precise/Focused/Balanced/Creative)
+│   ├── test_reference_checking.py          ← RoB/GRADE/contradiction state defaults + quality_assessment_node
+│   ├── test_research_assistant.py          ← Mode 3 source numbering, citation rebuild, grounded/ungrounded paths
+│   ├── test_citation_stance.py             ← Smart Citations stance parsing + classification + pyvis colouring
+│   └── test_citation_context.py            ← Citation-context sentence matching + fulltext-fetch status paths
 │
 ├── docker-compose.yml
 ├── .env.example

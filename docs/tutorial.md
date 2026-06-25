@@ -52,13 +52,12 @@ docker compose up --build
 2. Enter your PICO-style research question in the text area
 3. Optionally add inclusion and exclusion criteria
 4. Click **Run Systematic Review**
-5. Watch the progress bar: query generation → literature search (Google Scholar + arXiv + Semantic Scholar + CrossRef) → screening → evidence extraction → synthesis → quality evaluation
-6. Explore the 5 result tabs:
-   - **Synthesis** — narrative synthesis, key themes, research gaps, conclusion, PRISMA flow counts
-   - **Evidence Table** — structured table of included papers with quality ratings
-   - **Discovery** — abstract screener scores, citation network builder (with isolated-paper and gap-finder insights), preprint tracker
-   - **Trends & Analysis** — publication trend chart, evidence map, concept drift
-   - **Export & Reports** — Markdown download, DOCX/PDF generation, plain-language summaries
+5. Watch the progress bar: query generation → literature search (Google Scholar + arXiv + Semantic Scholar + CrossRef) → screening → evidence extraction (incl. PICO fields) → quality assessment (risk of bias, GRADE certainty, contradictions) → synthesis → quality evaluation
+6. Explore the 4 result tabs:
+   - **Synthesis** — narrative synthesis, key themes, research gaps, conclusion, PRISMA flow counts, a GRADE certainty / contradiction callout
+   - **Evidence** — structured table of included papers with PICO fields and quality ratings
+   - **Explore** — pick one deep-dive tool at a time: Citation Network (with Smart Citations stance classification), Citation Context, Risk & Certainty (RoB/GRADE/contradictions), Abstract Screener, Preprint Tracker, Research Trends, Evidence Map, Meta-Analysis, Concept Drift
+   - **Write-up & Export** — Markdown download, DOCX/PDF generation, plain-language summaries
 
 ### CLI walkthrough
 
@@ -95,6 +94,11 @@ python main.py --systematic-review \
   --goal "Antibiotic resistance mechanisms" \
   --sr-concept-drift
 
+# With risk-of-bias / GRADE / contradiction results printed to console
+python main.py --systematic-review \
+  --goal "Efficacy of statins for cardiovascular risk reduction" \
+  --sr-quality
+
 # Full combined run
 python main.py --systematic-review \
   --goal "Efficacy of CBT for treatment-resistant depression" \
@@ -103,6 +107,7 @@ python main.py --systematic-review \
   --sr-docx --sr-pdf \
   --sr-author "Dr. Smith" --sr-institution "MIT" \
   --sr-plain-language all \
+  --sr-quality \
   --sr-trends --sr-preprints --sr-concept-drift
 ```
 
@@ -115,11 +120,12 @@ Inclusion: Peer-reviewed empirical studies, Human participants
 Exclusion: Animal studies, Review papers only
 Model: llama3.1:8b
 
-  Generating search queries  ─────────── 17%  0:00:03
-  Searching Google Scholar · arXiv · Semantic Scholar · CrossRef ── 33%  0:00:18
+  Generating search queries  ─────────── 10%  0:00:03
+  Searching Google Scholar · arXiv · Semantic Scholar · CrossRef ── 30%  0:00:18
   Screening papers ───────────────────── 50%  0:00:35
-  Extracting evidence ─────────────────  67%  0:00:52
-  Synthesising findings ───────────────  83%  0:01:15
+  Extracting evidence ─────────────────  70%  0:00:52
+  Assessing risk of bias, GRADE certainty, contradictions ─ 80%  0:01:05
+  Synthesising findings ───────────────  90%  0:01:15
   Evaluating review quality ───────────  100% 0:01:22
 
 ✓ Complete in 82.4s
@@ -236,7 +242,73 @@ Numbers `1`, `2`, `3` select suggested follow-up questions from the previous ans
 
 ---
 
+## Mode 3 — AI Research Assistant
+
+A single-screen, stateless mode for a quick, literature-grounded answer — no upload, no PRISMA criteria, no saved session.
+
+### UI walkthrough
+
+1. Click **Open AI Research Assistant** on the landing page
+2. Type a free-form research question
+3. Optionally toggle off "include web results" to use academic sources only
+4. Click **Ask** — the assistant searches Google Scholar, arXiv, and Semantic Scholar (plus the web unless disabled), then answers with inline `[n]` citations
+5. Review the source list and pick a suggested follow-up question, or ask a new one
+
+If no sources are found, the answer is clearly marked as ungrounded general knowledge rather than presented as if it were literature-backed.
+
+### CLI walkthrough
+
+```bash
+# Ask a question (academic sources + web)
+python main.py --ask "What is the evidence for intermittent fasting and insulin sensitivity?"
+
+# Academic sources only, skip the web search
+python main.py --ask "Efficacy of mindfulness-based stress reduction in adults" --no-web
+```
+
+```
+╭─────────────────────── Ask ───────────────────────╮
+│ AI Research Assistant                              │
+│                                                     │
+│ What is the evidence for intermittent fasting and  │
+│ insulin sensitivity?                                │
+│                                                     │
+│ Model: llama3.1:8b                                 │
+╰─────────────────────────────────────────────────────╯
+⠋ Searching Google Scholar · arXiv · Semantic Scholar · web…
+
+╭─────────────────────── Answer ────────────────────╮
+│ Several randomized trials report improved insulin  │
+│ sensitivity with intermittent fasting [1][2]...     │
+╰─────────────────────────────────────────────────────╯
+        Citations (3)
+┌───┬──────────┬──────────────────────────┬──────┐
+│ # │ Source   │ Title                    │ Year │
+├───┼──────────┼──────────────────────────┼──────┤
+│ 1 │ semantic │ Intermittent fasting...  │ 2021 │
+│ 2 │ arxiv    │ Metabolic effects of...  │ 2020 │
+│ 3 │ web      │ NIH: Fasting and...      │ 2023 │
+└───┴──────────┴──────────────────────────┴──────┘
+Searched 8 paper(s), 4 web result(s); 3 cited.
+
+Follow-up questions:
+  • Does the effect differ between time-restricted eating and alternate-day fasting?
+  • What sample sizes did these trials use?
+```
+
+---
+
 ## Tips and common patterns
+
+### Sanity-check a question with the AI Research Assistant before a full SR
+
+A Systematic Review run takes minutes and produces a formal PRISMA pipeline. If you just want to know whether a question is even worth that investment, ask it in Mode 3 first:
+
+```bash
+python main.py --ask "Is there existing evidence on X?"
+# If the answer looks promising, commit to a full systematic review:
+python main.py --systematic-review --goal "..." --inclusion "..." --exclusion "..."
+```
 
 ### Combine SR with Notebook
 
