@@ -69,11 +69,34 @@ BeeSearch is a **3-mode, local-first AI research system** built on LangGraph sta
 ```
 
 The diagram above covers Mode 1 and Mode 2, which share the LangGraph / Hybrid RAG /
-Self-Reflective RAG stack. **Mode 3 (AI Research Assistant) does not appear in it** —
-it has no LangGraph `StateGraph`, no Hybrid RAG, no Self-Reflective RAG, and no SQLite
-memory. It is a single stateless function (`run_research_assistant()`) that calls
-Academic Search directly and goes straight to the Ollama LLM; see "Mode 3: AI Research
-Assistant" below for its own flow diagram.
+Self-Reflective RAG stack. **Mode 3 (AI Research Assistant) is architecturally
+separate** — no LangGraph `StateGraph`, no Hybrid RAG, no Self-Reflective RAG, and no
+SQLite memory. It is a single stateless function call:
+
+```
+┌────────────────────────────────────────────────┐
+│         Mode 3 — AI Research Assistant         │
+│          agents/research_assistant.py          │
+│            run_research_assistant()            │
+└────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────┐
+│                Academic Search                 │
+│            Google Scholar · arXiv ·            │
+│         Semantic Scholar · web search          │
+└────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────┐
+│                   Ollama LLM                   │
+│        grounded answer, then citations         │
+│         rebuilt in code from [n] used          │
+└────────────────────────────────────────────────┘
+```
+
+See "Mode 3: AI Research Assistant" below for source numbering, citation-rebuild, and
+CLI/UI details.
 
 ---
 
