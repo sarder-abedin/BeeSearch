@@ -51,12 +51,12 @@ A: No. The Systematic Literature Review uses the `scholarly` Python library, whi
 ---
 
 **Q: What does the Abstract Screener do?**
-A: Before formal inclusion/exclusion screening, the Abstract Screener sends each paper's title and abstract to the LLM and asks it to assign a relevance score from 0 to 100 against your research question and criteria. Papers scoring ≥ 60 are marked *include*, 40–59 *uncertain*, and < 40 *exclude*. Scores are visible in the Discovery tab. This pre-ranks papers and reduces the load on the formal screening step.
+A: Before formal inclusion/exclusion screening, the Abstract Screener sends each paper's title and abstract to the LLM and asks it to assign a relevance score from 0 to 100 against your research question and criteria. Papers scoring ≥ 60 are marked *include*, 40–59 *uncertain*, and < 40 *exclude*. Scores are visible in the Explore tab (pick *Abstract Screener*). This pre-ranks papers and reduces the load on the formal screening step.
 
 ---
 
 **Q: What is the Citation Network and how is it built?**
-A: The Citation Network is an ego-only graph that shows which of your included papers cite each other. After synthesis, you can trigger it from the Discovery tab. It queries the Semantic Scholar API for the references of each included paper, then draws edges between pairs where one included paper cites another. It uses networkx for the graph and Pyvis for an interactive HTML visualisation. The graph itself stays ego-only — no external papers are added as nodes — but two extra panels help with screening: an **Isolated papers** list names any included papers with no citation links to the rest of your corpus, and a **"Frequently cited but not in your review"** list surfaces papers cited by 2+ of your included papers but not themselves included, as candidates for a second screening pass.
+A: The Citation Network is an ego-only graph that shows which of your included papers cite each other. After synthesis, you can trigger it from the Explore tab. It queries the Semantic Scholar API for the references of each included paper, then draws edges between pairs where one included paper cites another. It uses networkx for the graph and Pyvis for an interactive HTML visualisation. The graph itself stays ego-only — no external papers are added as nodes — but two extra panels help with screening: an **Isolated papers** list names any included papers with no citation links to the rest of your corpus, and a **"Frequently cited but not in your review"** list surfaces papers cited by 2+ of your included papers but not themselves included, as candidates for a second screening pass.
 
 ---
 
@@ -91,7 +91,7 @@ A: Mode 3 answers a **free-form research question** from published literature in
 ---
 
 **Q: How does the Trend Analyzer work?**
-A: The Trend Analyzer queries the CrossRef facet API with your research query to get field-wide publication counts per year. If CrossRef returns fewer than 30 records, it supplements from Semantic Scholar. It classifies the overall trend as *growing*, *stable*, *declining*, or *insufficient data* based on the slope over the most recent 5 years. Results appear in the Trends & Analysis tab and can be exported as a table.
+A: The Trend Analyzer queries the CrossRef facet API with your research query to get field-wide publication counts per year. If CrossRef returns fewer than 30 records, it supplements from Semantic Scholar. It classifies the overall trend as *growing*, *stable*, *declining*, or *insufficient data* based on the slope over the most recent 5 years. Results appear in the Explore tab (pick *Research Trends*) and can be exported as a table.
 
 ---
 

@@ -653,6 +653,7 @@ def _cmd_systematic_review(args) -> None:
         "literature_search":   "Searching Google Scholar · arXiv · Semantic Scholar · CrossRef",
         "screening":           "Screening papers",
         "evidence_extraction": "Extracting evidence",
+        "quality_assessment":  "Assessing risk of bias, GRADE certainty, contradictions",
         "synthesis":           "Synthesising findings",
         "sr_eval":             "Evaluating review quality",
     }
