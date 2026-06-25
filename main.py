@@ -250,12 +250,29 @@ def _parse_args():
         help="Analyse vocabulary evolution across 5-year buckets and print rising/declining terms",
     )
     sr.add_argument(
+        "--sr-quality", action="store_true",
+        help="Print the risk-of-bias (RoB 2 / ROBINS-I), GRADE certainty, and "
+             "contradiction results computed during the review",
+    )
+    sr.add_argument(
         "--sr-author", type=str, default="", metavar="NAME",
         help="Author name for the DOCX/PDF title page",
     )
     sr.add_argument(
         "--sr-institution", type=str, default="", metavar="NAME",
         help="Institution name for the DOCX/PDF title page",
+    )
+
+    # ── AI Research Assistant ────────────────────────────────────
+    ra = parser.add_argument_group("AI Research Assistant")
+    ra.add_argument(
+        "--ask", type=str, default="", metavar="QUESTION",
+        help="Ask a free-form research question and get a literature-grounded answer with "
+             "inline citations (searches Google Scholar, arXiv, Semantic Scholar, and the web)",
+    )
+    ra.add_argument(
+        "--no-web", action="store_true",
+        help="With --ask, skip the web (DuckDuckGo) search and use academic sources only",
     )
 
     # ── Research Notebook ────────────────────────────────────────
@@ -889,6 +906,113 @@ def _cmd_systematic_review(args) -> None:
                     ))
             except Exception as e:
                 console.print(f"[red]Concept drift analysis failed: {e}[/red]")
+
+    if getattr(args, "sr_quality", False):
+        grade = final_state.get("grade_results", {})
+        rob_table = final_state.get("rob_table", [])
+        contradictions = final_state.get("contradictions", [])
+        if grade:
+            console.print(Panel(
+                f"[bold]Overall certainty:[/bold] {grade.get('overall_grade', 'n/a')}\n"
+                f"{grade.get('certainty_statement', '')}\n\n{grade.get('summary', '')}",
+                title="GRADE — Certainty of Evidence", border_style="cyan",
+            ))
+        if rob_table:
+            rob_t = Table(title="Risk of Bias (per paper)", border_style="yellow")
+            rob_t.add_column("Citation", style="cyan", no_wrap=True)
+            rob_t.add_column("Tool", no_wrap=True)
+            rob_t.add_column("Overall")
+            rob_colors = {"Low": "green", "Some concerns": "yellow", "High": "red"}
+            for r in rob_table:
+                ov = r.get("overall", "Some concerns")
+                rob_t.add_row(
+                    r.get("citation_key", "")[:25], r.get("tool", ""),
+                    f"[{rob_colors.get(ov, 'white')}]{ov}[/{rob_colors.get(ov, 'white')}]",
+                )
+            console.print(rob_t)
+        if contradictions:
+            console.print("\n[bold]Conflicting Findings:[/bold]")
+            for c in contradictions:
+                console.print(
+                    f"  • [yellow]{c.get('claim', '')}[/yellow] "
+                    f"(consensus {c.get('consensus_score', '?')}/100): {c.get('explanation', '')}"
+                )
+        elif rob_table or grade:
+            console.print("\n[green]No material contradictions detected.[/green]")
+
+
+# ─── AI Research Assistant ────────────────────────────────────────────────────
+
+def _cmd_ask(args) -> None:
+    """Handle `--ask`: answer a free-form research question from published literature with citations."""
+    from agents.research_assistant import run_research_assistant
+
+    question = args.ask
+    if not question.strip():
+        console.print("[red]A question is required (e.g. --ask \"your question\").[/red]")
+        return
+
+    # No temperature_level key → research_assistant falls back to its module default.
+    settings = {"model": args.model, "num_ctx": args.num_ctx, "include_crossref": True}
+
+    console.print(Panel(
+        f"[bold cyan]AI Research Assistant[/bold cyan]\n\n"
+        f"[italic]{question}[/italic]\n\nModel: [bold]{args.model}[/bold]",
+        title="Ask", border_style="blue",
+    ))
+
+    with console.status("Searching published literature…") as status:
+        def cb(stage: str, info: dict):
+            """Update the Rich status line as the assistant moves through its stages."""
+            labels = {
+                "searching": "Searching Google Scholar · arXiv · Semantic Scholar"
+                             + ("" if args.no_web else " · web") + "…",
+                "reading": f"Reading {info.get('academic_count', 0)} paper(s), "
+                           f"{info.get('web_count', 0)} web result(s)…",
+                "answering": "Composing a grounded answer…" if info.get("grounded")
+                             else "No sources found — answering from general knowledge…",
+            }
+            if stage in labels:
+                status.update(labels[stage])
+
+        try:
+            result = run_research_assistant(
+                question.strip(), settings, stream_callback=cb, include_web=not args.no_web
+            )
+        except Exception as e:
+            console.print(f"[red]Research assistant failed: {e}[/red]")
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+            return
+
+    if not result.get("grounded"):
+        console.print("[yellow]No published sources retrieved — answer is from general knowledge.[/yellow]")
+
+    console.print(Panel(Markdown(result.get("answer", "")), title="Answer", border_style="green"))
+
+    citations = result.get("citations", [])
+    if citations:
+        ct = Table(title=f"Citations ({len(citations)})", border_style="cyan")
+        ct.add_column("#", no_wrap=True)
+        ct.add_column("Source", no_wrap=True)
+        ct.add_column("Title", max_width=60)
+        ct.add_column("Year", no_wrap=True)
+        for c in citations:
+            ct.add_row(str(c.get("n", "")), c.get("kind", ""),
+                       c.get("title", "")[:60], str(c.get("year") or ""))
+        console.print(ct)
+
+    console.print(
+        f"[dim]Searched {result.get('academic_count', 0)} paper(s), "
+        f"{result.get('web_count', 0)} web result(s); {len(citations)} cited.[/dim]"
+    )
+
+    followups = result.get("suggested_questions", [])
+    if followups:
+        console.print("\n[bold]Follow-up questions:[/bold]")
+        for q in followups:
+            console.print(f"  • {q}")
 
 
 # ─── Research Notebook ────────────────────────────────────────────────────────
@@ -1666,6 +1790,10 @@ def main():
 
     if args.systematic_review:
         _cmd_systematic_review(args)
+        return
+
+    if getattr(args, "ask", ""):
+        _cmd_ask(args)
         return
 
     # No mode selected

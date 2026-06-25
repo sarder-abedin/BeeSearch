@@ -60,8 +60,33 @@ A: The Citation Network is an ego-only graph that shows which of your included p
 
 ---
 
+**Q: What are Smart Citations (Supporting / Contrasting / Mentioning)?**
+A: When you tick *"Classify citation stances"* before building the Citation Network, BeeSearch runs one LLM call per citation edge that compares the two papers' abstracts and labels how the citing paper engages with the cited one: **Supporting** (agrees with / builds on it, green edge), **Contrasting** (disputes / contradicts it, red edge), or **Mentioning** (neutral reference, gray edge — the safe default). This is scite.ai-style citation classification. Because only abstracts are available (not full text), it is best-effort and pinned to a deterministic temperature; any edge that can't be classified stays neutral.
+
+---
+
+**Q: What is the Citation Context tool?**
+A: Citation Context (in the Explore tab) surfaces the exact sentence(s) where one included paper cites another — the scite.ai "snippet" view. Pick a citing paper and a cited paper; BeeSearch fetches the citing paper's **open-access full text** (PDF via pdfplumber, or HTML), then searches it for sentences mentioning the cited work by author surname or a distinctive title token. It is deliberately descoped and fails safe: when no open-access full text is available, the fetch fails, or the cited work isn't found, it reports "unavailable"/"not found" rather than erroring.
+
+---
+
 **Q: What does the Preprint Tracker report?**
 A: For each included paper, the Preprint Tracker queries CrossRef by title and returns one of four statuses: *journal* (published in a peer-reviewed journal), *published* (formerly a preprint, now journal-published), *preprint* (still on arXiv or a preprint server), or *retracted* (CrossRef retraction notice found). This lets you flag any included papers that should be treated with extra caution.
+
+---
+
+**Q: What are the Risk of Bias, GRADE, and Contradiction results?**
+A: Every systematic review now runs a **quality assessment** step between evidence extraction and synthesis (you'll also find it in Explore → *Risk & Certainty*, and `--sr-quality` on the CLI):
+- **Risk of Bias** — each paper is rated with the appropriate Cochrane tool: **RoB 2** for randomised trials, **ROBINS-I** for observational studies, across that tool's standard bias domains, with an overall Low / Some concerns / High judgement.
+- **GRADE** — the overall body of evidence gets a certainty rating (**High / Moderate / Low / Very low**) across the five GRADE domains (risk of bias, inconsistency, indirectness, imprecision, publication bias), starting High for RCT evidence and Low otherwise.
+- **Contradictions** — the LLM scans the evidence for conflicting findings across papers and reports each as a contested claim with a **0–100 consensus score** and the papers on each side.
+
+These results feed the narrative synthesis (so it reflects certainty and disagreement instead of guessing) and are included in the Markdown/report exports. Each assessment fails safe: if one can't be completed it degrades to an empty result rather than blocking the review.
+
+---
+
+**Q: What is the AI Research Assistant (Mode 3)?**
+A: Mode 3 answers a **free-form research question** from published literature in general — no documents to upload and no PRISMA workflow. It searches Google Scholar, arXiv, Semantic Scholar (and optionally the web), numbers every retrieved source, grounds an LLM answer in them, then rebuilds the citation list **in code** from whichever `[n]` markers the answer actually used (never the LLM's self-written references). If no sources can be retrieved it answers from general knowledge with an explicit caveat and no citations. Use it from the Mode 3 tab or `python main.py --ask "your question"` (add `--no-web` for academic-only).
 
 ---
 

@@ -18,7 +18,10 @@ Graph structure (linear — one path only)
   [screening]            ← title/abstract screening against inclusion/exclusion criteria
     │
     ▼
-  [evidence_extraction]  ← pulls structured findings from included papers
+  [evidence_extraction]  ← pulls structured PICO findings from included papers
+    │
+    ▼
+  [quality_assessment]   ← risk of bias (RoB 2 / ROBINS-I), GRADE certainty, contradictions
     │
     ▼
   [synthesis]             ← narrative synthesis, themes, gaps, PRISMA flow counts
@@ -46,6 +49,7 @@ from langgraph.graph import END, START, StateGraph
 from agents.systematic_review_nodes import (
     evidence_extraction_node,
     literature_search_node,
+    quality_assessment_node,
     query_generation_node,
     screening_node,
     sr_eval_node,
@@ -63,6 +67,7 @@ def build_systematic_review_graph() -> StateGraph:
     graph.add_node("literature_search", literature_search_node)
     graph.add_node("screening", screening_node)
     graph.add_node("evidence_extraction", evidence_extraction_node)
+    graph.add_node("quality_assessment", quality_assessment_node)
     graph.add_node("synthesis", synthesis_node)
     graph.add_node("sr_eval", sr_eval_node)
 
@@ -70,7 +75,8 @@ def build_systematic_review_graph() -> StateGraph:
     graph.add_edge("query_generation", "literature_search")
     graph.add_edge("literature_search", "screening")
     graph.add_edge("screening", "evidence_extraction")
-    graph.add_edge("evidence_extraction", "synthesis")
+    graph.add_edge("evidence_extraction", "quality_assessment")
+    graph.add_edge("quality_assessment", "synthesis")
     graph.add_edge("synthesis", "sr_eval")
     graph.add_edge("sr_eval", END)
 

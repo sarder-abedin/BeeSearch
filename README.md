@@ -10,12 +10,13 @@ Local AI tools for systematic literature review and source-grounded research not
 
 ---
 
-## Two modes, fully local
+## Three modes, fully local
 
 | Mode | What it does |
 |------|-------------|
-| **1 — Systematic Literature Review** | Full PRISMA pipeline: search Google Scholar + arXiv + Semantic Scholar + CrossRef, LLM abstract screener, inclusion/exclusion screening, evidence extraction, narrative synthesis. Generates DOCX/PDF reports, plain-language summaries, citation networks, preprint tracking, trend analysis, evidence maps, and concept drift detection. |
+| **1 — Systematic Literature Review** | Full PRISMA pipeline: search Google Scholar + arXiv + Semantic Scholar + CrossRef, LLM abstract screener, inclusion/exclusion screening, PICO evidence extraction, **risk-of-bias (RoB 2 / ROBINS-I)**, **GRADE certainty rating**, **cross-paper contradiction detection**, and narrative synthesis. Generates DOCX/PDF reports, plain-language summaries, citation networks (with **Smart Citation** stance classification and **citation-context** snippets), preprint tracking, trend analysis, evidence maps, and concept drift detection. |
 | **2 — Research Notebook** | NotebookLM-style workspace: upload PDFs, DOCX, TXT, or web pages; chat with grounded citations; run a 7-agent analysis pipeline; section-by-section breakdown with audience-level explanations, expert reviewer critique, and claim-based Q&A per section. |
+| **3 — AI Research Assistant** | Ask a free-form research question and get an answer grounded in **published literature** with inline, code-rebuilt citations (Elicit / Perplexity / Consensus style). No documents to upload and no PRISMA workflow — searches Google Scholar, arXiv, Semantic Scholar, and the web, then cites what it actually used. |
 
 ---
 
@@ -26,6 +27,12 @@ Local AI tools for systematic literature review and source-grounded research not
 - **Abstract Screener** — LLM scores each paper 0–100 before formal screening
 - **PRISMA 2020 reports** — DOCX and PDF with full Methods → Results → Discussion scaffold
 - **Plain-language summaries** — general public, policy brief, press release
+- **AI Research Assistant (Mode 3)** — free-form question → literature-grounded answer with inline citations, no upload and no PRISMA workflow required (UI tab + `--ask` CLI flag)
+- **Risk of Bias** — per-paper Cochrane RoB 2 (trials) / ROBINS-I (observational) assessment across the standard bias domains
+- **GRADE certainty** — overall certainty-of-evidence rating (High / Moderate / Low / Very low) across the five GRADE domains, feeding the synthesis narrative
+- **Contradiction detection** — flags conflicting findings across included papers with a 0–100 consensus score
+- **Smart Citations** — optional LLM classification of each citation-network edge as Supporting / Contrasting / Mentioning (scite.ai-style), colour-coded on the graph
+- **Citation Context** — best-effort, open-access-only extraction of the exact sentence where one paper cites another
 - **Citation Network** — interactive Pyvis HTML graph of links between included papers, with isolated-paper detection and "gap-finder" suggestions for frequently co-cited papers worth screening
 - **Trend Analysis** — CrossRef field-wide year-by-year publication counts + growing/declining classification
 - **Evidence Map** — Plotly Population × Intervention bubble chart
@@ -227,6 +234,9 @@ python main.py --systematic-review --goal "..." --sr-plain-language all
 python main.py --systematic-review --goal "..." \
   --sr-trends --sr-preprints --sr-concept-drift
 
+# Print risk-of-bias (RoB 2 / ROBINS-I), GRADE certainty, and contradictions
+python main.py --systematic-review --goal "..." --sr-quality
+
 # Full combined run
 python main.py --systematic-review \
   --goal "Efficacy of CBT for treatment-resistant depression" \
@@ -236,6 +246,16 @@ python main.py --systematic-review \
   --sr-author "Dr. Smith" --sr-institution "MIT" \
   --sr-plain-language all \
   --sr-trends --sr-preprints --sr-concept-drift
+```
+
+### AI Research Assistant
+
+```bash
+# Ask a free-form research question, get a literature-grounded answer with citations
+python main.py --ask "Does intermittent fasting improve insulin sensitivity in adults?"
+
+# Academic sources only (skip the web search)
+python main.py --ask "Transformer scaling laws" --no-web
 ```
 
 ### Research Notebook
