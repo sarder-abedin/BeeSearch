@@ -33,6 +33,9 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "network_stats":           ("tools.citation_network",   "network_stats"),
     "find_gap_candidates":     ("tools.citation_network",   "find_gap_candidates"),
     "get_paper_abstract":      ("tools.citation_network",   "get_paper_abstract"),
+    "classify_citation_stances": ("tools.citation_network", "classify_citation_stances"),
+    "extract_citation_context": ("tools.citation_context",  "extract_citation_context"),
+    "find_citation_mentions":  ("tools.citation_context",   "find_citation_mentions"),
     "track_preprints":         ("tools.preprint_tracker",   "track_preprints"),
     "preprint_summary":        ("tools.preprint_tracker",   "preprint_summary"),
     # ── SR: PRISMA Report ────────────────────────────────────────────────────
@@ -50,6 +53,22 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "evidence_map_to_plotly_html": ("tools.evidence_map",   "evidence_map_to_plotly_html"),
     "evidence_map_to_png":     ("tools.evidence_map",       "evidence_map_to_png"),
     "detect_concept_drift":    ("tools.concept_drift",      "detect_concept_drift"),
+    # ── SR: Meta-Analysis ────────────────────────────────────────────────────
+    "run_meta_analysis":       ("tools.meta_analysis",      "run_meta_analysis"),
+    "extract_effect_size_row": ("tools.meta_analysis",      "extract_effect_size_row"),
+    "meta_analysis_to_forest_plotly": ("tools.meta_analysis", "meta_analysis_to_forest_plotly"),
+    "meta_analysis_to_forest_png":    ("tools.meta_analysis", "meta_analysis_to_forest_png"),
+    "MEASURE_LABELS":          ("tools.meta_analysis",      "MEASURE_LABELS"),
+    # ── SR: Sensitivity Analysis ─────────────────────────────────────────────
+    "run_sensitivity_analysis":   ("tools.sensitivity_analysis", "run_sensitivity_analysis"),
+    "build_sensitivity_scenarios": ("tools.sensitivity_analysis", "build_sensitivity_scenarios"),
+    # ── SR: Literature Monitor ───────────────────────────────────────────────
+    "save_monitor_state":      ("tools.literature_monitor", "save_monitor_state"),
+    "load_monitor_state":      ("tools.literature_monitor", "load_monitor_state"),
+    "list_monitors":           ("tools.literature_monitor", "list_monitors"),
+    "delete_monitor":          ("tools.literature_monitor", "delete_monitor"),
+    "find_new_papers":         ("tools.literature_monitor", "find_new_papers"),
+    "monitor_id_from_question": ("tools.literature_monitor", "monitor_id_from_question"),
     # ── Shared ───────────────────────────────────────────────────────────────
     "refs_to_bibtex":          ("tools.citation_tools",  "refs_to_bibtex"),
     "refs_to_ris":             ("tools.citation_tools",  "refs_to_ris"),

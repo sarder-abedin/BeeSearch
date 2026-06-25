@@ -106,14 +106,24 @@ START
   │
   ▼
 [evidence_extraction]
-  │  • For each included paper (up to 20): one LLM call per paper
-  │  • Extracts: study_design, sample_size, key_finding,
+  │  • For each included paper (up to max_evidence_papers, default 25): one LLM call per paper
+  │  • Extracts: population/intervention/comparator/outcome (PICO),
+  │              study_design, sample_size, key_finding,
   │              quality (High/Medium/Low), relevance_score (1–5)
   │  • Assigns citation_key (<author><year> format)
   │
   ▼
+[quality_assessment]
+  │  • Risk of bias per paper — RoB 2 (trials) / ROBINS-I (observational) → rob_table
+  │  • GRADE certainty of the body of evidence → grade_results
+  │  • Cross-paper contradiction detection (0–100 consensus) → contradictions
+  │  • Each sub-assessment fails safe to an empty result (never blocks the pipeline)
+  │
+  ▼
 [synthesis]
   │  • Builds prisma_flow dict: identified/screened/eligibility/included/excluded
+  │  • Feeds PICO evidence + GRADE certainty + RoB distribution + contradictions
+  │    into the narrative prompt so it reflects certainty and disagreement
   │  • LLM call → narrative_synthesis, key_themes, research_gaps,
   │               limitations, conclusion (all inline-cited)
   │
@@ -178,7 +188,7 @@ Triggered from the UI (button click) or CLI flags. All are independent and non-b
 
 **State type:** `SystematicReviewState` (`agents/systematic_review_state.py`)
 
-State fields: `research_question`, `inclusion_criteria`, `exclusion_criteria`, `model_name`, `num_ctx`, `session_id`, `search_queries`, `raw_papers`, `screener_scores`, `included_papers`, `excluded_papers`, `evidence_table`, `narrative_synthesis`, `key_themes`, `research_gaps`, `conclusion`, `limitations`, `prisma_flow`, `eval_result`, `rag_reflection_info`, `progress_pct`, `status_detail`, `errors`, `preprint_tracking`, `citation_graph_html`, `trend_data`, `evidence_map_data`, `concept_drift_data`
+State fields: `research_question`, `inclusion_criteria`, `exclusion_criteria`, `model_name`, `num_ctx`, `session_id`, `search_queries`, `raw_papers`, `screener_scores`, `included_papers`, `excluded_papers`, `evidence_table`, `narrative_synthesis`, `key_themes`, `research_gaps`, `conclusion`, `limitations`, `prisma_flow`, `eval_result`, `rag_reflection_info`, `progress_pct`, `status_detail`, `errors`, `preprint_tracking`, `citation_graph_html`, `trend_data`, `evidence_map_data`, `concept_drift_data`, `rob_table`, `grade_results`, `contradictions`, `max_evidence_papers`, `max_synthesis_papers`, `max_rob_papers`
 
 **Output tabs (UI):** Synthesis | Evidence Table | Discovery | Trends & Analysis | Export & Reports
 
@@ -382,6 +392,33 @@ Available from CLI flags and UI tab buttons.
 | Source comparison | Side-by-side Markdown table |
 | Citation timeline | Cited works by year, parsed from each source's bibliography, with one-line gists (optional Semantic Scholar abstract enrichment) |
 | Study comparison | Research method/sample/findings table |
+
+---
+
+## Mode 3: AI Research Assistant
+
+A stateless, single-call counterpart to the two structured pipelines (`agents/research_assistant.py`, surfaced by `ui/tabs/research_assistant.py` and `main.py --ask`). It answers a free-form research question from published literature in general — no upload, no PRISMA criteria.
+
+```
+question
+   │
+   ▼
+[search_literature]   AcademicSearcher (Google Scholar · arXiv · Semantic Scholar [· CrossRef]) + optional WebSearcher
+   │  • each backend fails soft — a failing source contributes nothing
+   ▼
+[build_numbered_sources]   one [n] namespace: papers first, then web results; tags baked into the context string
+   │
+   ▼
+[LLM answer]   grounded in the numbered sources, citing [n] inline; told NOT to write its own References
+   │
+   ▼
+[build_citations]   rebuild the citation list in code from the [n] markers actually used (hallucinated numbers dropped)
+   │
+   ▼
+{answer, citations, sources, suggested_questions, grounded}
+```
+
+If no sources are retrieved, `grounded` is `False`, the answer carries an explicit "general knowledge — verify" caveat, and `citations` is empty. Citation grounding follows the same code-rebuild-from-what-was-cited pattern as Notebook / Explain / Literature Review.
 
 ---
 
@@ -594,21 +631,27 @@ BeeSearch/
 ├── main.py                   ← CLI — SR + Notebook modes
 │
 ├── projects/
-│   ├── __init__.py           ← PROJECT_REGISTRY {mode1, mode2}
+│   ├── __init__.py           ← PROJECT_REGISTRY {mode1, mode2, mode3}
 │   ├── mode1_systematic_review.py  ← run(settings) — Systematic Review
-│   └── mode2_notebook.py           ← run(settings) — Research Notebook
+│   ├── mode2_notebook.py           ← run(settings) — Research Notebook
+│   └── mode3_research_assistant.py ← run(settings) — AI Research Assistant
 │
 ├── ui/
 │   ├── sidebar.py            ← render_sidebar() — hardware/model/RAG controls
-│   ├── landing.py            ← render_landing() — 2-mode card layout
+│   ├── landing.py            ← render_landing() — 3-mode card layout
 │   └── tabs/
-│       ├── systematic_review.py  ← tab_systematic_review() — 5 tabs
+│       ├── systematic_review.py  ← tab_systematic_review() — 4 result tabs (Explore = 8 tools)
+│       ├── research_assistant.py ← tab_research_assistant() — free-form grounded Q&A
 │       └── notebook.py           ← tab_notebook()
 │
 ├── agents/
 │   ├── systematic_review_state.py  ← SystematicReviewState TypedDict + factory
-│   ├── systematic_review_nodes.py  ← 6 SR nodes
+│   ├── systematic_review_nodes.py  ← 7 SR nodes (incl. quality_assessment)
 │   ├── systematic_review_graph.py  ← build_systematic_review_graph()
+│   ├── risk_of_bias.py             ← RoB 2 / ROBINS-I per-paper assessment
+│   ├── grade_assessment.py         ← GRADE certainty-of-evidence rating
+│   ├── contradiction_detector.py   ← cross-paper conflicting-findings detection
+│   ├── research_assistant.py       ← run_research_assistant() — Mode 3 search→ground→cite
 │   │
 │   ├── notebook_state.py           ← NotebookState TypedDict
 │   ├── notebook_graph.py           ← build_notebook_graph() + run_notebook_turn()
@@ -630,7 +673,8 @@ BeeSearch/
 │
 ├── tools/
 │   ├── abstract_screener.py    ← LLM 0–100 paper relevance scorer
-│   ├── citation_network.py     ← Ego citation graph (networkx + Pyvis HTML)
+│   ├── citation_network.py     ← Ego citation graph (networkx + Pyvis HTML) + Smart Citation stances
+│   ├── citation_context.py     ← Open-access citing-sentence extraction (best-effort)
 │   ├── preprint_tracker.py     ← CrossRef preprint / retraction status
 │   ├── prisma_report.py        ← PRISMA 2020 DOCX (python-docx) + PDF (reportlab)
 │   ├── plain_language.py       ← Patient · Policy brief · Press release

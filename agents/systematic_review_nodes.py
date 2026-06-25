@@ -5,13 +5,14 @@ Nodes for Mode 7 — Simplified PRISMA Systematic Review.
 
 Graph structure:
   START → query_generation → literature_search → screening →
-          evidence_extraction → synthesis → evaluation → END
+          evidence_extraction → quality_assessment → synthesis → evaluation → END
 
 Node roles:
   query_generation   — Generate 3–5 academic search queries from the research question
   literature_search  — Run AcademicSearcher across all queries, deduplicate
   screening          — Screen papers by title/abstract against inclusion/exclusion criteria
-  evidence_extraction— For each included paper extract study design, key finding, quality score
+  evidence_extraction— For each included paper extract PICO, study design, key finding, quality
+  quality_assessment — Risk of bias (RoB 2 / ROBINS-I), GRADE certainty, contradiction detection
   synthesis          — PRISMA flow table, narrative synthesis, themes, gaps, conclusion
   evaluation         — Quality self-evaluation via eval_nodes pattern
 """
@@ -319,30 +320,36 @@ Return ONLY valid JSON.""",
 
 def evidence_extraction_node(state: SystematicReviewState) -> Dict[str, Any]:
     """
-    Extract structured evidence (study design, sample size, key finding,
+    Extract structured evidence (PICO, study design, sample size, key finding,
     quality, relevance) from each included paper via one LLM call per paper.
 
-    Reads state: ``included_papers`` (capped at 20 papers), ``research_question``.
+    Reads state: ``included_papers`` (capped at ``max_evidence_papers``,
+    default 25), ``research_question``.
     Writes: ``evidence_table`` — sorted by quality (High > Medium > Low) then
     by descending relevance_score, plus progress/step bookkeeping.
 
-    Caps at 20 papers to bound total LLM call count for the synthesis stage
-    that follows; any extraction failure yields a row with "Unknown"/"Medium"
-    defaults rather than dropping the paper.
+    Each row now carries lightweight PICO fields (``population``,
+    ``intervention``, ``comparator``, ``outcome``) alongside the original
+    study_design/sample_size/key_finding so the synthesis and GRADE stages
+    have richer, structured evidence to reason over rather than a single
+    free-text finding. The cap bounds total LLM call count for the synthesis
+    stage that follows; any extraction failure yields a row with
+    "Unknown"/"Medium" defaults rather than dropping the paper.
     """
     logger.info("[SR Node 4] Evidence Extraction")
-    llm = _llm(state, temperature=0.1, num_predict=256)
+    llm = _llm(state, temperature=0.1, num_predict=320)
 
     included = state.get("included_papers", [])
     rq = state.get("research_question", "")
+    cap = state.get("max_evidence_papers", 25)
     evidence_table: List[Dict] = []
 
-    for paper in included[:20]:  # cap at 20 papers
+    for paper in included[:cap]:
         raw = _call(
             llm,
             f"""Extract evidence from this paper for a systematic review on: {rq}
 Return JSON with EXACTLY these keys:
-{{"study_design": "e.g. RCT|Cohort|Cross-sectional|Meta-analysis|Review|Other", "sample_size": "N or unknown", "key_finding": "one sentence", "quality": "High|Medium|Low", "relevance_score": 1-5}}
+{{"population": "who/what was studied or n/a", "intervention": "intervention/exposure or n/a", "comparator": "comparator/control or n/a", "outcome": "primary outcome or n/a", "study_design": "e.g. RCT|Cohort|Cross-sectional|Meta-analysis|Review|Other", "sample_size": "N or unknown", "key_finding": "one sentence", "quality": "High|Medium|Low", "relevance_score": 1-5}}
 Return ONLY valid JSON.""",
             f"Title: {paper.get('title','')}\nAbstract: {paper.get('abstract','')[:500]}",
         )
@@ -361,6 +368,11 @@ Return ONLY valid JSON.""",
             "url": paper.get("url", ""),
             "doi": paper.get("doi"),
             "journal": paper.get("journal"),
+            "abstract": paper.get("abstract", ""),
+            "population": evidence.get("population", ""),
+            "intervention": evidence.get("intervention", ""),
+            "comparator": evidence.get("comparator", ""),
+            "outcome": evidence.get("outcome", ""),
             "study_design": evidence.get("study_design", "Unknown"),
             "sample_size": evidence.get("sample_size", "Unknown"),
             "key_finding": evidence.get("key_finding", ""),
@@ -381,7 +393,69 @@ Return ONLY valid JSON.""",
     }
 
 
-# ── Node 5: Synthesis ──────────────────────────────────────────────────────────
+# ── Node 5: Quality Assessment (Risk of Bias · GRADE · Contradictions) ─────────
+
+def quality_assessment_node(state: SystematicReviewState) -> Dict[str, Any]:
+    """
+    Reference-checking pass over the extracted evidence: per-paper risk of bias
+    (RoB 2 / ROBINS-I), an overall GRADE certainty rating, and cross-paper
+    contradiction detection. Runs between evidence_extraction and synthesis so
+    the narrative synthesis can cite certainty and disagreement explicitly.
+
+    Reads state: ``evidence_table``, ``research_question``, ``model_name``,
+    ``num_ctx``, ``max_rob_papers`` (default 15).
+    Writes: ``rob_table``, ``grade_results``, ``contradictions``, plus
+    progress/step bookkeeping.
+
+    Each of the three assessments is independently wrapped: any failure logs a
+    warning and yields an empty result for that assessment rather than aborting
+    the pipeline — the same "any grading failure is a safe no-op" philosophy as
+    self_reflective_rag. If ``evidence_table`` is empty, all three return empty.
+    """
+    logger.info("[SR Node 5] Quality Assessment (RoB · GRADE · Contradictions)")
+    evidence_table = state.get("evidence_table", [])
+    rq = state.get("research_question", "")
+    model_name = state.get("model_name", cfg.ollama_model)
+    num_ctx = state.get("num_ctx", cfg.num_ctx)
+    rob_cap = state.get("max_rob_papers", 15)
+
+    rob_table: List[Dict] = []
+    grade_results: Dict[str, Any] = {}
+    contradictions: List[Dict] = []
+
+    if evidence_table:
+        try:
+            from agents.risk_of_bias import assess_rob_batch
+            rob_table = assess_rob_batch(evidence_table[:rob_cap], model_name, num_ctx)
+        except Exception as e:
+            logger.warning("Risk-of-bias assessment failed (continuing): %s", e)
+        try:
+            from agents.grade_assessment import grade_evidence_body
+            grade_results = grade_evidence_body(evidence_table, rq, rob_table, model_name, num_ctx)
+        except Exception as e:
+            logger.warning("GRADE assessment failed (continuing): %s", e)
+        try:
+            from agents.contradiction_detector import detect_contradictions
+            contradictions = detect_contradictions(evidence_table, rq, model_name, num_ctx)
+        except Exception as e:
+            logger.warning("Contradiction detection failed (continuing): %s", e)
+
+    grade_label = grade_results.get("overall_grade", "n/a") if grade_results else "n/a"
+    return {
+        "rob_table": rob_table,
+        "grade_results": grade_results,
+        "contradictions": contradictions,
+        "current_step": "quality_assessment",
+        "completed_steps": state.get("completed_steps", []) + ["quality_assessment"],
+        "progress_pct": 80,
+        "status_detail": (
+            f"Assessed {len(rob_table)} papers for bias · GRADE: {grade_label} · "
+            f"{len(contradictions)} contradiction(s)"
+        ),
+    }
+
+
+# ── Node 6: Synthesis ──────────────────────────────────────────────────────────
 
 def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
     """
@@ -404,7 +478,7 @@ def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
     generating the prose first and the structured fields second is far more
     robust than asking for both in one JSON object.
     """
-    logger.info("[SR Node 5] Synthesis")
+    logger.info("[SR Node 6] Synthesis")
     llm = _llm(state, temperature=0.3, num_predict=_max_predict(state))
 
     rq = state.get("research_question", "")
@@ -461,11 +535,52 @@ def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
             "status_detail": f"Synthesised {len(state.get('included_papers', []))} papers into narrative review",
         }
 
+    synth_cap = state.get("max_synthesis_papers", 20)
+    grade_results = state.get("grade_results", {})
+    contradictions = state.get("contradictions", [])
+    rob_table = state.get("rob_table", [])
+
+    def _pico_bits(e: Dict) -> str:
+        """Render whichever PICO fields are present for one evidence row, skipping blanks/n-a."""
+        parts = []
+        for label, key in (("Pop", "population"), ("Interv", "intervention"),
+                           ("Comp", "comparator"), ("Out", "outcome")):
+            val = (e.get(key) or "").strip()
+            if val and val.lower() not in ("n/a", "na", "none", "unknown"):
+                parts.append(f"{label}: {val}")
+        return " — ".join(parts)
+
     evidence_text = "\n".join(
         f"[{e['citation_key']}] {e['title']} ({e.get('year','n.d.')}) — {e.get('study_design','')} — "
-        f"Quality: {e.get('quality','')} — Finding: {e.get('key_finding','')}"
-        for e in evidence_table[:15]
+        f"N={e.get('sample_size','?')} — Quality: {e.get('quality','')}"
+        + (f" — {_pico_bits(e)}" if _pico_bits(e) else "")
+        + f" — Finding: {e.get('key_finding','')}"
+        for e in evidence_table[:synth_cap]
     )
+
+    # ── Certainty & contradiction context (from quality_assessment_node) ───────
+    # Feed the GRADE certainty rating, risk-of-bias distribution, and any detected
+    # contradictions into the synthesis prompt so the narrative reflects them
+    # explicitly rather than the LLM guessing at evidence strength from findings alone.
+    certainty_block = ""
+    if grade_results:
+        certainty_block += (
+            f"\nGRADE certainty of evidence: {grade_results.get('overall_grade','n/a')}. "
+            f"{grade_results.get('certainty_statement','')}"
+        )
+    if rob_table:
+        rob_dist: Dict[str, int] = {}
+        for r in rob_table:
+            ov = r.get("overall", "Unknown")
+            rob_dist[ov] = rob_dist.get(ov, 0) + 1
+        rob_summary = ", ".join(f"{n} {lvl}" for lvl, n in rob_dist.items())
+        certainty_block += f"\nRisk-of-bias distribution across papers: {rob_summary}."
+    if contradictions:
+        contra_lines = "\n".join(
+            f"- {c.get('claim','')} (consensus {c.get('consensus_score','?')}/100): {c.get('explanation','')}"
+            for c in contradictions[:5]
+        )
+        certainty_block += f"\nDetected conflicting findings:\n{contra_lines}"
 
     # ── Call 1: narrative synthesis as plain text (avoids JSON-in-JSON issues) ──
     # Small LLMs consistently fail when asked to embed 600-word essays inside JSON.
@@ -479,10 +594,10 @@ Write a comprehensive narrative synthesis of the findings across the included pa
 Be thorough and detailed — cover all major themes, convergences, contradictions, and evidence quality.
 Do not truncate your response; write until the synthesis is complete.
 - Use inline citations like [citation_key] after each claim.
-- Discuss convergence and contradictions in the evidence.
-- Comment on strength and quality of evidence.
+- Discuss convergence and contradictions in the evidence; name the specific conflicting findings listed below.
+- Reflect the GRADE certainty rating and risk-of-bias when commenting on the strength of evidence.
 - Write in formal academic prose. No bullet points, no headings.""",
-        f"EVIDENCE SUMMARY:\n{evidence_text}",
+        f"EVIDENCE SUMMARY:\n{evidence_text}\n\nQUALITY & CERTAINTY CONTEXT:{certainty_block or ' (not assessed)'}",
     )
 
     # ── Call 2: structured fields as compact JSON ──────────────────────────────
@@ -515,7 +630,7 @@ Do not truncate your response; write until the synthesis is complete.
     }
 
 
-# ── Node 6: Evaluation ─────────────────────────────────────────────────────────
+# ── Node 7: Evaluation ─────────────────────────────────────────────────────────
 
 def sr_eval_node(state: SystematicReviewState) -> Dict[str, Any]:
     """
@@ -532,7 +647,7 @@ def sr_eval_node(state: SystematicReviewState) -> Dict[str, Any]:
     raising, since evaluation is advisory and must never block pipeline
     completion.
     """
-    logger.info("[SR Node 6] Evaluation")
+    logger.info("[SR Node 7] Evaluation")
     llm = _llm(state, temperature=0.1, num_predict=512)
 
     synthesis = state.get("narrative_synthesis", "")

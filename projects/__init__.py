@@ -15,4 +15,5 @@ separately resolves the id to a `projects.mode{1,2}_*` module via its own
 PROJECT_REGISTRY = {
     "mode1": {"name": "Systematic Literature Review"},
     "mode2": {"name": "Research Notebook"},
+    "mode3": {"name": "AI Research Assistant"},
 }

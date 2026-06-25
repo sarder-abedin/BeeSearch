@@ -1,9 +1,10 @@
 """
 app.py — BeeSearch Streamlit entry point
 ─────────────────────────────────────────────
-Two modes:
+Three modes:
   Mode 1 — PRISMA Systematic Literature Review
   Mode 2 — Research Notebook (NotebookLM-style grounded Q&A)
+  Mode 3 — AI Research Assistant (free-form, literature-grounded Q&A)
 
 Run:  streamlit run app.py
 
@@ -71,6 +72,7 @@ apply_theme()
 _PROJECT_MODULES = {
     "mode1": "projects.mode1_systematic_review",
     "mode2": "projects.mode2_notebook",
+    "mode3": "projects.mode3_research_assistant",
 }
 
 

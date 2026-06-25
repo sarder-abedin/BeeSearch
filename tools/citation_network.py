@@ -175,6 +175,9 @@ def build_citation_network(
             "quality": paper.get("quality", "Medium"),
             "journal": paper.get("journal", ""),
             "s2_id": None,
+            # Abstract kept on node_meta so classify_citation_stances() has text to
+            # reason over; not used for rendering (the tooltip uses title/journal).
+            "abstract": paper.get("abstract", "") or "",
         }
         node_meta[ck] = meta
         G.add_node(ck, **meta)
@@ -246,8 +249,148 @@ def find_gap_candidates(
     return results
 
 
+# ── Smart Citations: stance classification (Supporting / Contrasting / Mentioning) ──
+
+# scite.ai-style citation classification. Each directed citation edge (A cites B)
+# is labelled with how A engages with B, inferred from the two papers' abstracts.
+_STANCE_VALUES = ("Supporting", "Contrasting", "Mentioning")
+_STANCE_EDGE_COLORS = {
+    "Supporting": "#10B981",   # green — A's findings agree with / build on B
+    "Contrasting": "#EF4444",  # red   — A disputes / contradicts B
+    "Mentioning": "#888888",   # gray  — neutral reference, no clear stance (default)
+}
+
+
+def _stance_llm(model_name: str, num_ctx: int):
+    """Build a deterministic (temperature 0) ChatOllama client for citation-stance classification.
+
+    Imported lazily so importing this module (e.g. for network_stats in tests)
+    doesn't require langchain_ollama. Temperature is pinned to 0.0 because this
+    is a grading-style judgement, not generation — the same choice the
+    self-reflective RAG grader makes.
+    """
+    import httpx
+    from langchain_ollama import ChatOllama
+    return ChatOllama(
+        model=model_name or cfg.ollama_model,
+        base_url=cfg.ollama_base_url,
+        temperature=0.0,
+        num_predict=128,
+        num_ctx=num_ctx or cfg.num_ctx,
+        sync_client_kwargs={"timeout": httpx.Timeout(120.0)},
+    )
+
+
+def _parse_stance(raw: str) -> Dict[str, str]:
+    """Parse an LLM stance reply into ``{"stance", "confidence"}``.
+
+    Tolerant of the small models' habits: finds the first of
+    Supporting/Contrasting/Mentioning anywhere in the text (case-insensitive)
+    and an optional high/medium/low confidence word. Defaults to
+    ``Mentioning`` / ``low`` when nothing recognisable is present — the neutral,
+    safe assumption, so a parse failure never invents a Supporting/Contrasting
+    claim that isn't there.
+    """
+    text = (raw or "").lower()
+    stance = "Mentioning"
+    for s in _STANCE_VALUES:
+        if s.lower() in text:
+            stance = s
+            break
+    confidence = "low"
+    for c in ("high", "medium", "low"):
+        if c in text:
+            confidence = c
+            break
+    return {"stance": stance, "confidence": confidence}
+
+
+def classify_single_citation(citing_meta: Dict, cited_meta: Dict, llm) -> Dict[str, str]:
+    """Classify how the citing paper engages with the cited paper, from their abstracts.
+
+    Returns ``{"stance", "confidence"}``. Any LLM/parse error degrades to the
+    neutral ``Mentioning`` / ``low`` default rather than raising.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+    citing_txt = f"{citing_meta.get('title','')}\n{(citing_meta.get('abstract','') or '')[:700]}"
+    cited_txt = f"{cited_meta.get('title','')}\n{(cited_meta.get('abstract','') or '')[:700]}"
+    system = (
+        "You classify a citation: how does the CITING paper engage with the CITED paper?\n"
+        "Answer with exactly one label and a confidence:\n"
+        "- Supporting: the citing paper's results agree with, confirm, or build on the cited paper.\n"
+        "- Contrasting: the citing paper disputes, contradicts, or reports findings against the cited paper.\n"
+        "- Mentioning: a neutral reference (background, methods, definitions) with no clear agreement or disagreement.\n"
+        "Reply in the form: <Supporting|Contrasting|Mentioning> (confidence: high|medium|low)."
+    )
+    human = f"CITING PAPER:\n{citing_txt}\n\nCITED PAPER:\n{cited_txt}"
+    try:
+        raw = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content
+        return _parse_stance(raw)
+    except Exception as e:
+        logger.debug("citation stance classification failed: %s", e)
+        return {"stance": "Mentioning", "confidence": "low"}
+
+
+def classify_citation_stances(
+    G: object,
+    node_meta: Dict[str, Dict],
+    model_name: str,
+    num_ctx: int,
+    max_edges: int = 40,
+) -> Dict[str, int]:
+    """Annotate each citation edge of *G* with a ``stance`` and ``confidence`` in place.
+
+    For every directed edge A→B (up to ``max_edges`` to bound LLM calls), classify
+    how A engages with B from the two papers' abstracts and store the result on the
+    edge (``G[a][b]["stance"]`` / ``["confidence"]``). Edges beyond the cap, or whose
+    endpoints lack abstracts, are left at the neutral ``Mentioning`` default so the
+    renderer can colour them consistently.
+
+    Returns a summary count, e.g. ``{"Supporting": 3, "Contrasting": 1,
+    "Mentioning": 6, "classified": 4}`` (``classified`` = edges actually sent to the
+    LLM). Never raises — a per-edge failure degrades that edge to ``Mentioning``.
+    """
+    counts = {"Supporting": 0, "Contrasting": 0, "Mentioning": 0, "classified": 0}
+    edges = list(G.edges())
+    if not edges:
+        return counts
+
+    llm = _stance_llm(model_name, num_ctx)
+    for i, (a, b) in enumerate(edges):
+        if i >= max_edges:
+            # Over the cap — leave as neutral so the graph stays internally consistent.
+            G[a][b].setdefault("stance", "Mentioning")
+            G[a][b].setdefault("confidence", "low")
+            counts["Mentioning"] += 1
+            continue
+        meta_a = node_meta.get(a, {})
+        meta_b = node_meta.get(b, {})
+        if not (meta_a.get("abstract") or meta_b.get("abstract")):
+            G[a][b]["stance"] = "Mentioning"
+            G[a][b]["confidence"] = "low"
+            counts["Mentioning"] += 1
+            continue
+        verdict = classify_single_citation(meta_a, meta_b, llm)
+        G[a][b]["stance"] = verdict["stance"]
+        G[a][b]["confidence"] = verdict["confidence"]
+        counts[verdict["stance"]] = counts.get(verdict["stance"], 0) + 1
+        counts["classified"] += 1
+
+    logger.info(
+        "Citation stances: %d supporting, %d contrasting, %d mentioning (%d classified)",
+        counts["Supporting"], counts["Contrasting"], counts["Mentioning"], counts["classified"],
+    )
+    return counts
+
+
 def network_to_pyvis_html(G: object, node_meta: Dict[str, Dict]) -> str:
-    """Convert networkx DiGraph to interactive Pyvis HTML string."""
+    """Convert networkx DiGraph to interactive Pyvis HTML string.
+
+    If edges carry a ``stance`` attribute (set by ``classify_citation_stances``),
+    they are coloured by it — green Supporting, red Contrasting, gray Mentioning —
+    and the stance/confidence is shown in the edge tooltip. Edges with no stance
+    fall back to neutral gray, so an un-classified network renders exactly as before.
+    """
     try:
         from pyvis.network import Network
     except ImportError:
@@ -264,8 +407,11 @@ def network_to_pyvis_html(G: object, node_meta: Dict[str, Dict]) -> str:
         title_text = f"{data.get('title', '')}\n{data.get('journal', '')}"
         net.add_node(node_id, label=label, title=title_text, color=color, size=15)
 
-    for src, dst in G.edges():
-        net.add_edge(src, dst, arrows="to", color="#888888")
+    for src, dst, data in G.edges(data=True):
+        stance = data.get("stance")
+        color = _STANCE_EDGE_COLORS.get(stance, "#888888")
+        edge_title = f"{stance} (confidence: {data.get('confidence', '?')})" if stance else "cites"
+        net.add_edge(src, dst, arrows="to", color=color, title=edge_title)
 
     return net.generate_html()
 

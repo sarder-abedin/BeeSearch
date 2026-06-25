@@ -48,6 +48,22 @@ _PROJECTS = [
             "Study Guide", "Hybrid RAG", "Source Citations",
         ],
     },
+    {
+        "id": "mode3",
+        "label": "03",
+        "name": "AI Research Assistant",
+        "description": (
+            "Ask a free-form research question and get an answer grounded in published "
+            "literature with inline citations — Elicit / Perplexity / Consensus style. No "
+            "documents to upload and no PRISMA workflow: BeeSearch searches Google Scholar, "
+            "arXiv, Semantic Scholar and the web, reads what it finds, and rebuilds an accurate "
+            "citation list from the sources it actually used."
+        ),
+        "tags": [
+            "Free-form Q&A", "Literature-grounded", "Inline Citations",
+            "Google Scholar", "arXiv", "Web Search",
+        ],
+    },
 ]
 
 _CARD_CSS = """
@@ -153,7 +169,7 @@ def render_landing() -> None:
     st.markdown("##### Select a mode to get started")
     st.divider()
 
-    cols = st.columns(2, gap="large")
+    cols = st.columns(len(_PROJECTS), gap="large")
     for col, project in zip(cols, _PROJECTS):
         with col:
             st.markdown(_card_html(project), unsafe_allow_html=True)

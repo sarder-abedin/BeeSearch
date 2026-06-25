@@ -106,6 +106,20 @@ def _tab_synthesis(final_state: dict, settings: dict) -> None:
             st.markdown(f"- {t}")
         st.divider()
 
+    grade_results = final_state.get("grade_results", {})
+    if grade_results and grade_results.get("overall_grade"):
+        grade = grade_results["overall_grade"]
+        grade_color = {"High": "🟢", "Moderate": "🟡", "Low": "🟠", "Very low": "🔴"}.get(grade, "⚪")
+        st.markdown(
+            f"**Certainty of evidence (GRADE):** {grade_color} {grade} — "
+            f"{grade_results.get('certainty_statement', '')}",
+            help="Overall GRADE rating across all included studies. See the Explore → Risk & Certainty tab for per-domain detail.",
+        )
+        contradictions = final_state.get("contradictions", [])
+        if contradictions:
+            st.caption(f"⚠️ {len(contradictions)} conflicting finding(s) detected — see Explore → Risk & Certainty.")
+        st.divider()
+
     st.subheader("Narrative Synthesis")
     st.markdown(final_state.get("narrative_synthesis", "*No synthesis generated.*"))
     st.divider()
@@ -222,7 +236,7 @@ def _render_citation_network_section(final_state: dict, settings: dict) -> None:
     st.subheader("Citation Network", help=term_help("Citation network"))
     st.markdown(
         "Ego network showing citation links **between** the included papers. "
-        "Green = High quality, Amber = Medium, Red = Low. "
+        "Node colour = quality (Green High · Amber Medium · Red Low). "
         "Requires Semantic Scholar API calls — click below to fetch them (~30s for 20 papers)."
     )
     included = final_state.get("included_papers", [])
@@ -235,31 +249,59 @@ def _render_citation_network_section(final_state: dict, settings: dict) -> None:
         st.components.v1.html(existing_html, height=520, scrolling=False)
         return
 
+    classify = st.checkbox(
+        "Classify citation stances (Smart Citations — LLM)",
+        key="cn_classify_stances",
+        help="Label each citation edge Supporting (green), Contrasting (red), or Mentioning (gray) "
+             "by comparing the two papers' abstracts. Adds one LLM call per edge.",
+    )
     if st.button("Build Citation Network", key="build_network"):
+        model = settings.get("model", "llama3.1:8b")
+        num_ctx = settings.get("num_ctx", 32768)
         with st.spinner("Querying Semantic Scholar for citation links…"):
             try:
                 from tools.citation_network import (
                     build_citation_network,
+                    classify_citation_stances,
                     network_to_pyvis_html,
                     network_stats,
                     find_gap_candidates,
                 )
                 G, meta, external_counts = build_citation_network(included, max_papers=25)
+                stance_counts = {}
+                if classify and G.number_of_edges():
+                    with st.spinner("Classifying citation stances (Supporting / Contrasting / Mentioning)…"):
+                        stance_counts = classify_citation_stances(G, meta, model, num_ctx)
                 html = network_to_pyvis_html(G, meta)
                 stats = network_stats(G)
                 st.session_state["_cn_html"] = html
                 st.session_state["_cn_stats"] = stats
+                st.session_state["_cn_stances"] = stance_counts
                 st.session_state["_cn_gaps"] = find_gap_candidates(external_counts)
-                st.success(
+                msg = (
                     f"Network built: {stats['nodes']} nodes, "
                     f"{stats['edges']} citation edges, "
                     f"{stats['isolated']} isolated papers."
                 )
+                if stance_counts.get("classified"):
+                    msg += (
+                        f" Stances — {stance_counts.get('Supporting', 0)} supporting, "
+                        f"{stance_counts.get('Contrasting', 0)} contrasting, "
+                        f"{stance_counts.get('Mentioning', 0)} mentioning."
+                    )
+                st.success(msg)
             except Exception as e:
                 st.error(f"Citation network failed: {e}")
 
     if st.session_state.get("_cn_html"):
         st.components.v1.html(st.session_state["_cn_html"], height=520, scrolling=False)
+        stance_counts = st.session_state.get("_cn_stances") or {}
+        if stance_counts.get("classified"):
+            st.caption(
+                "Edge colours — 🟢 Supporting · 🔴 Contrasting · ⚪ Mentioning. "
+                f"({stance_counts.get('Supporting', 0)} / {stance_counts.get('Contrasting', 0)} / "
+                f"{stance_counts.get('Mentioning', 0)})"
+            )
         stats = st.session_state.get("_cn_stats", {})
         if stats.get("most_cited"):
             st.markdown("**Most cited within corpus:**")
@@ -708,8 +750,172 @@ def _render_concept_drift_section(final_state: dict, settings: dict) -> None:
             st.markdown(drift["llm_analysis"])
 
 
+def _render_reference_checking_section(final_state: dict, settings: dict) -> None:
+    """Render the Risk & Certainty deep-dive tool: per-paper risk of bias
+    (RoB 2 / ROBINS-I), an overall GRADE certainty-of-evidence rating, and
+    cross-paper contradiction detection.
+
+    The SR pipeline's `quality_assessment_node` populates `rob_table`,
+    `grade_results`, and `contradictions` on every run, so this section renders
+    them directly from `final_state` when present. For older cached results that
+    predate the pipeline node (no data in state), a button recomputes them
+    on demand via the same `agents.risk_of_bias` / `agents.grade_assessment` /
+    `agents.contradiction_detector` helpers, caching into
+    `session_state["_rc_rob"]` / `"_rc_grade"` / `"_rc_contra"` (cleared on a new SR run)."""
+    model = settings.get("model", "llama3.1:8b")
+    num_ctx = settings.get("num_ctx", 32768)
+
+    st.subheader("Risk of Bias · GRADE · Contradictions", help=term_help("Quality score"))
+    st.markdown(
+        "Per-paper **risk of bias** (RoB 2 for trials, ROBINS-I for observational studies), an "
+        "overall **GRADE** certainty-of-evidence rating, and detected **contradictions** across "
+        "the included papers. Computed automatically during the review — recompute below if needed."
+    )
+
+    evidence_table = final_state.get("evidence_table", [])
+    if not evidence_table:
+        st.info("No extracted evidence to assess.")
+        return
+
+    rob_table = final_state.get("rob_table") or st.session_state.get("_rc_rob") or []
+    grade_results = final_state.get("grade_results") or st.session_state.get("_rc_grade") or {}
+    contradictions = final_state.get("contradictions")
+    if contradictions is None:
+        contradictions = st.session_state.get("_rc_contra") or []
+
+    if not (rob_table or grade_results or contradictions):
+        if st.button("Assess Risk of Bias, GRADE & Contradictions", key="run_reference_checking"):
+            rq = final_state.get("research_question", "")
+            with st.spinner("Assessing risk of bias, GRADE certainty, and contradictions…"):
+                try:
+                    from agents.risk_of_bias import assess_rob_batch
+                    from agents.grade_assessment import grade_evidence_body
+                    from agents.contradiction_detector import detect_contradictions
+                    rob_table = assess_rob_batch(evidence_table[:15], model, num_ctx)
+                    grade_results = grade_evidence_body(evidence_table, rq, rob_table, model, num_ctx)
+                    contradictions = detect_contradictions(evidence_table, rq, model, num_ctx)
+                    st.session_state["_rc_rob"] = rob_table
+                    st.session_state["_rc_grade"] = grade_results
+                    st.session_state["_rc_contra"] = contradictions
+                except Exception as e:
+                    st.error(f"Reference checking failed: {e}")
+        else:
+            return
+
+    _render_reference_checking_results(rob_table, grade_results, contradictions)
+
+
+def _render_reference_checking_results(rob_table: list, grade_results: dict, contradictions: list) -> None:
+    """Render the GRADE rating, per-paper risk-of-bias table, and contradiction
+    cards. Pure display, no session_state — shared by the fresh-pipeline and
+    recomputed code paths of `_render_reference_checking_section`."""
+    if grade_results:
+        grade = grade_results.get("overall_grade", "n/a")
+        grade_color = {"High": "🟢", "Moderate": "🟡", "Low": "🟠", "Very low": "🔴"}.get(grade, "⚪")
+        st.markdown(f"### Certainty of Evidence (GRADE): {grade_color} **{grade}**")
+        if grade_results.get("certainty_statement"):
+            st.info(grade_results["certainty_statement"])
+        if grade_results.get("summary"):
+            st.markdown(grade_results["summary"])
+        domains = grade_results.get("domains", {})
+        if domains:
+            cols = st.columns(len(domains))
+            for col, (dom, rating) in zip(cols, domains.items()):
+                col.metric(dom.replace("_", " ").title(), rating)
+        st.divider()
+
+    if rob_table:
+        st.markdown("**Risk of Bias (per paper):**")
+        rob_icon = {"Low": "🟢", "Some concerns": "🟡", "High": "🔴"}
+        for r in rob_table:
+            overall = r.get("overall", "Some concerns")
+            icon = rob_icon.get(overall, "⚪")
+            with st.expander(f"{icon} {r.get('citation_key','')} — {r.get('title','')[:60]} ({r.get('tool','')}: {overall})"):
+                for key, val in r.items():
+                    if key in ("citation_key", "title", "tool", "overall", "justification"):
+                        continue
+                    st.markdown(f"- **{key.replace('_', ' ').title()}:** {val}")
+                if r.get("justification"):
+                    st.caption(r["justification"])
+        st.divider()
+
+    if contradictions:
+        st.markdown(f"**Conflicting Findings ({len(contradictions)}):**")
+        for c in contradictions:
+            score = c.get("consensus_score", "?")
+            with st.expander(f"⚠️ {c.get('claim','')[:80]} — consensus {score}/100"):
+                pa = c.get("position_a", {})
+                pb = c.get("position_b", {})
+                st.markdown(f"- **Position A:** {pa.get('description','')} _(papers: {', '.join(pa.get('papers', []) or [])})_")
+                st.markdown(f"- **Position B:** {pb.get('description','')} _(papers: {', '.join(pb.get('papers', []) or [])})_")
+                if c.get("explanation"):
+                    st.markdown(c["explanation"])
+    elif rob_table or grade_results:
+        st.success("No material contradictions detected across the included papers.")
+
+
+def _render_citation_context_section(final_state: dict, settings: dict) -> None:
+    """Render the Citation Context tool: pick a citing paper and a cited paper from
+    the included set and surface the sentence(s) in the citing paper's open-access
+    full text that reference the cited work (scite.ai-style snippets).
+
+    Best-effort and open-access only — delegates to
+    `tools.citation_context.extract_citation_context`, which fails safe to an
+    "unavailable"/"not found" status when no open-access full text exists. Caches
+    the last lookup in `session_state["_cc_result"]`."""
+    st.subheader("Citation Context", help=term_help("Citation network"))
+    st.markdown(
+        "Find the exact sentence(s) where one included paper cites another, pulled from the "
+        "**citing paper's open-access full text**. Best-effort: only works when an open-access "
+        "PDF/HTML is available for the citing paper."
+    )
+    included = final_state.get("included_papers", [])
+    if len(included) < 2:
+        st.info("Need at least two included papers to look up a citation context.")
+        return
+
+    labels = [f"{p.get('citation_key') or p.get('title','')[:40]} ({p.get('year','n.d.')})" for p in included]
+    col_a, col_b = st.columns(2)
+    with col_a:
+        citing_idx = st.selectbox("Citing paper (A)", range(len(included)),
+                                  format_func=lambda i: labels[i], key="cc_citing")
+    with col_b:
+        cited_idx = st.selectbox("Cited paper (B)", range(len(included)),
+                                 format_func=lambda i: labels[i], key="cc_cited")
+
+    if citing_idx == cited_idx:
+        st.caption("Pick two different papers.")
+        return
+
+    if st.button("Find Citation Context", key="run_citation_context"):
+        with st.spinner("Fetching the citing paper's full text and searching for the citation…"):
+            try:
+                from tools.citation_context import extract_citation_context
+                st.session_state["_cc_result"] = extract_citation_context(
+                    included[citing_idx], included[cited_idx]
+                )
+            except Exception as e:
+                st.error(f"Citation context lookup failed: {e}")
+
+    result = st.session_state.get("_cc_result")
+    if not result:
+        return
+    status = result.get("status")
+    if status == "ok":
+        st.success(f"Found {len(result['contexts'])} citing sentence(s).")
+        for ctx in result["contexts"]:
+            st.markdown(f"> {ctx['sentence']}")
+            st.caption(f"matched on {ctx.get('matched_on','')}")
+        if result.get("source_url"):
+            st.caption(f"Source: [{result['source_url']}]({result['source_url']})")
+    else:
+        st.info(result.get("reason", "No citation context available."))
+
+
 _EXPLORE_TOOLS = [
     ("citation_network", "Citation Network", _render_citation_network_section),
+    ("citation_context", "Citation Context", _render_citation_context_section),
+    ("reference_checking", "Risk & Certainty", _render_reference_checking_section),
     ("preprint_status", "Preprint Status", _render_preprint_status_section),
     ("research_trends", "Research Trends", _render_research_trends_section),
     ("evidence_map", "Evidence Map", _render_evidence_map_section),
@@ -1151,8 +1357,9 @@ def tab_systematic_review(settings: dict) -> None:
 
         # New corpus incoming — drop any cached deep-dive results from a
         # previous run so stale citation/trend/drift artefacts don't bleed through.
-        for k in ("_cn_html", "_cn_stats", "_pt_tracking", "_pt_summary",
-                  "_trend_data", "_trend_json", "_drift_data"):
+        for k in ("_cn_html", "_cn_stats", "_cn_gaps", "_cn_stances", "_cc_result",
+                  "_pt_tracking", "_pt_summary", "_trend_data", "_trend_json", "_drift_data",
+                  "_rc_rob", "_rc_grade", "_rc_contra"):
             st.session_state.pop(k, None)
 
         st.divider()
@@ -1288,6 +1495,33 @@ def _build_sr_markdown(research_question: str, state: dict) -> str:
         lines += ["## Research Gaps", ""]
         for g in gaps:
             lines.append(f"- {g}")
+        lines.append("")
+
+    grade = state.get("grade_results", {})
+    if grade and grade.get("overall_grade"):
+        lines += [
+            "## Certainty of Evidence (GRADE)", "",
+            f"**Overall certainty:** {grade.get('overall_grade', 'n/a')}", "",
+            grade.get("certainty_statement", ""), "",
+            grade.get("summary", ""), "",
+        ]
+
+    contradictions = state.get("contradictions", [])
+    if contradictions:
+        lines += ["## Conflicting Findings", ""]
+        for c in contradictions:
+            lines.append(
+                f"- **{c.get('claim', '')}** (consensus {c.get('consensus_score', '?')}/100): "
+                f"{c.get('explanation', '')}"
+            )
+        lines.append("")
+
+    rob_table = state.get("rob_table", [])
+    if rob_table:
+        lines += ["## Risk of Bias", "",
+                  "| Citation | Tool | Overall |", "| --- | --- | --- |"]
+        for r in rob_table:
+            lines.append(f"| {r.get('citation_key', '')} | {r.get('tool', '')} | {r.get('overall', '')} |")
         lines.append("")
 
     if state.get("conclusion"):

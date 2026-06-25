@@ -4,17 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-BeeSearch (repo: ResearchBuddy / BeeSearch) is a local-first AI research app with two
+BeeSearch (repo: ResearchBuddy / BeeSearch) is a local-first AI research app with three
 user-facing modes, built on LangGraph + Ollama (no cloud LLM, no API keys required):
 
 - **Mode 1 — Systematic Literature Review**: PRISMA pipeline (Google Scholar, arXiv,
-  Semantic Scholar, CrossRef → screening → evidence extraction → synthesis → PRISMA
-  DOCX/PDF + plain-language summaries, trends, citation network, concept drift).
+  Semantic Scholar, CrossRef → screening → PICO evidence extraction → quality assessment
+  (risk of bias RoB 2/ROBINS-I, GRADE certainty, contradiction detection) → synthesis →
+  PRISMA DOCX/PDF + plain-language summaries, trends, citation network with Smart Citation
+  stance classification + citation-context snippets, concept drift).
 - **Mode 2 — Research Notebook**: NotebookLM-style grounded chat over uploaded
   documents, plus an "Explain" storyteller tab, a Research Report tab, and a
   7-agent analysis pipeline (study guide, podcast, knowledge graph, etc.).
+- **Mode 3 — AI Research Assistant**: stateless free-form question answering grounded in
+  published literature with code-rebuilt inline citations (`agents/research_assistant.py`,
+  `ui/tabs/research_assistant.py`, `main.py --ask`) — no upload, no PRISMA workflow.
 
-Both modes are reachable from the Streamlit UI (`app.py`) and the CLI (`main.py`,
+All modes are reachable from the Streamlit UI (`app.py`) and the CLI (`main.py`,
 plus `cli.py` for the section-by-section breakdown tool).
 
 For deep dives beyond this file: `docs/architecture.md` (full pipeline diagrams,
@@ -65,13 +70,16 @@ python -m py_compile path/to/file.py                            # syntax check, 
 
 ### Entry points and dispatch
 
-- `app.py` → `ui/landing.py` → `projects/{mode1_systematic_review,mode2_notebook}.py::run(settings)`,
-  registered in `projects/__init__.py::PROJECT_REGISTRY`. `ui/tabs/notebook.py` is the
-  large tab container for all of Mode 2 (Chat, Sources, Summary, FAQ, Literature Review,
-  Mind Map, Knowledge Graph, Citation Timeline, Study Comparison, Pipeline, Research
-  Report, Explain).
-- `main.py` → `--systematic-review` / `--notebook` (+ one-shot `--notebook-*` flags)
-  drive the same LangGraph graphs as the UI.
+- `app.py` → `ui/landing.py` → `projects/{mode1_systematic_review,mode2_notebook,mode3_research_assistant}.py::run(settings)`,
+  registered in `projects/__init__.py::PROJECT_REGISTRY` (keys `mode1`/`mode2`/`mode3` must
+  stay in sync across `PROJECT_REGISTRY`, `app.py::_PROJECT_MODULES`, and `ui/landing.py::_PROJECTS`).
+  `ui/tabs/notebook.py` is the large tab container for all of Mode 2 (Chat, Sources, Summary,
+  FAQ, Literature Review, Mind Map, Knowledge Graph, Citation Timeline, Study Comparison,
+  Pipeline, Research Report, Explain). `ui/tabs/research_assistant.py` is the single-screen
+  Mode 3 tab.
+- `main.py` → `--systematic-review` / `--notebook` (+ one-shot `--notebook-*` flags) /
+  `--ask` (Mode 3) drive the same logic as the UI. SR adds `--sr-quality` to print the
+  risk-of-bias / GRADE / contradiction results.
 
 ### Internal "Mode N" numbering vs. user-facing modes
 
@@ -124,6 +132,30 @@ context string handed to the LLM, then after generation regex-rebuild the Refere
 list in code from whichever numbers the LLM actually cited — never trust the LLM's
 own self-written references. When adding citations to a new pipeline, follow this
 pattern rather than letting the LLM free-write its own References section.
+
+### SR reference checking, Smart Citations, and Mode 3
+
+- **SR `quality_assessment_node`** (`agents/systematic_review_nodes.py`, wired between
+  `evidence_extraction` and `synthesis` in `systematic_review_graph.py`) runs three formerly
+  dead-code modules and writes `rob_table` / `grade_results` / `contradictions` to state:
+  `agents/risk_of_bias.py` (RoB 2 / ROBINS-I per paper), `agents/grade_assessment.py` (GRADE
+  certainty of the whole body), `agents/contradiction_detector.py` (cross-paper conflicts +
+  0–100 consensus). Each is independently try/except-wrapped — any failure degrades to an
+  empty result, never blocks the pipeline (same "safe no-op" philosophy as self-reflective
+  RAG). `synthesis_node` feeds these plus PICO fields into its narrative prompt. Surfaced in
+  the UI's Explore → *Risk & Certainty* tool and on the CLI via `--sr-quality`. Paper caps are
+  configurable via state (`max_evidence_papers`/`max_synthesis_papers`/`max_rob_papers`).
+- **Smart Citations** (`tools/citation_network.py::classify_citation_stances`) optionally
+  labels each citation-network edge Supporting/Contrasting/Mentioning from the two papers'
+  abstracts (`_parse_stance` defaults to neutral Mentioning on any parse failure);
+  `network_to_pyvis_html` colours edges by stance. `tools/citation_context.py` is best-effort,
+  open-access-only citing-sentence extraction (`find_citation_mentions` is the pure, tested
+  core; `_fetch_fulltext` is the only networked part). Both fail safe.
+- **Mode 3 — AI Research Assistant** (`agents/research_assistant.py`) is stateless like the SR
+  pipeline (no `*_memory.py`, no graph): `run_research_assistant()` does search → number
+  sources into one `[n]` namespace → ground LLM answer → rebuild citations in code from the
+  `[n]` actually cited. `build_numbered_sources`/`build_citations`/`_strip_llm_references_section`
+  are pure and unit-tested; the search backends and ChatOllama are the only external deps.
 
 ### Explain tab: repeated-clarification detection + concept visualization
 

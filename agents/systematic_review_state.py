@@ -25,6 +25,9 @@ class SystematicReviewState(TypedDict, total=False):
     session_id: str
     max_results: int                # Max papers per source per query
     include_crossref: bool          # Also search CrossRef for published articles
+    max_evidence_papers: int        # Cap on papers sent through evidence extraction
+    max_synthesis_papers: int       # Cap on papers summarised in the synthesis prompt
+    max_rob_papers: int             # Cap on papers sent through risk-of-bias assessment
 
     # ── Search results ─────────────────────────────────────────
     raw_papers: List[Dict]          # All papers from initial search
@@ -46,6 +49,11 @@ class SystematicReviewState(TypedDict, total=False):
     feedback_history: List[Dict[str, Any]]
     refinement_round: int
     rag_reflection_info: Dict[str, Any]  # self-reflective retrieval metadata
+
+    # ── Reference checking (Risk of Bias / GRADE / Contradictions) ──
+    rob_table: List[Dict]                # per-paper RoB 2 / ROBINS-I results
+    grade_results: Dict[str, Any]        # GRADE certainty-of-evidence rating
+    contradictions: List[Dict]           # conflicting findings across papers
 
     # ── Literature Discovery ───────────────────────────────────
     screener_scores: List[Dict]          # abstract screener results per paper
@@ -89,6 +97,9 @@ def create_systematic_review_state(
         num_ctx=num_ctx,
         max_results=max_results,
         include_crossref=include_crossref,
+        max_evidence_papers=25,
+        max_synthesis_papers=20,
+        max_rob_papers=15,
         session_id=str(uuid.uuid4())[:8],
         raw_papers=[],
         screened_papers=[],
@@ -105,6 +116,9 @@ def create_systematic_review_state(
         feedback_history=[],
         refinement_round=0,
         rag_reflection_info={},
+        rob_table=[],
+        grade_results={},
+        contradictions=[],
         screener_scores=[],
         preprint_tracking=[],
         citation_graph_html="",
