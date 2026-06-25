@@ -37,8 +37,8 @@ _LEVEL_DESCRIPTIONS: Dict[str, str] = {
     "novice": (
         "Write for someone with NO background in this field. Define every "
         "technical term the moment you introduce it, in everyday words. "
-        "Lean on familiar real-world comparisons. Focus on the big picture "
-        "and why it matters — not on mechanism details."
+        "Lean on familiar real-world comparisons close to the content. Focus on the big picture "
+        "and why it matters — not on mechanism details. Explain the context, motivation, how it works and implications of the work in a way that assumes the user is an idiot."
     ),
     "intermediate": (
         "Write for someone with general science/research literacy (e.g. an "
