@@ -33,7 +33,7 @@ async function parseErrorDetail(res: Response): Promise<string> {
   }
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function request(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -47,5 +47,22 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw new ApiError(res.status, detail);
   }
 
+  return res;
+}
+
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await request(path, init);
   return (await res.json()) as T;
+}
+
+/** For binary downloads (DOCX/PDF exports). */
+export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const res = await request(path, init);
+  return res.blob();
+}
+
+/** For plain-text endpoints (Markdown export). */
+export async function apiFetchText(path: string, init?: RequestInit): Promise<string> {
+  const res = await request(path, init);
+  return res.text();
 }

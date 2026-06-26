@@ -1,0 +1,11 @@
+.sr-export__summary {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  margin: 1rem 0;
+  background: var(--color-surface);
+}
+
+.sr-export__summary h4 {
+  margin-top: 0;
+}

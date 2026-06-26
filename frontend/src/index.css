@@ -12,6 +12,9 @@
   --color-error-bg: #fbeaea;
   --color-error-border: #e7b3b3;
   --color-error-text: #7a2424;
+  --color-info-bg: #e8f1fb;
+  --color-info-border: #b3d0ec;
+  --color-info-text: #1f4e79;
 }
 
 * {

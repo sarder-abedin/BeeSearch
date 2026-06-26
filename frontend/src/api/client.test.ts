@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch } from "./client";
+import { ApiError, apiFetch, apiFetchBlob, apiFetchText } from "./client";
 
 describe("apiFetch", () => {
   afterEach(() => {
@@ -74,6 +74,77 @@ describe("apiFetch", () => {
     await expect(apiFetch("/api/health")).rejects.toMatchObject({
       status: 500,
       detail: "Internal Server Error",
+    });
+  });
+});
+
+describe("apiFetchBlob", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves with a Blob on a 200", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("binary content", { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await apiFetchBlob("/api/systematic-review/jobs/x/export/docx");
+
+    expect(typeof result.text).toBe("function");
+    expect(await result.text()).toBe("binary content");
+  });
+
+  it("throws ApiError with the parsed detail on a non-2xx response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Review job failed: boom" }), {
+          status: 409,
+          statusText: "Conflict",
+        }),
+      ),
+    );
+
+    await expect(apiFetchBlob("/api/systematic-review/jobs/x/export/docx")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 409,
+      detail: "Review job failed: boom",
+    });
+  });
+});
+
+describe("apiFetchText", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves with the raw text body on a 200", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("# Systematic Review Report", { status: 200 })),
+    );
+
+    const result = await apiFetchText("/api/systematic-review/jobs/x/export/markdown");
+
+    expect(result).toBe("# Systematic Review Report");
+  });
+
+  it("throws ApiError on a non-2xx response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Job not found." }), {
+          status: 404,
+          statusText: "Not Found",
+        }),
+      ),
+    );
+
+    await expect(apiFetchText("/api/systematic-review/jobs/x/export/markdown")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 404,
+      detail: "Job not found.",
     });
   });
 });

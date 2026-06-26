@@ -10,7 +10,7 @@ import { expect, test } from "@playwright/test";
  */
 
 test("renders the initial controls", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?mode=mode3");
 
   await expect(page.getByRole("heading", { name: "Mode 3 — AI Research Assistant" })).toBeVisible();
   await expect(page.getByLabel("Research question")).toHaveValue("");
@@ -19,7 +19,7 @@ test("renders the initial controls", async ({ page }) => {
 });
 
 test("shows a validation warning for a blank question without contacting the backend", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?mode=mode3");
 
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page.getByText("Please enter a research question.")).toBeVisible();
@@ -31,7 +31,7 @@ test("shows a validation warning for a blank question without contacting the bac
 });
 
 test("asks a question end-to-end and renders a grounded answer with citations", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?mode=mode3");
 
   await page.getByLabel("Research question").fill("Does sleep help memory?");
   await page.getByRole("button", { name: "Ask" }).click();
@@ -68,7 +68,7 @@ test("asks a question end-to-end and renders a grounded answer with citations", 
 });
 
 test("forwards include_web=false and never shows a Failed status", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?mode=mode3");
 
   await page.getByRole("checkbox", { name: "Also search the web (DuckDuckGo)" }).uncheck();
   await page.getByLabel("Research question").fill("How does caffeine affect sleep?");
@@ -83,7 +83,7 @@ test("forwards include_web=false and never shows a Failed status", async ({ page
 });
 
 test("clicking a follow-up question re-asks immediately with the new question", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?mode=mode3");
 
   await page.getByLabel("Research question").fill("Does sleep help memory?");
   await page.getByRole("button", { name: "Ask" }).click();
