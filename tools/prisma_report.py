@@ -549,3 +549,100 @@ def generate_prisma_pdf(
 
     doc.build(story)
     return buf.getvalue()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Markdown (lightweight text export — no docx/reportlab dependency)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_sr_markdown(research_question: str, state: Dict[str, Any]) -> str:
+    """Build the full SR results (PRISMA flow table, key themes, narrative synthesis,
+    research gaps, conclusion, limitations, evidence table) as a single Markdown
+    string.
+
+    Pure data → string transform — no Streamlit calls, no session_state. Shared
+    by the Streamlit "Download as Markdown" button (`ui.tabs.systematic_review.
+    _build_sr_markdown`, kept as a thin alias for backward compatibility), the
+    CLI (`main.py`, `cli.py`), and the FastAPI backend's markdown export endpoint.
+    """
+    lines = [
+        "# Systematic Review Report",
+        f"**Research Question:** {research_question}",
+        f"*Generated: {datetime.today().strftime('%B %d, %Y')}*",
+        "",
+        "## PRISMA Flow",
+        "",
+    ]
+    flow = state.get("prisma_flow", {})
+    lines += [
+        "| Stage | Count |",
+        "| --- | --- |",
+        f"| Identified | {flow.get('identified', 0)} |",
+        f"| Screened | {flow.get('screened', 0)} |",
+        f"| Eligibility | {flow.get('eligibility', 0)} |",
+        f"| Included | {flow.get('included', 0)} |",
+        f"| Excluded | {flow.get('excluded', 0)} |",
+        "",
+        "## Key Themes",
+        "",
+    ]
+    for t in state.get("key_themes", []):
+        lines.append(f"- {t}")
+
+    lines += ["", "## Narrative Synthesis", "", state.get("narrative_synthesis", ""), ""]
+
+    gaps = state.get("research_gaps", [])
+    if gaps:
+        lines += ["## Research Gaps", ""]
+        for g in gaps:
+            lines.append(f"- {g}")
+        lines.append("")
+
+    grade = state.get("grade_results", {})
+    if grade and grade.get("overall_grade"):
+        lines += [
+            "## Certainty of Evidence (GRADE)", "",
+            f"**Overall certainty:** {grade.get('overall_grade', 'n/a')}", "",
+            grade.get("certainty_statement", ""), "",
+            grade.get("summary", ""), "",
+        ]
+
+    contradictions = state.get("contradictions", [])
+    if contradictions:
+        lines += ["## Conflicting Findings", ""]
+        for c in contradictions:
+            lines.append(
+                f"- **{c.get('claim', '')}** (consensus {c.get('consensus_score', '?')}/100): "
+                f"{c.get('explanation', '')}"
+            )
+        lines.append("")
+
+    rob_table = state.get("rob_table", [])
+    if rob_table:
+        lines += ["## Risk of Bias", "",
+                  "| Citation | Tool | Overall |", "| --- | --- | --- |"]
+        for r in rob_table:
+            lines.append(f"| {r.get('citation_key', '')} | {r.get('tool', '')} | {r.get('overall', '')} |")
+        lines.append("")
+
+    if state.get("conclusion"):
+        lines += ["## Conclusion", "", state["conclusion"], ""]
+
+    if state.get("limitations"):
+        lines += ["## Limitations", "", state["limitations"], ""]
+
+    evidence = state.get("evidence_table", [])
+    if evidence:
+        lines += ["## Evidence Table", ""]
+        lines += ["| Citation | Year | Design | Quality | Key Finding |",
+                  "| --- | --- | --- | --- | --- |"]
+        for row in evidence:
+            ck = row.get("citation_key", "")
+            yr = row.get("year", "n.d.")
+            design = row.get("study_design", "")
+            qual = row.get("quality", "")
+            finding = row.get("key_finding", "")[:80]
+            lines.append(f"| {ck} | {yr} | {design} | {qual} | {finding} |")
+        lines.append("")
+
+    return "\n".join(lines)

@@ -232,6 +232,36 @@ def run_meta_analysis(studies: List[Dict[str, Any]], measure: str = "OR") -> Dic
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Row seeding (pure data transform — no LLM, no I/O)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def seed_meta_rows(evidence_table: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Build initial editable rows (label + blank effect/CI/N) from the evidence table.
+
+    Pure data transform shared by the Streamlit "Meta-Analysis" Explore tool
+    (`ui.tabs.systematic_review._seed_meta_rows`, kept as a thin alias for
+    backward compatibility) and the FastAPI backend's meta-analysis seed
+    endpoint — no Streamlit calls, no session_state.
+    """
+    rows = []
+    for row in evidence_table:
+        authors = row.get("authors", [])
+        author_str = authors[0].split(",")[0] if authors else (row.get("citation_key") or "Unknown")
+        year = row.get("year") or "n.d."
+        label = f"{author_str} et al. ({year})" if len(authors) > 1 else f"{author_str} ({year})"
+        n_match = re.search(r"\d+", str(row.get("sample_size") or ""))
+        rows.append({
+            "citation_key": row.get("citation_key", ""),
+            "label": label,
+            "effect": None,
+            "ci_low": None,
+            "ci_high": None,
+            "n": int(n_match.group()) if n_match else None,
+        })
+    return rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # LLM-assisted extraction (best-effort drafts — humans review before pooling)
 # ─────────────────────────────────────────────────────────────────────────────
 
