@@ -1,0 +1,33 @@
+.app__bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.app__back-button {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.app__back-button:hover {
+  border-color: var(--color-accent);
+}
+
+.app__bar-title {
+  font-weight: 600;
+}
+
+.app__coming-soon {
+  max-width: 760px;
+  margin: 2.5rem auto;
+  padding: 0 1.5rem;
+  color: var(--color-muted);
+}

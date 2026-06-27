@@ -400,24 +400,13 @@ def _render_preprint_tracking(tracking: list) -> None:
 
 def _seed_meta_rows(evidence_table: list) -> list:
     """Build initial editable rows (label + blank effect/CI/N) from the evidence table.
-    Pure data transform — no Streamlit calls, no session_state."""
-    import re
-    rows = []
-    for row in evidence_table:
-        authors = row.get("authors", [])
-        author_str = authors[0].split(",")[0] if authors else (row.get("citation_key") or "Unknown")
-        year = row.get("year") or "n.d."
-        label = f"{author_str} et al. ({year})" if len(authors) > 1 else f"{author_str} ({year})"
-        n_match = re.search(r"\d+", str(row.get("sample_size") or ""))
-        rows.append({
-            "citation_key": row.get("citation_key", ""),
-            "label": label,
-            "effect": None,
-            "ci_low": None,
-            "ci_high": None,
-            "n": int(n_match.group()) if n_match else None,
-        })
-    return rows
+    Pure data transform — no Streamlit calls, no session_state.
+
+    Thin alias kept for backward compatibility; the real implementation lives in
+    `tools.meta_analysis.seed_meta_rows` so the FastAPI backend can reuse it
+    without importing this (Streamlit-dependent) module."""
+    from tools.meta_analysis import seed_meta_rows
+    return seed_meta_rows(evidence_table)
 
 
 def _render_meta_analysis(final_state: dict, settings: dict) -> None:
@@ -621,33 +610,8 @@ def _render_research_trends_section(final_state: dict, settings: dict) -> None:
         years = chart.get("years", [])
         if years:
             try:
-                import plotly.graph_objects as go
-                fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    x=years,
-                    y=chart.get("field_counts", []),
-                    name="Field-wide (CrossRef)",
-                    marker_color="#2563EB",
-                    opacity=0.7,
-                ))
-                fig.add_trace(go.Scatter(
-                    x=years,
-                    y=chart.get("corpus_counts", []),
-                    name="This SR corpus",
-                    mode="lines+markers",
-                    marker=dict(color="#F59E0B", size=6),
-                    line=dict(color="#F59E0B", width=2),
-                ))
-                fig.update_layout(
-                    title=f"Publication Trend: {rq[:60]}…" if len(rq) > 60 else f"Publication Trend: {rq}",
-                    xaxis=dict(title="Year", gridcolor="#E2E8F0"),
-                    yaxis=dict(title="Publications", gridcolor="#E2E8F0"),
-                    paper_bgcolor="#FFFFFF",
-                    plot_bgcolor="#F8FAFC",
-                    font=dict(color="#334155"),
-                    legend=dict(bgcolor="rgba(255,255,255,0.8)", bordercolor="#E2E8F0", borderwidth=1),
-                    height=380,
-                )
+                from tools.trend_analyzer import build_trend_figure
+                fig = build_trend_figure(td, rq)
                 st.plotly_chart(fig, use_container_width=True)
             except ImportError:
                 st.warning("Install plotly (`pip install plotly`) to see the trend chart.")
@@ -1101,83 +1065,7 @@ def _tab_export(final_state: dict, rq: str, session_id: str, settings: dict) -> 
 # raw CLI flags (--inclusion/--exclusion/etc.) are untouched, and "scratch" stays
 # the default so nothing changes for users who never open this expander.
 
-SR_TEMPLATES: list = [
-    {
-        "key": "clinical_rct",
-        "label": "Clinical RCT review",
-        "description": "Randomised controlled trials evaluating a clinical intervention in human participants.",
-        "research_question": "What is the effect of [intervention] on [outcome] in [population]?",
-        "inclusion": [
-            "Randomised controlled trials (RCTs)",
-            "Human participants",
-            "Peer-reviewed, published 2010–present",
-            "Reports the outcome of interest with quantitative results",
-        ],
-        "exclusion": [
-            "Animal or in-vitro studies",
-            "Case reports, editorials, conference abstracts only",
-            "No control/comparison group",
-            "Non-English publications",
-        ],
-        "note": "Pairs well with **Statistical Meta-Analysis** (pool effect sizes across trials) "
-                "and **Preprint Status** (flags retracted or unpublished trials).",
-    },
-    {
-        "key": "cs_survey",
-        "label": "CS literature survey",
-        "description": "Computer-science / engineering survey of methods, systems or benchmarks.",
-        "research_question": "What approaches have been proposed for [task/problem], and how do they compare on [metric]?",
-        "inclusion": [
-            "Peer-reviewed papers or well-cited preprints (arXiv)",
-            "Proposes, benchmarks, or surveys a method for the stated task",
-            "Published within the last 10 years",
-            "Reports quantitative results or a clear architectural contribution",
-        ],
-        "exclusion": [
-            "Position papers / opinion pieces with no technical contribution",
-            "Duplicate or superseded preprint versions",
-            "Workshop posters with no accompanying results",
-        ],
-        "note": "Pairs well with **Citation Network**, **Concept Drift Tracker** and "
-                "**Research Trend Forecaster** — CS moves fast, so track what's rising.",
-    },
-    {
-        "key": "qual_synthesis",
-        "label": "Qualitative evidence synthesis",
-        "description": "Thematic synthesis of qualitative studies (interviews, ethnography, case studies).",
-        "research_question": "How do [population] experience or perceive [phenomenon]?",
-        "inclusion": [
-            "Qualitative or mixed-methods studies",
-            "Primary research with original data collection",
-            "Clearly describes participants and methodology",
-            "Published in peer-reviewed venues",
-        ],
-        "exclusion": [
-            "Purely quantitative studies with no qualitative component",
-            "Secondary analyses or reviews of other qualitative work",
-            "Grey literature without peer review",
-        ],
-        "note": "Pairs well with **Evidence Map** and **Narrative Synthesis** — themes matter "
-                "more than pooled numbers here, so Statistical Meta-Analysis isn't recommended.",
-    },
-    {
-        "key": "scoping_review",
-        "label": "Scoping / mapping review",
-        "description": "Broad map of what evidence exists on a topic, before committing to a focused review.",
-        "research_question": "What is the nature and extent of research on [topic] in [context]?",
-        "inclusion": [
-            "Any study design that addresses the topic",
-            "Published in any language with an available English abstract",
-            "No date restriction (or specify a broad range)",
-        ],
-        "exclusion": [
-            "Studies entirely off-topic despite keyword matches",
-            "Duplicates across databases",
-        ],
-        "note": "Pairs well with **Evidence Map**, **Research Trend Forecaster**, and "
-                "**Cross-Notebook Search** to connect findings to material you've already collected.",
-    },
-]
+from tools.sr_templates import SR_TEMPLATES
 
 _SR_TEMPLATE_BY_KEY = {t["key"]: t for t in SR_TEMPLATES}
 
@@ -1463,86 +1351,11 @@ def _build_sr_markdown(research_question: str, state: dict) -> str:
     """Build the full SR results (PRISMA flow table, key themes, narrative synthesis,
     research gaps, conclusion, limitations, evidence table) as a single Markdown
     string for the "Download as Markdown" button in `_tab_export`. Pure data → string
-    transform — no Streamlit calls, no session_state."""
-    from datetime import datetime
-    lines = [
-        "# Systematic Review Report",
-        f"**Research Question:** {research_question}",
-        f"*Generated: {datetime.today().strftime('%B %d, %Y')}*",
-        "",
-        "## PRISMA Flow",
-        "",
-    ]
-    flow = state.get("prisma_flow", {})
-    lines += [
-        "| Stage | Count |",
-        "| --- | --- |",
-        f"| Identified | {flow.get('identified', 0)} |",
-        f"| Screened | {flow.get('screened', 0)} |",
-        f"| Eligibility | {flow.get('eligibility', 0)} |",
-        f"| Included | {flow.get('included', 0)} |",
-        f"| Excluded | {flow.get('excluded', 0)} |",
-        "",
-        "## Key Themes",
-        "",
-    ]
-    for t in state.get("key_themes", []):
-        lines.append(f"- {t}")
+    transform — no Streamlit calls, no session_state.
 
-    lines += ["", "## Narrative Synthesis", "", state.get("narrative_synthesis", ""), ""]
-
-    gaps = state.get("research_gaps", [])
-    if gaps:
-        lines += ["## Research Gaps", ""]
-        for g in gaps:
-            lines.append(f"- {g}")
-        lines.append("")
-
-    grade = state.get("grade_results", {})
-    if grade and grade.get("overall_grade"):
-        lines += [
-            "## Certainty of Evidence (GRADE)", "",
-            f"**Overall certainty:** {grade.get('overall_grade', 'n/a')}", "",
-            grade.get("certainty_statement", ""), "",
-            grade.get("summary", ""), "",
-        ]
-
-    contradictions = state.get("contradictions", [])
-    if contradictions:
-        lines += ["## Conflicting Findings", ""]
-        for c in contradictions:
-            lines.append(
-                f"- **{c.get('claim', '')}** (consensus {c.get('consensus_score', '?')}/100): "
-                f"{c.get('explanation', '')}"
-            )
-        lines.append("")
-
-    rob_table = state.get("rob_table", [])
-    if rob_table:
-        lines += ["## Risk of Bias", "",
-                  "| Citation | Tool | Overall |", "| --- | --- | --- |"]
-        for r in rob_table:
-            lines.append(f"| {r.get('citation_key', '')} | {r.get('tool', '')} | {r.get('overall', '')} |")
-        lines.append("")
-
-    if state.get("conclusion"):
-        lines += ["## Conclusion", "", state["conclusion"], ""]
-
-    if state.get("limitations"):
-        lines += ["## Limitations", "", state["limitations"], ""]
-
-    evidence = state.get("evidence_table", [])
-    if evidence:
-        lines += ["## Evidence Table", ""]
-        lines += ["| Citation | Year | Design | Quality | Key Finding |",
-                  "| --- | --- | --- | --- | --- |"]
-        for row in evidence:
-            ck = row.get("citation_key", "")
-            yr = row.get("year", "n.d.")
-            design = row.get("study_design", "")
-            qual = row.get("quality", "")
-            finding = row.get("key_finding", "")[:80]
-            lines.append(f"| {ck} | {yr} | {design} | {qual} | {finding} |")
-        lines.append("")
-
-    return "\n".join(lines)
+    Thin alias kept for backward compatibility (also imported directly by `main.py`
+    and `cli.py`); the real implementation lives in `tools.prisma_report.
+    build_sr_markdown` so the FastAPI backend can reuse it without importing this
+    (Streamlit-dependent) module."""
+    from tools.prisma_report import build_sr_markdown
+    return build_sr_markdown(research_question, state)

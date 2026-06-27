@@ -40,6 +40,11 @@ reportlab>=4.0.0          # PDF report generation (BSD)
 streamlit>=1.40.0         # Web application framework (Apache 2.0)
 watchdog>=4.0.0           # Streamlit file-change watcher (Apache 2.0)
 
+# ── Web API (FastAPI, backs the React frontend) ───────────────
+fastapi>=0.110.0          # API framework for the React frontend (MIT)
+uvicorn[standard]>=0.29.0 # ASGI server for FastAPI (BSD)
+python-multipart>=0.0.9   # Form/file upload parsing for FastAPI (Apache 2.0)
+
 # ── Utilities ─────────────────────────────────────────────────
 rich>=13.7.0              # Terminal formatting (MIT)
 python-dotenv>=1.0.0      # .env config loading (BSD)

@@ -179,3 +179,52 @@ def trend_to_chart_data(trend_data: Dict[str, Any]) -> str:
         "total_field": trend_data.get("total_field", 0),
         "query_used": trend_data.get("query_used", ""),
     })
+
+
+def build_trend_figure(trend_data: Dict[str, Any], research_question: str = ""):
+    """Build the field-wide-vs-corpus publication trend chart as a Plotly Figure
+    (bar = CrossRef field-wide counts per year, line = this SR run's own corpus).
+
+    Raises ImportError if plotly isn't installed, matching the
+    `tools.evidence_map`/`tools.meta_analysis` rendering helpers' contract. Shared
+    by the Streamlit tab (`st.plotly_chart(build_trend_figure(...))`) and the
+    FastAPI backend (`build_trend_figure(...).to_html(...)`) so both surfaces
+    render the identical chart from one definition.
+    """
+    import plotly.graph_objects as go
+
+    combined = trend_data.get("combined_by_year", {})
+    corpus = trend_data.get("corpus_by_year", {})
+    years = sorted(set(list(combined.keys()) + list(corpus.keys())))
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=years,
+        y=[combined.get(y, 0) for y in years],
+        name="Field-wide (CrossRef)",
+        marker_color="#2563EB",
+        opacity=0.7,
+    ))
+    fig.add_trace(go.Scatter(
+        x=years,
+        y=[corpus.get(y, 0) for y in years],
+        name="This SR corpus",
+        mode="lines+markers",
+        marker=dict(color="#F59E0B", size=6),
+        line=dict(color="#F59E0B", width=2),
+    ))
+    title = (
+        f"Publication Trend: {research_question[:60]}…"
+        if len(research_question) > 60 else f"Publication Trend: {research_question}"
+    )
+    fig.update_layout(
+        title=title,
+        xaxis=dict(title="Year", gridcolor="#E2E8F0"),
+        yaxis=dict(title="Publications", gridcolor="#E2E8F0"),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#F8FAFC",
+        font=dict(color="#334155"),
+        legend=dict(bgcolor="rgba(255,255,255,0.8)", bordercolor="#E2E8F0", borderwidth=1),
+        height=380,
+    )
+    return fig

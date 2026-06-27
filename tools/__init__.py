@@ -41,6 +41,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     # ── SR: PRISMA Report ────────────────────────────────────────────────────
     "generate_prisma_docx":    ("tools.prisma_report",      "generate_prisma_docx"),
     "generate_prisma_pdf":     ("tools.prisma_report",      "generate_prisma_pdf"),
+    "build_sr_markdown":       ("tools.prisma_report",      "build_sr_markdown"),
     # ── SR: Plain Language Summaries ─────────────────────────────────────────
     "generate_patient_summary":  ("tools.plain_language",   "generate_patient_summary"),
     "generate_policy_brief":     ("tools.plain_language",   "generate_policy_brief"),
@@ -59,6 +60,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "meta_analysis_to_forest_plotly": ("tools.meta_analysis", "meta_analysis_to_forest_plotly"),
     "meta_analysis_to_forest_png":    ("tools.meta_analysis", "meta_analysis_to_forest_png"),
     "MEASURE_LABELS":          ("tools.meta_analysis",      "MEASURE_LABELS"),
+    "seed_meta_rows":          ("tools.meta_analysis",      "seed_meta_rows"),
     # ── SR: Sensitivity Analysis ─────────────────────────────────────────────
     "run_sensitivity_analysis":   ("tools.sensitivity_analysis", "run_sensitivity_analysis"),
     "build_sensitivity_scenarios": ("tools.sensitivity_analysis", "build_sensitivity_scenarios"),

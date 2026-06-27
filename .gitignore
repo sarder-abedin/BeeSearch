@@ -42,3 +42,9 @@ Thumbs.db
 
 # Claude Code worktrees (temporary agent workspaces)
 .claude/worktrees/
+
+# Node / frontend (React + Vite)
+node_modules/
+*.tsbuildinfo
+playwright-report/
+test-results/
