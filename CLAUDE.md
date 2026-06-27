@@ -58,7 +58,7 @@ BEESEARCH_MOCK_LLM=1 python -m uvicorn backend.app.main:app --reload --port 8000
 ./scripts/start.sh        # Linux CPU
 ./scripts/start-gpu.sh    # Linux NVIDIA GPU
 ./scripts/start-mac.sh    # macOS
-docker compose up --build
+docker compose up --build  # ollama + app (Streamlit) + backend (FastAPI) + frontend (React/nginx)
 ```
 
 ### Tests
@@ -135,6 +135,14 @@ tools, Explain tab, and Research Report are still Streamlit/CLI-only.
 - `frontend/src/pages/{LandingPage,SystematicReviewPage,NotebookPage,AskPage}.tsx`
   — one page per mode (`AskPage` = Mode 3); `App.tsx` does `?mode=mode1|mode2|mode3`
   query-param routing, no router dependency.
+- **Docker**: `backend` and `frontend` are their own `docker-compose.yml` services
+  (`research-backend`, `research-frontend`), alongside the pre-existing `ollama`/
+  `app` services. `backend` reuses the root `Dockerfile` with its command overridden
+  to `python -m uvicorn backend.app.main:app ...` (no separate Dockerfile, since
+  `requirements.txt` already has `fastapi`/`uvicorn`). `frontend` has its own
+  `frontend/Dockerfile` (multi-stage: `npm run build` → nginx); `frontend/nginx.conf`
+  reverse-proxies `/api/*` to the `backend` service over the Compose network, so the
+  container needs no `VITE_API_BASE_URL` build arg.
 
 ### Internal "Mode N" numbering vs. user-facing modes
 

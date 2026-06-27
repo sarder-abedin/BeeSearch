@@ -6,7 +6,7 @@
 ---
 
 **Q: How do I run this with Docker?**
-A: Run `docker compose up --build` from the project root. This starts two services: Ollama (LLM) and the Streamlit app (port 8501). A one-shot `model-init` container pulls the default model on first start. Open http://localhost:8501 in your browser.
+A: Run `docker compose up --build` from the project root. This starts Ollama (LLM), the Streamlit app (port 8501), the FastAPI backend (port 8000), and the React frontend (port 5173, nginx, reverse-proxies `/api/*` to the backend container). A one-shot `model-init` container pulls the default model on first start. Open http://localhost:8501 for the Streamlit UI or http://localhost:5173 for the React app — both share the same Ollama instance and run independently. To start only the Streamlit stack, run `docker compose up --build ollama model-init app`.
 
 ---
 
