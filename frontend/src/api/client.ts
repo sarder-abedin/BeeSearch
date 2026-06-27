@@ -34,10 +34,14 @@ async function parseErrorDetail(res: Response): Promise<string> {
 }
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
+  // FormData bodies (file uploads) must let the browser set their own
+  // multipart Content-Type with the correct boundary -- presetting
+  // "application/json" here would break the upload.
+  const isFormData = init?.body instanceof FormData;
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(init?.headers ?? {}),
     },
   });

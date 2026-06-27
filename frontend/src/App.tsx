@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import AskPage from "./pages/AskPage";
 import LandingPage, { type ProjectId } from "./pages/LandingPage";
+import NotebookPage from "./pages/NotebookPage";
 import SystematicReviewPage from "./pages/SystematicReviewPage";
 
 const PROJECT_NAMES: Record<ProjectId, string> = {
@@ -43,9 +44,7 @@ function App() {
 
       {activeMode === "mode1" && <SystematicReviewPage />}
       {activeMode === "mode3" && <AskPage />}
-      {activeMode === "mode2" && (
-        <p className="app__coming-soon">Research Notebook is coming soon.</p>
-      )}
+      {activeMode === "mode2" && <NotebookPage />}
     </div>
   );
 }
