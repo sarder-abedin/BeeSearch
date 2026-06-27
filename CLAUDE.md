@@ -20,11 +20,15 @@ user-facing modes, built on LangGraph + Ollama (no cloud LLM, no API keys requir
   `ui/tabs/research_assistant.py`, `main.py --ask`) — no upload, no PRISMA workflow.
 
 All modes are reachable from the Streamlit UI (`app.py`) and the CLI (`main.py`,
-plus `cli.py` for the section-by-section breakdown tool).
+plus `cli.py` for the section-by-section breakdown tool). Modes 1 and 3, plus
+the core of Mode 2, are also reachable from a React + FastAPI web app
+(`frontend/` + `backend/`) added alongside them — see "React + FastAPI web
+app" under Architecture below.
 
 For deep dives beyond this file: `docs/architecture.md` (full pipeline diagrams,
 state field lists, file map, tech stack), `docs/overview.md` (condensed version),
-`README.md` (install/usage/CLI reference), `docs/FAQ.md`, `docs/tutorial.md`.
+`README.md` (install/usage/CLI reference/React+FastAPI web app), `docs/FAQ.md`,
+`docs/tutorial.md`.
 
 ## Commands
 
@@ -45,6 +49,11 @@ python main.py --systematic-review --goal "..." \
   --inclusion "Peer-reviewed" --exclusion "Animal studies"
 python cli.py sections <notebook-id> --source paper.pdf # section-by-section breakdown
 
+# Run — React + FastAPI web app (two separate processes)
+python -m uvicorn backend.app.main:app --reload --port 8000   # backend, http://localhost:8000
+cd frontend && npm install && npm run dev                      # frontend, http://localhost:5173
+BEESEARCH_MOCK_LLM=1 python -m uvicorn backend.app.main:app --reload --port 8000  # backend w/ stubbed LLM+search, no Ollama needed
+
 # Docker
 ./scripts/start.sh        # Linux CPU
 ./scripts/start-gpu.sh    # Linux NVIDIA GPU
@@ -55,11 +64,19 @@ docker compose up --build
 ### Tests
 
 ```bash
-python -m pytest tests/ -q                                     # full suite
-python -m pytest tests/test_temperature_levels.py -q           # one file
+python -m pytest -q                                             # full suite: root tests/ + backend/tests/ together
+python -m pytest tests/ -q                                      # core pipeline tests only (excludes backend/tests/)
+python -m pytest backend/tests/ -q                              # FastAPI backend tests only
+python -m pytest tests/test_temperature_levels.py -q            # one file
 python -m pytest tests/test_temperature_levels.py::test_precise_forces_full_determinism -q  # one test
-python -m py_compile path/to/file.py                            # syntax check, no deps needed
+python -m py_compile path/to/file.py                             # syntax check, no deps needed
+cd frontend && npm run test                                      # frontend component tests (Vitest)
+cd frontend && npm run e2e                                       # frontend E2E (Playwright; auto-starts backend + preview server)
 ```
+
+`python -m pytest tests/ -q` alone is NOT the full suite — it misses
+`backend/tests/` (FastAPI service/API tests). Always use the no-path form
+(`python -m pytest -q`, from repo root) when you mean "run everything."
 
 `rich` and `streamlit` may not be installed in some sandboxes even though they're in
 `requirements.txt`. If so, `py_compile` is enough for a syntax check; to exercise
@@ -80,6 +97,44 @@ python -m py_compile path/to/file.py                            # syntax check, 
 - `main.py` → `--systematic-review` / `--notebook` (+ one-shot `--notebook-*` flags) /
   `--ask` (Mode 3) drive the same logic as the UI. SR adds `--sr-quality` to print the
   risk-of-bias / GRADE / contradiction results.
+
+### React + FastAPI web app
+
+A REST API (`backend/`) and a React + TypeScript SPA (`frontend/`) expose the
+same core logic as the CLI/Streamlit UI, added alongside them — `main.py` and
+`app.py` are unmodified by this. Current coverage: Mode 1 and Mode 3 are
+complete; Mode 2 covers only the core notebook workflow (create/rename/delete,
+source upload, grounded chat with citations) — the 7-agent pipeline, advanced
+tools, Explain tab, and Research Report are still Streamlit/CLI-only.
+
+- `backend/app/main.py` — FastAPI app factory; CORS via `BEESEARCH_CORS_ORIGINS`
+  (defaults to the Vite dev ports); mounts `backend/app/routers/{health,
+  research_assistant,systematic_review,notebook}.py`, each a thin layer over a
+  `backend/app/services/*_service.py` that calls straight into the existing
+  `agents/*` / `projects/*` modules — no duplicated business logic.
+  `backend/app/schemas/` holds the Pydantic request/response models.
+- `backend/app/jobs.py` — in-memory, thread-based background job runner
+  (`Job` dataclass + `run_in_background`) reused by every long-running chat
+  endpoint across Modes 1–3; the frontend polls `GET /api/*/jobs/{id}` on a
+  700ms interval until `status` is `done` or `error` (`pollUntilTerminal` in
+  `frontend/src/api/*.ts`).
+- `backend/app/mock_llm.py` / `mock_search.py` — dev/test-only stubs, installed
+  at the top of `backend/app/main.py` (not the CLI's `main.py`) when
+  `BEESEARCH_MOCK_LLM=1` is set, **before** any `agents.*` import (`ChatOllama`
+  is bound into other modules' namespaces at import time, so patching later
+  wouldn't take effect). Used by the Playwright E2E `webServer` config
+  (`frontend/playwright.config.ts`) so tests need neither a reachable Ollama
+  server nor network access.
+- `backend/tests/` — FastAPI backend test suite (service-layer + API-layer),
+  separate from the root `tests/` directory — see Tests above for the command
+  that runs both together.
+- `frontend/src/api/client.ts` — thin `fetch` wrapper (`apiFetch`/`apiFetchBlob`/
+  `apiFetchText`); base URL defaults to `""` (relative), so the Vite dev/preview
+  proxy (`frontend/vite.config.ts`) routes `/api/*` to the backend with zero
+  frontend env configuration.
+- `frontend/src/pages/{LandingPage,SystematicReviewPage,NotebookPage,AskPage}.tsx`
+  — one page per mode (`AskPage` = Mode 3); `App.tsx` does `?mode=mode1|mode2|mode3`
+  query-param routing, no router dependency.
 
 ### Internal "Mode N" numbering vs. user-facing modes
 

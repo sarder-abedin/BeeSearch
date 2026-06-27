@@ -211,6 +211,81 @@ docker compose exec app bash
 
 ---
 
+## Web App (React + FastAPI)
+
+A React + TypeScript frontend and a FastAPI backend sit alongside the
+Streamlit UI and CLI, exposing the same functionality over a REST API.
+
+**Current scope:** Mode 1 (Systematic Review) and Mode 3 (AI Research
+Assistant) are fully covered. Mode 2 (Research Notebook) currently covers
+the core workflow — create/rename/delete notebooks, upload sources, and
+grounded chat with citations and Self-Reflective RAG status — while the
+7-agent pipeline, advanced tools (FAQ, mind map, knowledge graph, etc.),
+Explain tab, and Research Report workflow are still Streamlit/CLI-only. The
+Streamlit app and CLI keep working exactly as documented above either way.
+
+### Requirements
+
+- Ollama + a pulled model, and the Python dependencies from
+  [Prerequisites](#prerequisites) above
+- [Node.js](https://nodejs.org) 20+ and npm (bundled with Node)
+
+### Run the backend (FastAPI)
+
+```bash
+# From the repository root, same virtual environment / dependencies as the
+# CLI and Streamlit app (pip install -r requirements.txt)
+python -m uvicorn backend.app.main:app --reload --port 8000
+```
+
+The API is now served at `http://localhost:8000` (interactive docs at
+`http://localhost:8000/docs`).
+
+To explore the UI without Ollama running, set `BEESEARCH_MOCK_LLM=1` to stub
+out all LLM/search calls with canned responses (dev/test only):
+
+```bash
+BEESEARCH_MOCK_LLM=1 python -m uvicorn backend.app.main:app --reload --port 8000
+```
+
+### Run the frontend (React + Vite)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. The dev server proxies all `/api/*` requests to
+the backend on port 8000 automatically (`frontend/vite.config.ts`) — no
+`.env` file or extra configuration needed.
+
+### Production build
+
+```bash
+cd frontend
+npm run build     # type-checks + builds to frontend/dist/
+npm run preview   # serves the built dist/ at http://localhost:4173
+```
+
+`preview` serves whatever was last built — re-run `build` after making
+changes before previewing.
+
+### Tests
+
+```bash
+# Backend — full suite (root tests/ + backend/tests/), from the repository root
+python -m pytest -q
+
+# Frontend, from frontend/
+npm run test       # component tests (Vitest)
+npm run lint       # ESLint
+npx tsc --noEmit   # type-check only
+npm run e2e        # Playwright E2E -- auto-starts the backend (mock LLM) and a preview server
+```
+
+---
+
 ## CLI Reference
 
 ### Systematic Literature Review
