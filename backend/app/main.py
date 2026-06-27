@@ -44,7 +44,7 @@ from fastapi.responses import JSONResponse
 
 from config.settings import get_settings
 
-from .routers import health, research_assistant, systematic_review
+from .routers import health, notebook, research_assistant, systematic_review
 
 cfg = get_settings()
 logging.basicConfig(level=getattr(logging, cfg.log_level.upper(), logging.INFO))
@@ -71,3 +71,4 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(health.router)
 app.include_router(research_assistant.router)
 app.include_router(systematic_review.router)
+app.include_router(notebook.router)
