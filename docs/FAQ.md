@@ -10,6 +10,11 @@ A: Run `docker compose up --build` from the project root. This starts two servic
 
 ---
 
+**Q: Is there a web app alternative to the Streamlit UI?**
+A: Yes — a React + TypeScript frontend backed by a FastAPI REST API, added alongside Streamlit and the CLI (neither was changed to make room for it). It covers Mode 1 (Systematic Review) and Mode 3 (AI Research Assistant) fully, plus the core Research Notebook workflow (create/upload/chat with citations); the 7-agent pipeline, Explain tab, Research Report, and advanced one-shot tools are still Streamlit/CLI-only for now. Run the backend with `python -m uvicorn backend.app.main:app --reload --port 8000` and the frontend with `cd frontend && npm install && npm run dev`, then open http://localhost:5173 — see the README's "Web App (React + FastAPI)" section for the full setup, build, and test commands.
+
+---
+
 **Q: Does this send my documents to any server?**
 A: No. Documents are processed entirely locally — parsed with Docling (or pdfplumber when Docling is disabled), embedded with a local Ollama model, stored in a local ChromaDB instance, and analysed by a local Ollama LLM. The only network calls are to Google Scholar, arXiv, Semantic Scholar, CrossRef, and — only when web search is enabled or automatically triggered (see "Can I use BeeSearch entirely offline?" below) — DuckDuckGo. All of these receive only your search queries, never your document text.
 

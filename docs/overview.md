@@ -17,6 +17,13 @@ BeeSearch/
 ├── app.py                          ← Streamlit entry point (3 modes)
 ├── main.py                         ← CLI entry point (3 modes)
 ├── requirements.txt
+├── backend/                        ← FastAPI REST API (additive; Mode 1, Mode 3, Mode 2 core)
+│   └── app/
+│       ├── main.py                 ← App factory, CORS, mock-LLM bootstrap
+│       ├── jobs.py                 ← In-memory background job runner
+│       ├── routers/, services/, schemas/
+├── frontend/                       ← React + TypeScript SPA (Vite)
+│   └── src/{api,pages,components}/
 ├── config/
 │   ├── settings.py                 ← Pydantic config from .env
 │   └── hardware.py                 ← Hardware detection + model recommendation
@@ -259,6 +266,23 @@ If no sources are found, the result is marked ungrounded: the answer carries an 
 
 - UI: single-screen tab (`ui/tabs/research_assistant.py`) — question box, "include web results" toggle, answer with inline citations, source list, suggested follow-ups
 - CLI: `python main.py --ask "..."` (`--no-web` to skip the web-search backend)
+
+---
+
+## React + FastAPI Web App
+
+A REST API (`backend/`) and a React SPA (`frontend/`) provide an additional
+interface, added alongside Streamlit/CLI without modifying either — same
+`agents/*`/`projects/*` logic underneath, no parallel business logic.
+**Coverage:** Mode 1 and Mode 3 are complete; Mode 2 covers only the core
+Q&A workflow (create/upload/chat with citations) — the 7-agent pipeline,
+Explain tab, Research Report, and advanced one-shot tools are still
+Streamlit/CLI-only. Long-running calls go through an in-memory background
+job runner (`backend/app/jobs.py`); the frontend polls for status every
+700ms. `BEESEARCH_MOCK_LLM=1` swaps in canned LLM/search responses for
+dev/test use, no Ollama required. See the README's "Web App (React +
+FastAPI)" section for run commands, and `docs/architecture.md`'s "React +
+FastAPI Web App" section for the request-flow diagram.
 
 ---
 

@@ -79,6 +79,10 @@ actually used — no intermediate graph.
 See "Mode 3: AI Research Assistant" below for source numbering, citation-rebuild, and
 CLI/UI details.
 
+An additional interface — a React SPA talking to a FastAPI backend — is also
+available, added alongside Streamlit/CLI rather than replacing them. See
+"React + FastAPI Web App" below.
+
 ---
 
 ## Mode 1: Systematic Literature Review
@@ -668,6 +672,53 @@ Both Literature Review and the Explain tab once let the LLM cite freely (`[1]`, 
 
 ---
 
+## React + FastAPI Web App
+
+An optional additional interface (`backend/` + `frontend/`) exposes Mode 1, Mode 3,
+and the core of Mode 2 over a REST API, added alongside the Streamlit UI and
+CLI without modifying either. It calls the exact same `agents/*` / `projects/*`
+logic described above — no parallel business logic, no parallel state machine.
+
+**Coverage:** Mode 1 (Systematic Review) and Mode 3 (AI Research Assistant)
+are complete. Mode 2 (Research Notebook) currently covers only the core Q&A
+workflow (2a above) — create/rename/delete notebooks, upload sources, chat
+with citations and Self-Reflective RAG status. The 7-agent pipeline (2b),
+Explain/Storyteller (2c), and the advanced one-shot tools are still
+Streamlit/CLI-only.
+
+```
+Browser (React SPA — Vite dev server, or a static `vite build` output)
+        │  fetch() — relative paths, proxied to :8000 by Vite in dev/preview
+        ▼
+FastAPI (backend/app/main.py)
+  ├── routers/health.py               GET  /api/health
+  ├── routers/research_assistant.py   Mode 3 — /api/research-assistant/...
+  ├── routers/systematic_review.py    Mode 1 — /api/systematic-review/...
+  └── routers/notebook.py             Mode 2 — /api/notebook/...
+        │  each router delegates to a services/*_service.py
+        ▼
+services/*_service.py  →  agents/*.py, projects/*.py   (same modules the CLI/Streamlit call)
+```
+
+Long-running calls (an SR pipeline run, a notebook chat turn) go through
+`backend/app/jobs.py`'s in-memory, thread-based background job runner: the
+endpoint returns a `job_id` immediately (HTTP 202), and the frontend polls
+`GET /api/.../jobs/{job_id}` every 700ms until `status` is `done` or `error` —
+the same progress reporting the CLI/Streamlit get from `stream_callback`,
+just surfaced over HTTP instead of updating a terminal/widget directly.
+
+**Dev/test-only mock mode:** setting `BEESEARCH_MOCK_LLM=1` before starting
+the backend installs stubs (`backend/app/mock_llm.py`, `mock_search.py`) that
+replace `ChatOllama` and the search backends with deterministic canned
+responses — installed *before* any `agents.*` import, since `ChatOllama` is
+bound into other modules' namespaces at import time and patching afterward
+would be too late. This is what the Playwright E2E suite (`frontend/e2e/`)
+runs against, so it needs neither a reachable Ollama server nor network access.
+
+See the README's "Web App (React + FastAPI)" section for exact run commands.
+
+---
+
 ## File Map
 
 ```
@@ -675,6 +726,21 @@ BeeSearch/
 │
 ├── app.py                    ← Streamlit entry point; landing page dispatcher
 ├── main.py                   ← CLI — SR + Notebook modes
+│
+├── backend/                  ← FastAPI REST API (additive, alongside CLI/Streamlit)
+│   └── app/
+│       ├── main.py           ← App factory, CORS, mock-LLM bootstrap, router includes
+│       ├── jobs.py           ← In-memory background job runner (chat/run polling)
+│       ├── routers/          ← health, research_assistant, systematic_review, notebook
+│       ├── services/         ← thin layer calling straight into agents/*, projects/*
+│       └── schemas/          ← Pydantic request/response models
+│
+├── frontend/                 ← React + TypeScript SPA (Vite), talks to backend/ over REST
+│   ├── src/
+│   │   ├── api/              ← fetch wrapper (client.ts) + per-mode API clients
+│   │   ├── pages/            ← one page per mode (SystematicReviewPage, NotebookPage, AskPage)
+│   │   └── components/       ← mode-specific UI components
+│   └── e2e/                  ← Playwright tests (run against the mock-LLM backend)
 │
 ├── projects/
 │   ├── __init__.py           ← PROJECT_REGISTRY {mode1, mode2, mode3}
@@ -801,3 +867,6 @@ BeeSearch/
 | Hardware Detection | psutil | Cross-platform RAM/CPU |
 | Retry Logic | tenacity | Exponential backoff on API calls |
 | Memory | SQLite (stdlib sqlite3) | `sessions.db`; WAL mode |
+| Web API | FastAPI + Uvicorn | `backend/` — REST layer over the same agents/projects modules |
+| Web Frontend | React 19 + TypeScript + Vite | `frontend/` — SPA, dev-server proxy to the backend |
+| Web Frontend Tests | Vitest + Testing Library, Playwright | Component tests; E2E against the mock-LLM backend |
