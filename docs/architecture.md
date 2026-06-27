@@ -687,8 +687,10 @@ Explain/Storyteller (2c), and the advanced one-shot tools are still
 Streamlit/CLI-only.
 
 ```
-Browser (React SPA — Vite dev server, or a static `vite build` output)
-        │  fetch() — relative paths, proxied to :8000 by Vite in dev/preview
+Browser (React SPA — Vite dev server, a static `vite build` output, or the
+         nginx-served build inside the `frontend` Docker container)
+        │  fetch() — relative paths, proxied to :8000 by Vite (dev/preview)
+        │  or by nginx (`frontend/nginx.conf`, Docker only)
         ▼
 FastAPI (backend/app/main.py)
   ├── routers/health.py               GET  /api/health
@@ -699,6 +701,16 @@ FastAPI (backend/app/main.py)
         ▼
 services/*_service.py  →  agents/*.py, projects/*.py   (same modules the CLI/Streamlit call)
 ```
+
+**Docker:** `docker compose up --build` runs the backend and frontend as
+their own containers (`research-backend`, `research-frontend`), alongside
+the pre-existing `research-ollama` and `research-app` (Streamlit)
+containers — see the root `docker-compose.yml`. The `backend` service
+reuses the root `Dockerfile` (same image as `app`) with its startup command
+overridden to `uvicorn`, since `requirements.txt` already includes
+`fastapi`/`uvicorn`. The `frontend` service has its own `frontend/Dockerfile`
+(multi-stage Node build → nginx) since it needs a JS toolchain the root
+image doesn't have.
 
 Long-running calls (an SR pipeline run, a notebook chat turn) go through
 `backend/app/jobs.py`'s in-memory, thread-based background job runner: the
@@ -736,6 +748,7 @@ BeeSearch/
 │       └── schemas/          ← Pydantic request/response models
 │
 ├── frontend/                 ← React + TypeScript SPA (Vite), talks to backend/ over REST
+│   ├── Dockerfile            ← multi-stage build -> nginx; /api/* reverse-proxied to the backend container
 │   ├── src/
 │   │   ├── api/              ← fetch wrapper (client.ts) + per-mode API clients
 │   │   ├── pages/            ← one page per mode (SystematicReviewPage, NotebookPage, AskPage)
@@ -868,5 +881,5 @@ BeeSearch/
 | Retry Logic | tenacity | Exponential backoff on API calls |
 | Memory | SQLite (stdlib sqlite3) | `sessions.db`; WAL mode |
 | Web API | FastAPI + Uvicorn | `backend/` — REST layer over the same agents/projects modules |
-| Web Frontend | React 19 + TypeScript + Vite | `frontend/` — SPA, dev-server proxy to the backend |
+| Web Frontend | React 19 + TypeScript + Vite | `frontend/` — SPA; Vite dev-server proxy locally, nginx reverse proxy in its Docker container |
 | Web Frontend Tests | Vitest + Testing Library, Playwright | Component tests; E2E against the mock-LLM backend |

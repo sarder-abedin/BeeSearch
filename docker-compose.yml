@@ -1,9 +1,11 @@
 # ─────────────────────────────────────────────────────────────
 # Agentic Research Assistant — Docker Compose (CPU)
 #
-# Starts two services:
-#   ollama  — Ollama LLM server (model storage persisted in a volume)
-#   app     — Streamlit web UI (http://localhost:8501)
+# Starts four services:
+#   ollama   — Ollama LLM server (model storage persisted in a volume)
+#   app      — Streamlit web UI (http://localhost:8501)
+#   backend  — FastAPI REST API for the React frontend (http://localhost:8000)
+#   frontend — React web app, served by nginx (http://localhost:5173)
 #
 # Usage:
 #   docker compose up --build          # first run (builds app image)
@@ -89,6 +91,59 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  # ── FastAPI backend (REST API for the React frontend) ───────
+  # Reuses the same image as `app` -- requirements.txt already includes
+  # fastapi/uvicorn -- just overrides the startup command.
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: research-backend
+    command: ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      # Point to the Ollama service by its compose service name
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - NUM_CTX=${NUM_CTX:-32768}
+      # Optional: Semantic Scholar API key for higher rate limits
+      - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
+      - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
+    volumes:
+      # Generated reports and session memory persist on the host
+      - ./outputs:/app/outputs
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── React frontend (static build served by nginx) ───────────
+  # /api/* is reverse-proxied to the backend service -- see frontend/nginx.conf.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: research-frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 # ── Named volumes ───────────────────────────────────────────
 volumes:
