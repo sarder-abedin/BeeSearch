@@ -16,17 +16,19 @@ import { ApiError } from "../api/client";
 import type { ConversationTurn, NotebookDetail, NotebookSummary } from "../api/notebookTypes";
 import EvalResultPanel from "../components/EvalResultPanel";
 import NotebookCitations from "../components/NotebookCitations";
+import AdvancedToolsTab from "../components/notebook/AdvancedToolsTab";
 import PipelineTab from "../components/notebook/PipelineTab";
 import RagReflectionPanel from "../components/RagReflectionPanel";
 import "../components/sr/sr-common.css";
 import "./NotebookPage.css";
 
 type ChatStatus = "idle" | "running" | "done" | "error";
-type NotebookTopTab = "chat" | "pipeline";
+type NotebookTopTab = "chat" | "pipeline" | "advanced";
 
 const TOP_TABS: { key: NotebookTopTab; label: string }[] = [
   { key: "chat", label: "Chat" },
   { key: "pipeline", label: "Analysis Pipeline" },
+  { key: "advanced", label: "Advanced Tools" },
 ];
 
 function errorMessage(err: unknown): string {
@@ -515,6 +517,10 @@ export default function NotebookPage() {
 
               {activeTopTab === "pipeline" && (
                 <PipelineTab notebookId={activeId} sourceCount={detail.source_count} />
+              )}
+
+              {activeTopTab === "advanced" && (
+                <AdvancedToolsTab notebookId={activeId} sources={detail.sources} />
               )}
             </>
           )}
