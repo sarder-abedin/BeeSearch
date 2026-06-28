@@ -224,7 +224,7 @@ docker compose exec app bash
 
 ---
 
-## Web App (React + FastAPI)
+## Web App (React + FastAPI)(Under development)
 
 A React + TypeScript frontend and a FastAPI backend sit alongside the
 Streamlit UI and CLI, exposing the same functionality over a REST API.
