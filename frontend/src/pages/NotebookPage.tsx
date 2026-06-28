@@ -16,11 +16,20 @@ import { ApiError } from "../api/client";
 import type { ConversationTurn, NotebookDetail, NotebookSummary } from "../api/notebookTypes";
 import EvalResultPanel from "../components/EvalResultPanel";
 import NotebookCitations from "../components/NotebookCitations";
+import AdvancedToolsTab from "../components/notebook/AdvancedToolsTab";
+import PipelineTab from "../components/notebook/PipelineTab";
 import RagReflectionPanel from "../components/RagReflectionPanel";
 import "../components/sr/sr-common.css";
 import "./NotebookPage.css";
 
 type ChatStatus = "idle" | "running" | "done" | "error";
+type NotebookTopTab = "chat" | "pipeline" | "advanced";
+
+const TOP_TABS: { key: NotebookTopTab; label: string }[] = [
+  { key: "chat", label: "Chat" },
+  { key: "pipeline", label: "Analysis Pipeline" },
+  { key: "advanced", label: "Advanced Tools" },
+];
 
 function errorMessage(err: unknown): string {
   return err instanceof ApiError ? err.detail : (err as Error).message;
@@ -50,6 +59,7 @@ export default function NotebookPage() {
   const abortRef = useRef<AbortController | null>(null);
   const [loadedNotebookId, setLoadedNotebookId] = useState<string | null>(null);
   const [syncedNotebookId, setSyncedNotebookId] = useState<string | null>(null);
+  const [activeTopTab, setActiveTopTab] = useState<NotebookTopTab>("chat");
 
   if (activeId !== loadedNotebookId) {
     setLoadedNotebookId(activeId);
@@ -58,6 +68,7 @@ export default function NotebookPage() {
     setChatWarning(null);
     setLastEvalResult(null);
     setLastRagReflection(null);
+    setActiveTopTab("chat");
     if (!activeId) {
       setDetail(null);
       setDetailError(null);
@@ -412,74 +423,105 @@ export default function NotebookPage() {
               )}
               <hr />
 
-              <div className="notebook-page__transcript">
-                {detail.conversation.map((turn, i) => (
-                  <div key={i} className={`notebook-page__turn notebook-page__turn--${turn.role}`}>
-                    <p className="notebook-page__turn-role">{turn.role === "user" ? "You" : "Assistant"}</p>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.content}</ReactMarkdown>
-                    {turn.role === "assistant" && (
-                      <>
-                        <NotebookCitations citations={turn.citations ?? []} />
-                        {(turn.suggested_questions ?? []).length > 0 && (
-                          <div className="notebook-page__followups">
-                            {(turn.suggested_questions ?? []).map((q, qi) => (
-                              <button
-                                type="button"
-                                key={qi}
-                                className="notebook-page__followup-button"
-                                onClick={() => handleFollowup(q)}
-                                disabled={chatStatus === "running"}
-                              >
-                                {q}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
+              <div className="notebook-page__tabs" role="tablist" aria-label="Notebook views">
+                {TOP_TABS.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTopTab === t.key}
+                    className={
+                      activeTopTab === t.key
+                        ? "notebook-page__tab-button notebook-page__tab-button--active"
+                        : "notebook-page__tab-button"
+                    }
+                    onClick={() => setActiveTopTab(t.key)}
+                  >
+                    {t.label}
+                  </button>
                 ))}
               </div>
 
-              <EvalResultPanel evalResult={lastEvalResult} />
-              <RagReflectionPanel ragReflectionInfo={lastRagReflection} />
+              {activeTopTab === "chat" && (
+                <>
+                  <div className="notebook-page__transcript">
+                    {detail.conversation.map((turn, i) => (
+                      <div key={i} className={`notebook-page__turn notebook-page__turn--${turn.role}`}>
+                        <p className="notebook-page__turn-role">{turn.role === "user" ? "You" : "Assistant"}</p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{turn.content}</ReactMarkdown>
+                        {turn.role === "assistant" && (
+                          <>
+                            <NotebookCitations citations={turn.citations ?? []} />
+                            {(turn.suggested_questions ?? []).length > 0 && (
+                              <div className="notebook-page__followups">
+                                {(turn.suggested_questions ?? []).map((q, qi) => (
+                                  <button
+                                    type="button"
+                                    key={qi}
+                                    className="notebook-page__followup-button"
+                                    onClick={() => handleFollowup(q)}
+                                    disabled={chatStatus === "running"}
+                                  >
+                                    {q}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
 
-              {chatWarning && <p className="sr-warning">{chatWarning}</p>}
+                  <EvalResultPanel evalResult={lastEvalResult} />
+                  <RagReflectionPanel ragReflectionInfo={lastRagReflection} />
 
-              {chatStatus !== "idle" && (
-                <div className={`notebook-page__status notebook-page__status--${chatStatus}`} role="status">
-                  {chatStatus === "running" && <span className="notebook-page__spinner" aria-hidden="true" />}
-                  <span>{chatLabel}</span>
-                </div>
+                  {chatWarning && <p className="sr-warning">{chatWarning}</p>}
+
+                  {chatStatus !== "idle" && (
+                    <div className={`notebook-page__status notebook-page__status--${chatStatus}`} role="status">
+                      {chatStatus === "running" && <span className="notebook-page__spinner" aria-hidden="true" />}
+                      <span>{chatLabel}</span>
+                    </div>
+                  )}
+
+                  <div className="notebook-page__composer">
+                    <label htmlFor="nb-message">Message</label>
+                    <textarea
+                      id="nb-message"
+                      rows={2}
+                      value={message}
+                      onChange={(e) => {
+                        setMessage(e.target.value);
+                        setChatWarning(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      placeholder="Ask a question about your sources…"
+                    />
+                    <button
+                      type="button"
+                      className="sr-button"
+                      onClick={handleSend}
+                      disabled={chatStatus === "running"}
+                    >
+                      Send
+                    </button>
+                  </div>
+                </>
               )}
 
-              <div className="notebook-page__composer">
-                <label htmlFor="nb-message">Message</label>
-                <textarea
-                  id="nb-message"
-                  rows={2}
-                  value={message}
-                  onChange={(e) => {
-                    setMessage(e.target.value);
-                    setChatWarning(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  placeholder="Ask a question about your sources…"
-                />
-                <button
-                  type="button"
-                  className="sr-button"
-                  onClick={handleSend}
-                  disabled={chatStatus === "running"}
-                >
-                  Send
-                </button>
-              </div>
+              {activeTopTab === "pipeline" && (
+                <PipelineTab notebookId={activeId} sourceCount={detail.source_count} />
+              )}
+
+              {activeTopTab === "advanced" && (
+                <AdvancedToolsTab notebookId={activeId} sources={detail.sources} />
+              )}
             </>
           )}
         </section>
