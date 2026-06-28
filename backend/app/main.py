@@ -44,7 +44,15 @@ from fastapi.responses import JSONResponse
 
 from config.settings import get_settings
 
-from .routers import health, notebook, notebook_advanced, notebook_pipeline, research_assistant, systematic_review
+from .routers import (
+    health,
+    notebook,
+    notebook_advanced,
+    notebook_explain,
+    notebook_pipeline,
+    research_assistant,
+    systematic_review,
+)
 
 cfg = get_settings()
 logging.basicConfig(level=getattr(logging, cfg.log_level.upper(), logging.INFO))
@@ -74,3 +82,4 @@ app.include_router(systematic_review.router)
 app.include_router(notebook.router)
 app.include_router(notebook_pipeline.router)
 app.include_router(notebook_advanced.router)
+app.include_router(notebook_explain.router)

@@ -11,7 +11,7 @@ A: Run `docker compose up --build` from the project root. This starts Ollama (LL
 ---
 
 **Q: Is there a web app alternative to the Streamlit UI?**
-A: Yes — a React + TypeScript frontend backed by a FastAPI REST API, added alongside Streamlit and the CLI (neither was changed to make room for it). It covers Mode 1 (Systematic Review) and Mode 3 (AI Research Assistant) fully, plus the core Research Notebook workflow (create/upload/chat with citations); the 7-agent pipeline, Explain tab, Research Report, and advanced one-shot tools are still Streamlit/CLI-only for now. Run the backend with `python -m uvicorn backend.app.main:app --reload --port 8000` and the frontend with `cd frontend && npm install && npm run dev`, then open http://localhost:5173 — see the README's "Web App (React + FastAPI)" section for the full setup, build, and test commands.
+A: Yes — a React + TypeScript frontend backed by a FastAPI REST API, added alongside Streamlit and the CLI (neither was changed to make room for it). It covers Mode 1 (Systematic Review) and Mode 3 (AI Research Assistant) fully, plus the Research Notebook's core workflow (create/upload/chat with citations), 7-agent pipeline, advanced one-shot tools, and Explain tab; only Research Report is still Streamlit/CLI-only for now. Run the backend with `python -m uvicorn backend.app.main:app --reload --port 8000` and the frontend with `cd frontend && npm install && npm run dev`, then open http://localhost:5173 — see the README's "Web App (React + FastAPI)" section for the full setup, build, and test commands.
 
 ---
 

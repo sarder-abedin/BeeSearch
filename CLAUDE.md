@@ -103,9 +103,12 @@ cd frontend && npm run e2e                                       # frontend E2E 
 A REST API (`backend/`) and a React + TypeScript SPA (`frontend/`) expose the
 same core logic as the CLI/Streamlit UI, added alongside them — `main.py` and
 `app.py` are unmodified by this. Current coverage: Mode 1 and Mode 3 are
-complete; Mode 2 covers only the core notebook workflow (create/rename/delete,
-source upload, grounded chat with citations) — the 7-agent pipeline, advanced
-tools, Explain tab, and Research Report are still Streamlit/CLI-only.
+complete; Mode 2 covers the core notebook workflow (create/rename/delete,
+source upload, grounded chat with citations), the 7-agent analysis pipeline,
+the standalone advanced tools (cross-document summary, FAQ, literature
+review, mind map, audio summary, source comparison, knowledge graph,
+citation timeline, study comparison), and the Explain tab — only the
+Research Report workflow is still Streamlit/CLI-only.
 
 - `backend/app/main.py` — FastAPI app factory; CORS via `BEESEARCH_CORS_ORIGINS`
   (defaults to the Vite dev ports); mounts `backend/app/routers/{health,

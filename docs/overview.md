@@ -274,10 +274,10 @@ If no sources are found, the result is marked ungrounded: the answer carries an 
 A REST API (`backend/`) and a React SPA (`frontend/`) provide an additional
 interface, added alongside Streamlit/CLI without modifying either — same
 `agents/*`/`projects/*` logic underneath, no parallel business logic.
-**Coverage:** Mode 1 and Mode 3 are complete; Mode 2 covers only the core
-Q&A workflow (create/upload/chat with citations) — the 7-agent pipeline,
-Explain tab, Research Report, and advanced one-shot tools are still
-Streamlit/CLI-only. Long-running calls go through an in-memory background
+**Coverage:** Mode 1 and Mode 3 are complete; Mode 2 covers the core Q&A
+workflow (create/upload/chat with citations), the 7-agent pipeline, the
+advanced one-shot tools, and the Explain tab — only Research Report is
+still Streamlit/CLI-only. Long-running calls go through an in-memory background
 job runner (`backend/app/jobs.py`); the frontend polls for status every
 700ms. `BEESEARCH_MOCK_LLM=1` swaps in canned LLM/search responses for
 dev/test use, no Ollama required. See the README's "Web App (React +
