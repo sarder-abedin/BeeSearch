@@ -680,11 +680,11 @@ CLI without modifying either. It calls the exact same `agents/*` / `projects/*`
 logic described above — no parallel business logic, no parallel state machine.
 
 **Coverage:** Mode 1 (Systematic Review) and Mode 3 (AI Research Assistant)
-are complete. Mode 2 (Research Notebook) currently covers only the core Q&A
-workflow (2a above) — create/rename/delete notebooks, upload sources, chat
-with citations and Self-Reflective RAG status. The 7-agent pipeline (2b),
-Explain/Storyteller (2c), and the advanced one-shot tools are still
-Streamlit/CLI-only.
+are complete. Mode 2 (Research Notebook) covers the core Q&A workflow (2a
+above) — create/rename/delete notebooks, upload sources, chat with
+citations and Self-Reflective RAG status — plus the 7-agent pipeline (2b),
+the advanced one-shot tools, and Explain/Storyteller (2c). Only the
+Research Report workflow is still Streamlit/CLI-only.
 
 ```
 Browser (React SPA — Vite dev server, a static `vite build` output, or the

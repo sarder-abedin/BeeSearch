@@ -442,6 +442,49 @@ class NotebookMemory:
         return hits[:limit]
 
 
+def rebuild_processed_documents(notebook: Dict[str, Any]) -> List[Any]:
+    """Reconstruct ProcessedDocument objects from a loaded notebook's stored chunks.
+
+    For callers that need the full `tools.document_tools.ProcessedDocument`
+    shape (e.g. the Research Report workflow's `agents.graph._build_doc_context`)
+    rather than the raw chunk/source dicts `NotebookMemory.load()` returns.
+    """
+    from tools.document_tools import DocumentChunk, ProcessedDocument
+    chunks_by_doc: Dict[str, List[Dict[str, Any]]] = {}
+    for c in notebook.get("chunks", []):
+        chunks_by_doc.setdefault(c["doc_id"], []).append(c)
+    src_by_id = {s["doc_id"]: s for s in notebook.get("sources", [])}
+    docs = []
+    for doc_id, raw_chunks in chunks_by_doc.items():
+        src = src_by_id.get(doc_id, {})
+        filename = src.get("filename", doc_id)
+        sorted_chunks = sorted(raw_chunks, key=lambda c: (c.get("page_num", 0), c.get("chunk_index", 0)))
+        doc_chunks = [
+            DocumentChunk(
+                chunk_id=c["chunk_id"],
+                doc_id=doc_id,
+                doc_name=filename,
+                page_num=c.get("page_num", 0),
+                chunk_index=c.get("chunk_index", 0),
+                text=c.get("text", ""),
+                metadata=c.get("metadata", {}),
+            )
+            for c in sorted_chunks
+        ]
+        raw_text = "\n\n".join(c.get("text", "") for c in sorted_chunks)
+        docs.append(ProcessedDocument(
+            doc_id=doc_id,
+            filename=filename,
+            file_type=src.get("file_type", Path(filename).suffix.lstrip(".").lower() or "unknown"),
+            total_pages=src.get("total_pages", len(set(c.get("page_num", 0) for c in sorted_chunks))),
+            total_chunks=len(doc_chunks),
+            chunks=doc_chunks,
+            raw_text=raw_text,
+            content_md5=src.get("content_md5", ""),
+        ))
+    return docs
+
+
 def _make_snippet(text: str, terms: List[str], radius: int = 110) -> str:
     """Return a short excerpt centred on the first matched term, for result previews."""
     lowered = text.lower()

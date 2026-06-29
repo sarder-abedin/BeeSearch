@@ -17,18 +17,22 @@ import type { ConversationTurn, NotebookDetail, NotebookSummary } from "../api/n
 import EvalResultPanel from "../components/EvalResultPanel";
 import NotebookCitations from "../components/NotebookCitations";
 import AdvancedToolsTab from "../components/notebook/AdvancedToolsTab";
+import ExplainTab from "../components/notebook/ExplainTab";
 import PipelineTab from "../components/notebook/PipelineTab";
+import ResearchReportTab from "../components/notebook/ResearchReportTab";
 import RagReflectionPanel from "../components/RagReflectionPanel";
 import "../components/sr/sr-common.css";
 import "./NotebookPage.css";
 
 type ChatStatus = "idle" | "running" | "done" | "error";
-type NotebookTopTab = "chat" | "pipeline" | "advanced";
+type NotebookTopTab = "chat" | "pipeline" | "advanced" | "explain" | "report";
 
 const TOP_TABS: { key: NotebookTopTab; label: string }[] = [
   { key: "chat", label: "Chat" },
   { key: "pipeline", label: "Analysis Pipeline" },
   { key: "advanced", label: "Advanced Tools" },
+  { key: "explain", label: "Explain" },
+  { key: "report", label: "Research Report" },
 ];
 
 function errorMessage(err: unknown): string {
@@ -521,6 +525,14 @@ export default function NotebookPage() {
 
               {activeTopTab === "advanced" && (
                 <AdvancedToolsTab notebookId={activeId} sources={detail.sources} />
+              )}
+
+              {activeTopTab === "explain" && (
+                <ExplainTab notebookId={activeId} notebookName={detail.name} />
+              )}
+
+              {activeTopTab === "report" && (
+                <ResearchReportTab notebookId={activeId} sourceCount={detail.source_count} />
               )}
             </>
           )}

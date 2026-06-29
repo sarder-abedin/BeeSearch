@@ -230,12 +230,12 @@ A React + TypeScript frontend and a FastAPI backend sit alongside the
 Streamlit UI and CLI, exposing the same functionality over a REST API.
 
 **Current scope:** Mode 1 (Systematic Review) and Mode 3 (AI Research
-Assistant) are fully covered. Mode 2 (Research Notebook) currently covers
-the core workflow — create/rename/delete notebooks, upload sources, and
-grounded chat with citations and Self-Reflective RAG status — while the
-7-agent pipeline, advanced tools (FAQ, mind map, knowledge graph, etc.),
-Explain tab, and Research Report workflow are still Streamlit/CLI-only. The
-Streamlit app and CLI keep working exactly as documented above either way.
+Assistant) are fully covered. Mode 2 (Research Notebook) covers the core
+workflow — create/rename/delete notebooks, upload sources, and grounded
+chat with citations and Self-Reflective RAG status — plus the 7-agent
+pipeline, advanced tools (FAQ, mind map, knowledge graph, etc.), and the
+Explain tab. Only the Research Report workflow is still Streamlit/CLI-only.
+The Streamlit app and CLI keep working exactly as documented above either way.
 
 ### Requirements
 
