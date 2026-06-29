@@ -76,6 +76,15 @@ Local AI tools for systematic literature review and source-grounded research not
    # Edit .env with your preferred model and settings
    ```
 
+> **Optional — Mind Map / Knowledge Graph rendering:** these two Research
+> Notebook features render Graphviz DOT diagrams, which needs the system
+> `dot` binary in addition to the `graphviz` Python package already in
+> `requirements.txt`: `apt install graphviz` (Linux), `brew install graphviz`
+> (macOS), or the [Graphviz Windows installer](https://graphviz.org/download/).
+> Docker users get this for free — it's already in the image. Without it,
+> Mind Map/Knowledge Graph generation fails with a clear error instead of
+> crashing the app.
+
 ---
 
 ### Option A — Virtual Environment
@@ -313,6 +322,28 @@ npm run lint       # ESLint
 npx tsc --noEmit   # type-check only
 npm run e2e        # Playwright E2E -- auto-starts the backend (mock LLM) and a preview server
 ```
+
+---
+
+## MCP Server (optional)
+
+`mcp_servers/research_tools_server.py` exposes a subset of BeeSearch's search
+and notebook tools (arXiv, Semantic Scholar, CrossRef, web search, notebook
+RAG query) over the [Model Context Protocol](https://modelcontextprotocol.io),
+so external MCP clients — Claude Code, Claude Desktop — can call them
+directly. It's already registered in `.mcp.json` at the repo root, and uses
+the same `mcp` dependency pulled in by `requirements.txt`.
+
+```bash
+# Run directly
+python mcp_servers/research_tools_server.py
+
+# Or with the MCP inspector UI
+mcp dev mcp_servers/research_tools_server.py
+```
+
+This server is independent of the Streamlit app and CLI — it doesn't share
+their session state, and runs fine whether or not either is also running.
 
 ---
 
