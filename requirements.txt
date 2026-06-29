@@ -35,6 +35,10 @@ pyvis>=0.3.2              # Interactive Pyvis HTML graphs (BSD)
 plotly>=5.18.0            # Evidence map + trend charts (MIT)
 matplotlib>=3.8.0         # PNG fallback for evidence map (PSF)
 reportlab>=4.0.0          # PDF report generation (BSD)
+pandas>=2.0.0             # Meta-analysis data_editor rows (BSD-3-Clause)
+graphviz>=0.20            # Knowledge graph / mind map DOT rendering (MIT) —
+                          # Python bindings; also needs the system `dot`
+                          # binary (`apt install graphviz`, already in Dockerfile)
 
 # ── UI ────────────────────────────────────────────────────────
 streamlit>=1.40.0         # Web application framework (Apache 2.0)
@@ -48,7 +52,18 @@ python-multipart>=0.0.9   # Form/file upload parsing for FastAPI (Apache 2.0)
 # ── Utilities ─────────────────────────────────────────────────
 rich>=13.7.0              # Terminal formatting (MIT)
 python-dotenv>=1.0.0      # .env config loading (BSD)
+pydantic-settings>=2.0.0  # config/settings.py BaseSettings singleton (MIT)
+orjson>=3.9.0             # Fast JSON path for tools/session_db.py (Apache 2.0/MIT)
 psutil>=5.9.0             # RAM/CPU detection (BSD)
 requests>=2.32.0          # HTTP requests (Apache 2.0)
 pyttsx3>=2.90             # Text-to-speech for audio scripts (MPL 2.0)
 duckduckgo-search>=6.0.0  # Auto web search for Research Notebook (MIT)
+ddgs>=9.0.0               # duckduckgo-search's renamed successor package —
+                          # tools/search_tools.py falls back to it if the
+                          # `duckduckgo_search` import path is unavailable
+
+# ── MCP Server (optional — Claude Code / Claude Desktop integration) ──
+mcp>=1.0.0                # Model Context Protocol SDK for mcp_servers/research_tools_server.py (MIT)
+
+# ── Testing ───────────────────────────────────────────────────
+pytest>=8.0.0             # Test runner for tests/ + backend/tests/ (MIT)
