@@ -130,9 +130,9 @@ streamlit run app.py
 
 Docker bundles the app **and** an Ollama server together — no separate Ollama install needed.
 The same `docker compose up` also starts the React + FastAPI web app (see
-[Web App (React + FastAPI)](#web-app-react--fastapi) below) in its own
-`backend` and `frontend` containers, alongside Streamlit — none of the three
-interfaces replaces another.
+[Web App (React + FastAPI)](#web-app-react--fastapi) below) — served by the
+same container as Streamlit and the CLI — none of the three interfaces
+replaces another.
 
 #### Quick start (all platforms)
 
@@ -165,7 +165,7 @@ After that, copy the URL and paste it to the browser to run the Streamit web-app
 If you prefer running Docker commands directly:
 
 ```bash
-# Build and start everything: Ollama, Streamlit app, FastAPI backend, React frontend
+# Build and start everything: Ollama + Streamlit/CLI/FastAPI/React app
 docker compose up --build
 
 # Start without rebuilding (subsequent runs)
@@ -178,14 +178,11 @@ docker compose down
 docker compose exec ollama ollama pull mistral-nemo:12b
 ```
 
-This starts four containers: `research-ollama`, `research-app` (Streamlit,
-`http://localhost:8501`), `research-backend` (FastAPI, `http://localhost:8000`,
-interactive docs at `/docs`), and `research-frontend` (React, served by nginx
-at `http://localhost:5173`, which reverse-proxies its own `/api/*` requests to
-`research-backend`). Override the host ports with `BACKEND_PORT` /
-`FRONTEND_PORT` in `.env` if 8000/5173 are already in use. To run only the
-Streamlit stack, target it explicitly: `docker compose up --build ollama
-model-init app`.
+This starts two long-running containers: `research-ollama`, and `research-app`
+— which serves Streamlit (`http://localhost:8501`), the CLI, and the FastAPI
+backend together with the React frontend it serves (`http://localhost:8000`,
+interactive docs at `/docs`). Override the host ports with `APP_PORT` /
+`BACKEND_PORT` in `.env` if 8501/8000 are already in use.
 
 > **Linux bridge IP** — if the app can't reach Ollama, find the bridge IP with:
 > `ip route show default | awk '{print $3}'` (common value: `172.17.0.1`), then:
@@ -286,22 +283,23 @@ changes before previewing.
 
 ### Run with Docker
 
-The backend and frontend each run in their own container, alongside the
-existing Ollama and Streamlit containers — see [Option B —
-Docker](#option-b--docker) above for the full command reference.
+The backend and frontend are built into the same container as Streamlit and
+the CLI — see [Option B — Docker](#option-b--docker) above for the full
+command reference.
 
 ```bash
 docker compose up --build
 ```
 
-- Frontend (nginx, built from `frontend/Dockerfile`): `http://localhost:5173`
-- Backend (FastAPI, reuses the root `Dockerfile` with the startup command
-  overridden to `uvicorn`): `http://localhost:8000`, docs at
+- Backend + frontend (FastAPI serves the built React SPA at `/`, alongside
+  its `/api/*` routes): `http://localhost:8000`, docs at
   `http://localhost:8000/docs`
+- Streamlit: `http://localhost:8501`
 
-The frontend container needs no `VITE_API_BASE_URL` or other build-time
-configuration — its nginx config (`frontend/nginx.conf`) reverse-proxies
-`/api/*` to the `backend` container over the Compose network.
+The root `Dockerfile` builds the React app in a `node:20-alpine` stage
+(`npm run build`) and copies the static output into the final image, so
+there's no separate frontend container, no nginx process, and no
+`VITE_API_BASE_URL` or other build-time configuration needed.
 
 ### Tests
 
