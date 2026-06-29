@@ -17,7 +17,7 @@ BeeSearch/
 ├── app.py                          ← Streamlit entry point (3 modes)
 ├── main.py                         ← CLI entry point (3 modes)
 ├── requirements.txt
-├── backend/                        ← FastAPI REST API (additive; Mode 1, Mode 3, Mode 2 core)
+├── backend/                        ← FastAPI REST API (additive; all 3 modes)
 │   └── app/
 │       ├── main.py                 ← App factory, CORS, mock-LLM bootstrap
 │       ├── jobs.py                 ← In-memory background job runner
@@ -274,10 +274,10 @@ If no sources are found, the result is marked ungrounded: the answer carries an 
 A REST API (`backend/`) and a React SPA (`frontend/`) provide an additional
 interface, added alongside Streamlit/CLI without modifying either — same
 `agents/*`/`projects/*` logic underneath, no parallel business logic.
-**Coverage:** Mode 1 and Mode 3 are complete; Mode 2 covers the core Q&A
-workflow (create/upload/chat with citations), the 7-agent pipeline, the
-advanced one-shot tools, and the Explain tab — only Research Report is
-still Streamlit/CLI-only. Long-running calls go through an in-memory background
+**Coverage:** all three modes are fully covered. Mode 1 and Mode 3 are
+complete; Mode 2 covers the core Q&A workflow (create/upload/chat with
+citations), the 7-agent pipeline, the advanced one-shot tools, the Explain
+tab, and Research Report. Long-running calls go through an in-memory background
 job runner (`backend/app/jobs.py`); the frontend polls for status every
 700ms. `BEESEARCH_MOCK_LLM=1` swaps in canned LLM/search responses for
 dev/test use, no Ollama required. See the README's "Web App (React +
