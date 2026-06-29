@@ -45,7 +45,7 @@ from pathlib import Path
 import streamlit as st
 
 from agents.notebook_graph import run_notebook_turn
-from agents.notebook_memory import NotebookMemory
+from agents.notebook_memory import NotebookMemory, rebuild_processed_documents
 from agents.notebook_state import create_notebook_state
 from config.settings import get_settings
 from tools.hybrid_store import _stores as _hybrid_stores
@@ -1152,44 +1152,6 @@ def _tab_pipeline(active_id: str, notebook: dict, settings: dict) -> None:
             st.info("Podcast script not available.")
 
 
-def _rebuild_processed_docs(notebook: dict) -> list:
-    """Reconstruct ProcessedDocument objects from stored notebook chunks."""
-    from tools.document_tools import DocumentChunk, ProcessedDocument
-    chunks_by_doc: dict = {}
-    for c in notebook.get("chunks", []):
-        chunks_by_doc.setdefault(c["doc_id"], []).append(c)
-    src_by_id = {s["doc_id"]: s for s in notebook.get("sources", [])}
-    docs = []
-    for doc_id, raw_chunks in chunks_by_doc.items():
-        src = src_by_id.get(doc_id, {})
-        filename = src.get("filename", doc_id)
-        sorted_chunks = sorted(raw_chunks, key=lambda c: (c.get("page_num", 0), c.get("chunk_index", 0)))
-        doc_chunks = [
-            DocumentChunk(
-                chunk_id=c["chunk_id"],
-                doc_id=doc_id,
-                doc_name=filename,
-                page_num=c.get("page_num", 0),
-                chunk_index=c.get("chunk_index", 0),
-                text=c.get("text", ""),
-                metadata=c.get("metadata", {}),
-            )
-            for c in sorted_chunks
-        ]
-        raw_text = "\n\n".join(c.get("text", "") for c in sorted_chunks)
-        docs.append(ProcessedDocument(
-            doc_id=doc_id,
-            filename=filename,
-            file_type=src.get("file_type", Path(filename).suffix.lstrip(".").lower() or "unknown"),
-            total_pages=src.get("total_pages", len(set(c.get("page_num", 0) for c in sorted_chunks))),
-            total_chunks=len(doc_chunks),
-            chunks=doc_chunks,
-            raw_text=raw_text,
-            content_md5=src.get("content_md5", ""),
-        ))
-    return docs
-
-
 def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None:
     """Generate a structured research report grounded in notebook sources."""
     st.markdown(
@@ -1249,7 +1211,7 @@ def _tab_research_report(active_id: str, notebook: dict, settings: dict) -> None
                 logger.warning("Research Report unavailable: agents.graph/agents.state not found")
                 return
 
-            processed_docs = _rebuild_processed_docs(notebook)
+            processed_docs = rebuild_processed_documents(notebook)
             initial_state = create_initial_state(
                 goal=goal_final.strip(),
                 uploaded_docs=processed_docs,

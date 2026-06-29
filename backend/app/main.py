@@ -50,6 +50,7 @@ from .routers import (
     notebook_advanced,
     notebook_explain,
     notebook_pipeline,
+    notebook_report,
     research_assistant,
     systematic_review,
 )
@@ -83,3 +84,4 @@ app.include_router(notebook.router)
 app.include_router(notebook_pipeline.router)
 app.include_router(notebook_advanced.router)
 app.include_router(notebook_explain.router)
+app.include_router(notebook_report.router)
