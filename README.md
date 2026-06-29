@@ -235,13 +235,13 @@ docker compose exec app bash
 A React + TypeScript frontend and a FastAPI backend sit alongside the
 Streamlit UI and CLI, exposing the same functionality over a REST API.
 
-**Current scope:** Mode 1 (Systematic Review) and Mode 3 (AI Research
-Assistant) are fully covered. Mode 2 (Research Notebook) covers the core
-workflow — create/rename/delete notebooks, upload sources, and grounded
-chat with citations and Self-Reflective RAG status — plus the 7-agent
-pipeline, advanced tools (FAQ, mind map, knowledge graph, etc.), and the
-Explain tab. Only the Research Report workflow is still Streamlit/CLI-only.
-The Streamlit app and CLI keep working exactly as documented above either way.
+**Current scope:** all three modes are fully covered. Mode 1 (Systematic
+Review) and Mode 3 (AI Research Assistant) are complete. Mode 2 (Research
+Notebook) covers the core workflow — create/rename/delete notebooks, upload
+sources, and grounded chat with citations and Self-Reflective RAG status —
+plus the 7-agent pipeline, advanced tools (FAQ, mind map, knowledge graph,
+etc.), the Explain tab, and the Research Report workflow. The Streamlit app
+and CLI keep working exactly as documented above either way.
 
 ### Requirements
 
