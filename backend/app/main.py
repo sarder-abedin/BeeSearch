@@ -41,6 +41,7 @@ if os.environ.get("BEESEARCH_MOCK_LLM") == "1":
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from config.settings import get_settings
 
@@ -85,3 +86,13 @@ app.include_router(notebook_pipeline.router)
 app.include_router(notebook_advanced.router)
 app.include_router(notebook_explain.router)
 app.include_router(notebook_report.router)
+
+# Serves the built React SPA (see the root Dockerfile's frontend-build
+# stage) at "/" so the combined Streamlit+CLI+FastAPI container needs no
+# separate nginx process. Mounted last so it acts as a fallback -- Starlette
+# tries the API routes above first and only reaches this catch-all mount for
+# unmatched paths. Absent in local dev unless `cd frontend && npm run build`
+# has been run first.
+_FRONTEND_DIST = _REPO_ROOT / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")

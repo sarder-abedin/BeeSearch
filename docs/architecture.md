@@ -688,9 +688,9 @@ Research Report workflow is still Streamlit/CLI-only.
 
 ```
 Browser (React SPA — Vite dev server, a static `vite build` output, or the
-         nginx-served build inside the `frontend` Docker container)
+         build FastAPI serves directly from `frontend/dist` in Docker)
         │  fetch() — relative paths, proxied to :8000 by Vite (dev/preview)
-        │  or by nginx (`frontend/nginx.conf`, Docker only)
+        │  or served same-origin by FastAPI's StaticFiles mount (Docker only)
         ▼
 FastAPI (backend/app/main.py)
   ├── routers/health.py               GET  /api/health
@@ -702,15 +702,19 @@ FastAPI (backend/app/main.py)
 services/*_service.py  →  agents/*.py, projects/*.py   (same modules the CLI/Streamlit call)
 ```
 
-**Docker:** `docker compose up --build` runs the backend and frontend as
-their own containers (`research-backend`, `research-frontend`), alongside
-the pre-existing `research-ollama` and `research-app` (Streamlit)
-containers — see the root `docker-compose.yml`. The `backend` service
-reuses the root `Dockerfile` (same image as `app`) with its startup command
-overridden to `uvicorn`, since `requirements.txt` already includes
-`fastapi`/`uvicorn`. The `frontend` service has its own `frontend/Dockerfile`
-(multi-stage Node build → nginx) since it needs a JS toolchain the root
-image doesn't have.
+**Docker:** `docker compose up --build` runs Streamlit, the CLI, the FastAPI
+backend, and the built React frontend all in one `research-app` container,
+alongside the pre-existing `research-ollama` container — see the root
+`docker-compose.yml`. The root `Dockerfile` is multi-stage: a `node:20-alpine`
+stage runs `npm run build` for `frontend/`, then the final `python:3.11-slim`
+stage copies the built static assets in, and `backend/app/main.py` mounts
+them with `StaticFiles(html=True)` at `/` (registered after all the
+`/api/*` routers, so it only catches unmatched paths). `docker-entrypoint.sh`
+runs Streamlit and `uvicorn backend.app.main:app` as sibling processes inside
+that one container. The standalone `frontend/Dockerfile` + `frontend/nginx.conf`
+(multi-stage Node build → nginx) still work on their own
+(`docker build -t beesearch-frontend ./frontend`) but are no longer wired
+into the default Compose files.
 
 Long-running calls (an SR pipeline run, a notebook chat turn) go through
 `backend/app/jobs.py`'s in-memory, thread-based background job runner: the
@@ -748,7 +752,7 @@ BeeSearch/
 │       └── schemas/          ← Pydantic request/response models
 │
 ├── frontend/                 ← React + TypeScript SPA (Vite), talks to backend/ over REST
-│   ├── Dockerfile            ← multi-stage build -> nginx; /api/* reverse-proxied to the backend container
+│   ├── Dockerfile            ← standalone multi-stage build -> nginx (optional; default Docker build instead serves frontend/dist via the root Dockerfile + FastAPI)
 │   ├── src/
 │   │   ├── api/              ← fetch wrapper (client.ts) + per-mode API clients
 │   │   ├── pages/            ← one page per mode (SystematicReviewPage, NotebookPage, AskPage)
@@ -881,5 +885,5 @@ BeeSearch/
 | Retry Logic | tenacity | Exponential backoff on API calls |
 | Memory | SQLite (stdlib sqlite3) | `sessions.db`; WAL mode |
 | Web API | FastAPI + Uvicorn | `backend/` — REST layer over the same agents/projects modules |
-| Web Frontend | React 19 + TypeScript + Vite | `frontend/` — SPA; Vite dev-server proxy locally, nginx reverse proxy in its Docker container |
+| Web Frontend | React 19 + TypeScript + Vite | `frontend/` — SPA; Vite dev-server proxy locally, served statically by FastAPI in Docker |
 | Web Frontend Tests | Vitest + Testing Library, Playwright | Component tests; E2E against the mock-LLM backend |
