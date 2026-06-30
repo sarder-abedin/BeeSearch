@@ -75,6 +75,7 @@ export interface ChatRequest {
   include_web_search?: boolean;
   model?: string | null;
   num_ctx?: number | null;
+  embed_model?: string | null;
   top_k?: number | null;
   temperature_level?: TemperatureLevel | null;
 }

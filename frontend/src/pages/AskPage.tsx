@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import { askResearchAssistant, pollAskJob } from "../api/researchAssistant";
 import type { AskJobStatus, AskResult } from "../api/types";
 import CitationCard from "../components/CitationCard";
+import { useSettings } from "../context/SettingsContext";
 import "./AskPage.css";
 
 type RunStatus = "idle" | "running" | "done" | "error";
@@ -40,6 +41,7 @@ function stageLabel(
 }
 
 export default function AskPage() {
+  const settings = useSettings();
   const [question, setQuestion] = useState("");
   const [includeWeb, setIncludeWeb] = useState(true);
   const [status, setStatus] = useState<RunStatus>("idle");
@@ -58,7 +60,14 @@ export default function AskPage() {
     setResult(null);
 
     try {
-      const { job_id } = await askResearchAssistant({ question: q, include_web: web });
+      const { job_id } = await askResearchAssistant({
+        question: q,
+        include_web: web,
+        include_crossref: settings.includeCrossref,
+        model: settings.model,
+        num_ctx: settings.numCtx,
+        temperature_level: settings.temperatureLevel,
+      });
       const final: AskJobStatus = await pollAskJob(
         job_id,
         (update) => {

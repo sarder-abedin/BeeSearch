@@ -21,6 +21,7 @@ import ExplainTab from "../components/notebook/ExplainTab";
 import PipelineTab from "../components/notebook/PipelineTab";
 import ResearchReportTab from "../components/notebook/ResearchReportTab";
 import RagReflectionPanel from "../components/RagReflectionPanel";
+import { useSettings } from "../context/SettingsContext";
 import "../components/sr/sr-common.css";
 import "./NotebookPage.css";
 
@@ -40,6 +41,7 @@ function errorMessage(err: unknown): string {
 }
 
 export default function NotebookPage() {
+  const settings = useSettings();
   const [notebooks, setNotebooks] = useState<NotebookSummary[]>([]);
   const [notebooksError, setNotebooksError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -158,7 +160,7 @@ export default function NotebookPage() {
     const duplicates: string[] = [];
     try {
       for (const file of Array.from(files)) {
-        const result = await uploadSource(activeId, file);
+        const result = await uploadSource(activeId, file, settings.chunkSize, settings.chunkOverlap);
         if (result.duplicate) duplicates.push(file.name);
       }
       if (duplicates.length > 0) {
@@ -245,6 +247,11 @@ export default function NotebookPage() {
         notebook_id: activeId,
         message: text,
         include_web_search: autoWebSearch,
+        model: settings.model,
+        num_ctx: settings.numCtx,
+        embed_model: settings.embedModel,
+        top_k: settings.hybridTopK,
+        temperature_level: settings.temperatureLevel,
       });
 
       const final = await pollChatJob(

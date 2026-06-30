@@ -164,7 +164,13 @@ def get_history(notebook_id: str, max_turns: int = 8) -> List[ConversationTurn]:
 # Source upload / removal
 # ─────────────────────────────────────────────────────────────────────────────
 
-def upload_source(notebook_id: str, filename: str, file_bytes: bytes) -> UploadSourceResult:
+def upload_source(
+    notebook_id: str,
+    filename: str,
+    file_bytes: bytes,
+    chunk_size: Optional[int] = None,
+    chunk_overlap: Optional[int] = None,
+) -> UploadSourceResult:
     """Process one uploaded file and add it to the notebook.
 
     Raises ``KeyError`` if ``notebook_id`` doesn't exist (router -> 404) and
@@ -176,8 +182,8 @@ def upload_source(notebook_id: str, filename: str, file_bytes: bytes) -> UploadS
         raise KeyError(notebook_id)
 
     processor = DocumentProcessor(
-        chunk_size=cfg.chunk_size,
-        overlap=cfg.chunk_overlap,
+        chunk_size=chunk_size if chunk_size is not None else cfg.chunk_size,
+        overlap=chunk_overlap if chunk_overlap is not None else cfg.chunk_overlap,
         max_raw_chars=200_000,
         max_pages=300,
     )
@@ -238,6 +244,8 @@ def build_initial_state(req: ChatRequest) -> NotebookState:
         kwargs["model_name"] = req.model
     if req.num_ctx is not None:
         kwargs["num_ctx"] = req.num_ctx
+    if req.embed_model:
+        kwargs["embed_model"] = req.embed_model
     if req.top_k is not None:
         kwargs["top_k"] = req.top_k
     if req.temperature_level:

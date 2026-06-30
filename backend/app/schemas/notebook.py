@@ -113,6 +113,7 @@ class ChatRequest(BaseModel):
     )
     model: Optional[str] = Field(None, description="Ollama model override; omit to use the server's configured default.")
     num_ctx: Optional[int] = Field(None, gt=0, description="Context window override (tokens).")
+    embed_model: Optional[str] = Field(None, description="Ollama embedding model override for Hybrid RAG retrieval.")
     top_k: Optional[int] = Field(None, gt=0, description="Number of chunks to retrieve; omit to use the server default.")
     temperature_level: Optional[TemperatureLevel] = Field(
         None, description="Response tuning level; omit to use the module default ('focused')."

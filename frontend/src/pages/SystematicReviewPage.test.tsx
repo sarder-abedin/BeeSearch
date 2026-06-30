@@ -16,6 +16,20 @@ vi.mock("../api/systematicReview", () => ({
   checkGrammar: (...args: unknown[]) => checkGrammarMock(...args),
 }));
 
+vi.mock("../context/SettingsContext", () => ({
+  useSettings: () => ({
+    model: null,
+    numCtx: 8192,
+    temperatureLevel: "focused",
+    embedModel: null,
+    hybridTopK: 8,
+    maxResults: 6,
+    includeCrossref: true,
+    chunkSize: 800,
+    chunkOverlap: 150,
+  }),
+}));
+
 const PAPER: PaperLite = {
   title: "A Survey of Sleep Deprivation",
   authors: ["A. Researcher", "B. Scholar"],
@@ -214,6 +228,10 @@ describe("SystematicReviewPage", () => {
       research_question: "Does sleep deprivation affect working memory?",
       inclusion_criteria: ["Peer-reviewed"],
       exclusion_criteria: ["Animal studies"],
+      model: null,
+      num_ctx: 8192,
+      max_results: 6,
+      include_crossref: true,
     });
     expect(await screen.findByText("Starting…")).toBeInTheDocument();
 

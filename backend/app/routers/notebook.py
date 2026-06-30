@@ -17,9 +17,9 @@ fast, non-LLM operation against ``NotebookMemory``, so those run synchronously.
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from .. import jobs
 from ..schemas.jobs import JobCreated
@@ -88,10 +88,18 @@ def get_history(notebook_id: str, max_turns: int = 8) -> List[ConversationTurn]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/notebooks/{notebook_id}/sources", response_model=UploadSourceResult)
-async def upload_source(notebook_id: str, file: UploadFile = File(...)) -> UploadSourceResult:
+async def upload_source(
+    notebook_id: str,
+    file: UploadFile = File(...),
+    chunk_size: Optional[int] = Form(None, gt=0),
+    chunk_overlap: Optional[int] = Form(None, ge=0),
+) -> UploadSourceResult:
     file_bytes = await file.read()
     try:
-        return notebook_service.upload_source(notebook_id, file.filename or "upload", file_bytes)
+        return notebook_service.upload_source(
+            notebook_id, file.filename or "upload", file_bytes,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Notebook '{notebook_id}' not found.")
     except ValueError as e:
