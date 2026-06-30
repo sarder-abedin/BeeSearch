@@ -420,4 +420,38 @@ describe("NotebookPage", () => {
     expect(deleteNotebookMock).toHaveBeenCalledWith("nb-1");
     expect(await screen.findByText("Create or select a notebook on the left to begin.")).toBeInTheDocument();
   });
+
+  it("switches to the Analysis Pipeline tab and shows its no-sources guard when the notebook is empty", async () => {
+    const user = userEvent.setup();
+    listNotebooksMock.mockResolvedValue([makeSummary()]);
+    getNotebookMock.mockResolvedValue(makeDetail());
+    render(<NotebookPage />);
+
+    await user.selectOptions(await screen.findByLabelText("Select a notebook"), "nb-1");
+    await screen.findByRole("heading", { name: "My Notebook" });
+
+    await user.click(screen.getByRole("tab", { name: "Analysis Pipeline" }));
+
+    expect(
+      await screen.findByText("Add at least one source in the Sources panel before running the analysis pipeline."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Message")).not.toBeInTheDocument();
+  });
+
+  it("switches to the Analysis Pipeline tab and shows the Run button once a source is present", async () => {
+    const user = userEvent.setup();
+    listNotebooksMock.mockResolvedValue([makeSummary({ source_count: 1 })]);
+    getNotebookMock.mockResolvedValue(makeDetail({ sources: [makeSource()], source_count: 1 }));
+    render(<NotebookPage />);
+
+    await user.selectOptions(await screen.findByLabelText("Select a notebook"), "nb-1");
+    await screen.findByText("paper.pdf");
+
+    await user.click(screen.getByRole("tab", { name: "Analysis Pipeline" }));
+    expect(await screen.findByRole("button", { name: "Run Full Pipeline" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Chat" }));
+    expect(screen.getByLabelText("Message")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run Full Pipeline" })).not.toBeInTheDocument();
+  });
 });

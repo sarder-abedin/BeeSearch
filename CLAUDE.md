@@ -58,7 +58,7 @@ BEESEARCH_MOCK_LLM=1 python -m uvicorn backend.app.main:app --reload --port 8000
 ./scripts/start.sh        # Linux CPU
 ./scripts/start-gpu.sh    # Linux NVIDIA GPU
 ./scripts/start-mac.sh    # macOS
-docker compose up --build  # ollama + app (Streamlit) + backend (FastAPI) + frontend (React/nginx)
+docker compose up --build  # ollama + app (Streamlit + CLI + FastAPI + React, one container)
 ```
 
 ### Tests
@@ -102,10 +102,15 @@ cd frontend && npm run e2e                                       # frontend E2E 
 
 A REST API (`backend/`) and a React + TypeScript SPA (`frontend/`) expose the
 same core logic as the CLI/Streamlit UI, added alongside them — `main.py` and
-`app.py` are unmodified by this. Current coverage: Mode 1 and Mode 3 are
-complete; Mode 2 covers only the core notebook workflow (create/rename/delete,
-source upload, grounded chat with citations) — the 7-agent pipeline, advanced
-tools, Explain tab, and Research Report are still Streamlit/CLI-only.
+`app.py` are unmodified by this. Current coverage: all three modes are fully
+covered. Mode 1 and Mode 3 are complete; Mode 2 covers the core notebook
+workflow (create/rename/delete, source upload, grounded chat with citations),
+the 7-agent analysis pipeline, the standalone advanced tools (cross-document
+summary, FAQ, literature review, mind map, audio summary, source comparison,
+knowledge graph, citation timeline, study comparison), the Explain tab, and
+the Research Report workflow (`backend/app/routers/notebook_report.py` +
+`notebook_report_service.py`, `frontend/src/components/notebook/
+ResearchReportTab.tsx`).
 
 - `backend/app/main.py` — FastAPI app factory; CORS via `BEESEARCH_CORS_ORIGINS`
   (defaults to the Vite dev ports); mounts `backend/app/routers/{health,
@@ -135,14 +140,19 @@ tools, Explain tab, and Research Report are still Streamlit/CLI-only.
 - `frontend/src/pages/{LandingPage,SystematicReviewPage,NotebookPage,AskPage}.tsx`
   — one page per mode (`AskPage` = Mode 3); `App.tsx` does `?mode=mode1|mode2|mode3`
   query-param routing, no router dependency.
-- **Docker**: `backend` and `frontend` are their own `docker-compose.yml` services
-  (`research-backend`, `research-frontend`), alongside the pre-existing `ollama`/
-  `app` services. `backend` reuses the root `Dockerfile` with its command overridden
-  to `python -m uvicorn backend.app.main:app ...` (no separate Dockerfile, since
-  `requirements.txt` already has `fastapi`/`uvicorn`). `frontend` has its own
-  `frontend/Dockerfile` (multi-stage: `npm run build` → nginx); `frontend/nginx.conf`
-  reverse-proxies `/api/*` to the `backend` service over the Compose network, so the
-  container needs no `VITE_API_BASE_URL` build arg.
+- **Docker**: the root `Dockerfile` is multi-stage -- a `node:20-alpine` stage runs
+  `npm run build` for `frontend/`, then `COPY --from=` copies the built static assets
+  into the final `python:3.11-slim` stage at `frontend/dist`. `backend/app/main.py`
+  mounts that directory with `StaticFiles(html=True)` at `/` (after all API routers,
+  so it only catches unmatched paths), so the FastAPI process serves the React SPA
+  directly -- no nginx, no separate frontend container. `docker-entrypoint.sh` runs
+  Streamlit and `uvicorn backend.app.main:app` as sibling background processes in the
+  same `app` container (`docker-compose.yml`/`docker-compose.mac.yml`), exposing both
+  8501 and 8000; the CLI runs ad hoc via `docker compose exec app python main.py ...`.
+  The standalone `frontend/Dockerfile` + `frontend/nginx.conf` (multi-stage `npm run
+  build` → nginx, reverse-proxying `/api/*`) still work standalone (`docker build -t
+  beesearch-frontend ./frontend`) but are no longer referenced by the default Compose
+  files.
 
 ### Internal "Mode N" numbering vs. user-facing modes
 

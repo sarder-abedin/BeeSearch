@@ -16,6 +16,7 @@ Local AI tools for systematic literature review and source-grounded research not
 - [Key features](#key-features)
 - [Installation](#installation)
 - [Web App (React + FastAPI)](#web-app-react--fastapi)
+- [MCP Server (optional)](#mcp-server-optional)
 - [CLI reference](#cli-reference)
 - [Response tuning — Temperature levels](#response-tuning--temperature-levels)
 - [Research Notebook — UI features](#research-notebook--ui-features)
@@ -93,6 +94,15 @@ Local AI tools for systematic literature review and source-grounded research not
    # Edit .env with your preferred model and settings
    ```
 
+> **Optional — Mind Map / Knowledge Graph rendering:** these two Research
+> Notebook features render Graphviz DOT diagrams, which needs the system
+> `dot` binary in addition to the `graphviz` Python package already in
+> `requirements.txt`: `apt install graphviz` (Linux), `brew install graphviz`
+> (macOS), or the [Graphviz Windows installer](https://graphviz.org/download/).
+> Docker users get this for free — it's already in the image. Without it,
+> Mind Map/Knowledge Graph generation fails with a clear error instead of
+> crashing the app.
+
 ---
 
 ### Option A — Virtual Environment
@@ -147,9 +157,9 @@ streamlit run app.py
 
 Docker bundles the app **and** an Ollama server together — no separate Ollama install needed.
 The same `docker compose up` also starts the React + FastAPI web app (see
-[Web App (React + FastAPI)](#web-app-react--fastapi) below) in its own
-`backend` and `frontend` containers, alongside Streamlit — none of the three
-interfaces replaces another.
+[Web App (React + FastAPI)](#web-app-react--fastapi) below) — served by the
+same container as Streamlit and the CLI — none of the three interfaces
+replaces another.
 
 #### Quick start (all platforms)
 
@@ -182,7 +192,7 @@ After that, copy the URL and paste it into the browser to run the Streamlit web 
 If you prefer running Docker commands directly:
 
 ```bash
-# Build and start everything: Ollama, Streamlit app, FastAPI backend, React frontend
+# Build and start everything: Ollama + Streamlit/CLI/FastAPI/React app
 docker compose up --build
 
 # Start without rebuilding (subsequent runs)
@@ -195,14 +205,11 @@ docker compose down
 docker compose exec ollama ollama pull mistral-nemo:12b
 ```
 
-This starts four containers: `research-ollama`, `research-app` (Streamlit,
-`http://localhost:8501`), `research-backend` (FastAPI, `http://localhost:8000`,
-interactive docs at `/docs`), and `research-frontend` (React, served by nginx
-at `http://localhost:5173`, which reverse-proxies its own `/api/*` requests to
-`research-backend`). Override the host ports with `BACKEND_PORT` /
-`FRONTEND_PORT` in `.env` if 8000/5173 are already in use. To run only the
-Streamlit stack, target it explicitly: `docker compose up --build ollama
-model-init app`.
+This starts two long-running containers: `research-ollama`, and `research-app`
+— which serves Streamlit (`http://localhost:8501`), the CLI, and the FastAPI
+backend together with the React frontend it serves (`http://localhost:8000`,
+interactive docs at `/docs`). Override the host ports with `APP_PORT` /
+`BACKEND_PORT` in `.env` if 8501/8000 are already in use.
 
 > **Linux bridge IP** — if the app can't reach Ollama, find the bridge IP with:
 > `ip route show default | awk '{print $3}'` (common value: `172.17.0.1`), then:
@@ -246,13 +253,13 @@ docker compose exec app bash
 A React + TypeScript frontend and a FastAPI backend sit alongside the
 Streamlit UI and CLI, exposing the same functionality over a REST API.
 
-**Current scope:** Mode 1 (Systematic Review) and Mode 3 (AI Research
-Assistant) are fully covered. Mode 2 (Research Notebook) currently covers
-the core workflow — create/rename/delete notebooks, upload sources, and
-grounded chat with citations and Self-Reflective RAG status — while the
-7-agent pipeline, advanced tools (FAQ, mind map, knowledge graph, etc.),
-Explain tab, and Research Report workflow are still Streamlit/CLI-only. The
-Streamlit app and CLI keep working exactly as documented above either way.
+**Current scope:** all three modes are fully covered. Mode 1 (Systematic
+Review) and Mode 3 (AI Research Assistant) are complete. Mode 2 (Research
+Notebook) covers the core workflow — create/rename/delete notebooks, upload
+sources, and grounded chat with citations and Self-Reflective RAG status —
+plus the 7-agent pipeline, advanced tools (FAQ, mind map, knowledge graph,
+etc.), the Explain tab, and the Research Report workflow. The Streamlit app
+and CLI keep working exactly as documented above either way.
 
 ### Requirements
 
@@ -303,19 +310,23 @@ changes before previewing.
 
 ### Run with Docker
 
-The backend and frontend each run in their own container, alongside the
-existing Ollama and Streamlit containers, started by the same `docker compose
-up --build` — see [Option B — Docker](#option-b--docker) above for the full
-command reference. Once running:
+The backend and frontend are built into the same container as Streamlit and
+the CLI — see [Option B — Docker](#option-b--docker) above for the full
+command reference.
 
-- Frontend (nginx, built from `frontend/Dockerfile`): `http://localhost:5173`
-- Backend (FastAPI, reuses the root `Dockerfile` with the startup command
-  overridden to `uvicorn`): `http://localhost:8000`, docs at
+```bash
+docker compose up --build
+```
+
+- Backend + frontend (FastAPI serves the built React SPA at `/`, alongside
+  its `/api/*` routes): `http://localhost:8000`, docs at
   `http://localhost:8000/docs`
+- Streamlit: `http://localhost:8501`
 
-The frontend container needs no `VITE_API_BASE_URL` or other build-time
-configuration — its nginx config (`frontend/nginx.conf`) reverse-proxies
-`/api/*` to the `backend` container over the Compose network.
+The root `Dockerfile` builds the React app in a `node:20-alpine` stage
+(`npm run build`) and copies the static output into the final image, so
+there's no separate frontend container, no nginx process, and no
+`VITE_API_BASE_URL` or other build-time configuration needed.
 
 ### Tests
 
@@ -329,6 +340,28 @@ npm run lint       # ESLint
 npx tsc --noEmit   # type-check only
 npm run e2e        # Playwright E2E -- auto-starts the backend (mock LLM) and a preview server
 ```
+
+---
+
+## MCP Server (optional)
+
+`mcp_servers/research_tools_server.py` exposes a subset of BeeSearch's search
+and notebook tools (arXiv, Semantic Scholar, CrossRef, web search, notebook
+RAG query) over the [Model Context Protocol](https://modelcontextprotocol.io),
+so external MCP clients — Claude Code, Claude Desktop — can call them
+directly. It's already registered in `.mcp.json` at the repo root, and uses
+the same `mcp` dependency pulled in by `requirements.txt`.
+
+```bash
+# Run directly
+python mcp_servers/research_tools_server.py
+
+# Or with the MCP inspector UI
+mcp dev mcp_servers/research_tools_server.py
+```
+
+This server is independent of the Streamlit app and CLI — it doesn't share
+their session state, and runs fine whether or not either is also running.
 
 ---
 
