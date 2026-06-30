@@ -10,6 +10,23 @@ Local AI tools for systematic literature review and source-grounded research not
 
 ---
 
+## Table of contents
+
+- [Three modes, fully local](#three-modes-fully-local)
+- [Key features](#key-features)
+- [Installation](#installation)
+- [Web App (React + FastAPI)](#web-app-react--fastapi)
+- [CLI reference](#cli-reference)
+- [Response tuning — Temperature levels](#response-tuning--temperature-levels)
+- [Research Notebook — UI features](#research-notebook--ui-features)
+- [Configuration](#configuration)
+- [Hardware requirements](#hardware-requirements)
+- [Output files](#output-files)
+- [Documentation](#documentation)
+- [License](#license)
+
+---
+
 ## Three modes, fully local
 
 | Mode | What it does |
@@ -152,11 +169,11 @@ Add `--build` to force a full image rebuild:
 ```
 The browser opens at `http://localhost:8501` once the container is healthy (~30–60 s on first run while Docker downloads images and builds layers). On Ctrl-C the script shuts the containers down cleanly.
 
-Alternatively, run the Docker container without automatic Streamit running on the default browser with full build (this is the example of macOS. But, check the .yml file in the repo for other systems):
+Alternatively, run the Docker container without automatically opening Streamlit in the default browser, with a full build (this is the example for macOS — check the `.yml` file in the repo for other systems):
 ```bash
-docker compose -f docker-compose.mac.yml up --build   
+docker compose -f docker-compose.mac.yml up --build
 ```
-After that, copy the URL and paste it to the browser to run the Streamit web-app.  
+After that, copy the URL and paste it into the browser to run the Streamlit web app.
 
 ---
 
@@ -287,12 +304,9 @@ changes before previewing.
 ### Run with Docker
 
 The backend and frontend each run in their own container, alongside the
-existing Ollama and Streamlit containers — see [Option B —
-Docker](#option-b--docker) above for the full command reference.
-
-```bash
-docker compose up --build
-```
+existing Ollama and Streamlit containers, started by the same `docker compose
+up --build` — see [Option B — Docker](#option-b--docker) above for the full
+command reference. Once running:
 
 - Frontend (nginx, built from `frontend/Dockerfile`): `http://localhost:5173`
 - Backend (FastAPI, reuses the root `Dockerfile` with the startup command
@@ -318,7 +332,7 @@ npm run e2e        # Playwright E2E -- auto-starts the backend (mock LLM) and a 
 
 ---
 
-## CLI Reference
+## CLI reference
 
 ### Systematic Literature Review
 
@@ -566,6 +580,19 @@ All outputs are saved to `outputs/`:
 | `mindmap_<id>.dot/png/svg` | Mind map |
 | `citation_timeline_<id>.md` | Citation timeline (cited works by year) |
 | `<name>_sections_<id>.md` | Section-by-section breakdown (CLI `--output`) |
+
+---
+
+## Documentation
+
+Deeper dives beyond this README:
+
+| Doc | Contents |
+|-----|---------|
+| [`docs/architecture.md`](docs/architecture.md) | Full pipeline diagrams, state field lists, file map, tech stack |
+| [`docs/overview.md`](docs/overview.md) | Condensed architecture overview |
+| [`docs/tutorial.md`](docs/tutorial.md) | Step-by-step walkthrough |
+| [`docs/FAQ.md`](docs/FAQ.md) | Frequently asked questions |
 
 ---
 
