@@ -27,6 +27,20 @@ vi.mock("../api/notebook", () => ({
   uploadSource: (...args: unknown[]) => uploadSourceMock(...args),
 }));
 
+vi.mock("../context/SettingsContext", () => ({
+  useSettings: () => ({
+    model: null,
+    numCtx: 8192,
+    temperatureLevel: "focused",
+    embedModel: null,
+    hybridTopK: 8,
+    maxResults: 6,
+    includeCrossref: true,
+    chunkSize: 800,
+    chunkOverlap: 150,
+  }),
+}));
+
 function makeSummary(overrides: Partial<NotebookSummary> = {}): NotebookSummary {
   return {
     notebook_id: "nb-1",
@@ -204,7 +218,7 @@ describe("NotebookPage", () => {
     const file = new File(["content"], "paper.pdf", { type: "application/pdf" });
     await user.upload(screen.getByLabelText("Upload sources"), file);
 
-    expect(uploadSourceMock).toHaveBeenCalledWith("nb-1", file);
+    expect(uploadSourceMock).toHaveBeenCalledWith("nb-1", file, 800, 150);
     expect(await screen.findByText("paper.pdf")).toBeInTheDocument();
     expect(screen.getByText("(12 chunks)")).toBeInTheDocument();
   });
@@ -262,6 +276,11 @@ describe("NotebookPage", () => {
       notebook_id: "nb-1",
       message: "What is the main finding?",
       include_web_search: false,
+      model: null,
+      num_ctx: 8192,
+      embed_model: null,
+      top_k: 8,
+      temperature_level: "focused",
     });
 
     await poll.update({
@@ -326,6 +345,11 @@ describe("NotebookPage", () => {
       notebook_id: "nb-1",
       message: "What methodology was used?",
       include_web_search: false,
+      model: null,
+      num_ctx: 8192,
+      embed_model: null,
+      top_k: 8,
+      temperature_level: "focused",
     });
 
     await poll2.settle({

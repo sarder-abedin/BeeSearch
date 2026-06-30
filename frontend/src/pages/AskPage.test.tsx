@@ -12,6 +12,20 @@ vi.mock("../api/researchAssistant", () => ({
   pollAskJob: (...args: unknown[]) => pollAskJobMock(...args),
 }));
 
+vi.mock("../context/SettingsContext", () => ({
+  useSettings: () => ({
+    model: null,
+    numCtx: 8192,
+    temperatureLevel: "focused",
+    embedModel: null,
+    hybridTopK: 8,
+    maxResults: 6,
+    includeCrossref: true,
+    chunkSize: 800,
+    chunkOverlap: 150,
+  }),
+}));
+
 const SOURCE = {
   n: 1,
   kind: "academic" as const,
@@ -121,6 +135,10 @@ describe("AskPage", () => {
     expect(askResearchAssistantMock).toHaveBeenCalledWith({
       question: "Does sleep help memory?",
       include_web: true,
+      include_crossref: true,
+      model: null,
+      num_ctx: 8192,
+      temperature_level: "focused",
     });
 
     await poll.update({
@@ -219,7 +237,14 @@ describe("AskPage", () => {
     await user.type(screen.getByLabelText("Research question"), "q");
     await user.click(screen.getByRole("button", { name: "Ask" }));
 
-    expect(askResearchAssistantMock).toHaveBeenCalledWith({ question: "q", include_web: false });
+    expect(askResearchAssistantMock).toHaveBeenCalledWith({
+      question: "q",
+      include_web: false,
+      include_crossref: true,
+      model: null,
+      num_ctx: 8192,
+      temperature_level: "focused",
+    });
   });
 
   it("shows a job-error result as a Failed status line", async () => {
@@ -291,6 +316,10 @@ describe("AskPage", () => {
     expect(askResearchAssistantMock).toHaveBeenLastCalledWith({
       question: "What about naps?",
       include_web: true,
+      include_crossref: true,
+      model: null,
+      num_ctx: 8192,
+      temperature_level: "focused",
     });
 
     const result2 = makeResult({

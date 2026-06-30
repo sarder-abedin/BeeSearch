@@ -53,6 +53,7 @@ from .routers import (
     notebook_pipeline,
     notebook_report,
     research_assistant,
+    system,
     systematic_review,
 )
 
@@ -79,6 +80,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 app.include_router(health.router)
+app.include_router(system.router)
 app.include_router(research_assistant.router)
 app.include_router(systematic_review.router)
 app.include_router(notebook.router)

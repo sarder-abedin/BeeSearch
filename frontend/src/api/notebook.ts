@@ -93,9 +93,16 @@ export function getHistory(notebookId: string, maxTurns = 8): Promise<Conversati
 
 /** Multipart upload -- apiFetch's request() skips the default JSON Content-Type
  * for FormData bodies so the browser can set its own multipart boundary. */
-export function uploadSource(notebookId: string, file: File): Promise<UploadSourceResult> {
+export function uploadSource(
+  notebookId: string,
+  file: File,
+  chunkSize?: number | null,
+  chunkOverlap?: number | null,
+): Promise<UploadSourceResult> {
   const formData = new FormData();
   formData.append("file", file);
+  if (chunkSize != null) formData.append("chunk_size", String(chunkSize));
+  if (chunkOverlap != null) formData.append("chunk_overlap", String(chunkOverlap));
   return apiFetch<UploadSourceResult>(`${BASE}/notebooks/${notebookId}/sources`, {
     method: "POST",
     body: formData,

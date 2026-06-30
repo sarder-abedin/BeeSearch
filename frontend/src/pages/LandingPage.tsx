@@ -1,3 +1,4 @@
+import beeSearchLogo from "../assets/logo.png";
 import "./LandingPage.css";
 
 export type ProjectId = "mode1" | "mode2" | "mode3";
@@ -36,7 +37,6 @@ const PROJECTS: Project[] = [
       "and podcast script. Advanced tools: FAQ, literature review, mind map, " +
       "citation timeline, source comparison, and study comparison table.",
     tags: ["Grounded Q&A", "7-Agent Pipeline", "Knowledge Graph", "Study Guide", "Hybrid RAG", "Source Citations"],
-    comingSoon: true,
   },
   {
     id: "mode3",
@@ -59,6 +59,7 @@ interface LandingPageProps {
 function LandingPage({ onSelect }: LandingPageProps) {
   return (
     <div className="landing-page">
+      <img className="landing-page__logo" src={beeSearchLogo} alt="BeeSearch logo" />
       <p className="landing-page__tagline">
         Local AI tools for systematic literature review and source-grounded research notebooks —
         Ollama · LangGraph · Hybrid RAG · Google Scholar · arXiv · Semantic Scholar

@@ -23,6 +23,28 @@
 
 .app__bar-title {
   font-weight: 600;
+  flex: 1;
+}
+
+.app__settings-button {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.65rem;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.app__settings-button:hover {
+  border-color: var(--color-accent);
+}
+
+.app__settings-button--landing {
+  position: fixed;
+  top: 1rem;
+  right: 1.5rem;
+  z-index: 10;
 }
 
 .app__coming-soon {

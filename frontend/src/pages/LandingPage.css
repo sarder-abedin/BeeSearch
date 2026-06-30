@@ -4,6 +4,13 @@
   padding: 2.5rem 1.5rem 4rem;
 }
 
+.landing-page__logo {
+  display: block;
+  width: 120px;
+  height: auto;
+  margin: 0 auto 1.25rem;
+}
+
 .landing-page__tagline {
   color: var(--color-muted);
   font-size: 0.9rem;

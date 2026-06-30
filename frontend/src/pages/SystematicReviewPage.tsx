@@ -12,6 +12,7 @@ import PrismaFlowSummary from "../components/sr/PrismaFlowSummary";
 import RagReflectionPanel from "../components/RagReflectionPanel";
 import SynthesisTab from "../components/sr/SynthesisTab";
 import TemplatePicker from "../components/sr/TemplatePicker";
+import { useSettings } from "../context/SettingsContext";
 import "../components/sr/sr-common.css";
 import "./SystematicReviewPage.css";
 
@@ -37,6 +38,7 @@ function splitLines(text: string): string[] {
 }
 
 function SystematicReviewPage() {
+  const settings = useSettings();
   const [question, setQuestion] = useState("");
   const [inclusion, setInclusion] = useState("");
   const [exclusion, setExclusion] = useState("");
@@ -88,6 +90,10 @@ function SystematicReviewPage() {
         research_question: researchQuestion,
         inclusion_criteria: inclusionCriteria,
         exclusion_criteria: exclusionCriteria,
+        model: settings.model,
+        num_ctx: settings.numCtx,
+        max_results: settings.maxResults,
+        include_crossref: settings.includeCrossref,
       });
       setJobId(job_id);
 

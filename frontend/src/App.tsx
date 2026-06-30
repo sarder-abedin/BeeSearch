@@ -4,6 +4,8 @@ import AskPage from "./pages/AskPage";
 import LandingPage, { type ProjectId } from "./pages/LandingPage";
 import NotebookPage from "./pages/NotebookPage";
 import SystematicReviewPage from "./pages/SystematicReviewPage";
+import SettingsPanel from "./components/SettingsPanel";
+import { SettingsProvider } from "./context/SettingsContext";
 
 const PROJECT_NAMES: Record<ProjectId, string> = {
   mode1: "Systematic Literature Review",
@@ -18,6 +20,7 @@ function readModeFromUrl(): ProjectId | null {
 
 function App() {
   const [activeMode, setActiveMode] = useState<ProjectId | null>(() => readModeFromUrl());
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -30,22 +33,47 @@ function App() {
   }, [activeMode]);
 
   if (!activeMode) {
-    return <LandingPage onSelect={setActiveMode} />;
+    return (
+      <SettingsProvider>
+        <LandingPage onSelect={setActiveMode} />
+        <button
+          type="button"
+          className="app__settings-button app__settings-button--landing"
+          aria-label="Open settings"
+          onClick={() => setSettingsOpen(true)}
+        >
+          ⚙
+        </button>
+        {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      </SettingsProvider>
+    );
   }
 
   return (
-    <div className="app">
-      <div className="app__bar">
-        <button type="button" className="app__back-button" onClick={() => setActiveMode(null)}>
-          ← All Modes
-        </button>
-        <span className="app__bar-title">{PROJECT_NAMES[activeMode]}</span>
-      </div>
+    <SettingsProvider>
+      <div className="app">
+        <div className="app__bar">
+          <button type="button" className="app__back-button" onClick={() => setActiveMode(null)}>
+            ← All Modes
+          </button>
+          <span className="app__bar-title">{PROJECT_NAMES[activeMode]}</span>
+          <button
+            type="button"
+            className="app__settings-button"
+            aria-label="Open settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            ⚙
+          </button>
+        </div>
 
-      {activeMode === "mode1" && <SystematicReviewPage />}
-      {activeMode === "mode3" && <AskPage />}
-      {activeMode === "mode2" && <NotebookPage />}
-    </div>
+        {activeMode === "mode1" && <SystematicReviewPage />}
+        {activeMode === "mode3" && <AskPage />}
+        {activeMode === "mode2" && <NotebookPage />}
+
+        {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      </div>
+    </SettingsProvider>
   );
 }
 
