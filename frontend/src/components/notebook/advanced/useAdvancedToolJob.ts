@@ -2,7 +2,8 @@ import { useCallback, useRef, useState } from "react";
 import { ApiError } from "../../../api/client";
 import { pollAdvancedJob } from "../../../api/notebookAdvanced";
 import type { AdvancedResult } from "../../../api/notebookAdvancedTypes";
-import type { JobCreated } from "../../../api/notebookTypes";
+import type { JobCreated, TemperatureLevel } from "../../../api/notebookTypes";
+import { useSettings } from "../../../context/SettingsContext";
 
 export type AdvancedJobState = "idle" | "running" | "done" | "error";
 
@@ -68,4 +69,18 @@ export function useAdvancedToolJob(): AdvancedToolJob {
   }, []);
 
   return { state, jobId, result, error, run, clear };
+}
+
+export interface ModelOverrides {
+  model: string | null;
+  num_ctx: number;
+  temperature_level: TemperatureLevel;
+}
+
+/** Forwards the sidebar/Settings-selected model overrides into the 9 Advanced
+ * Tools panels' run() calls, so they stop silently falling back to the
+ * server's hardcoded OLLAMA_MODEL default. */
+export function useModelOverrides(): ModelOverrides {
+  const settings = useSettings();
+  return { model: settings.model, num_ctx: settings.numCtx, temperature_level: settings.temperatureLevel };
 }

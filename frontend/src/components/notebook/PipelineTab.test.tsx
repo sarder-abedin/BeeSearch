@@ -25,6 +25,20 @@ vi.mock("../../utils/download", () => ({
   downloadText: (...args: unknown[]) => downloadTextMock(...args),
 }));
 
+vi.mock("../../context/SettingsContext", () => ({
+  useSettings: () => ({
+    model: null,
+    numCtx: 8192,
+    temperatureLevel: "focused",
+    embedModel: null,
+    hybridTopK: 8,
+    maxResults: 6,
+    includeCrossref: true,
+    chunkSize: 800,
+    chunkOverlap: 150,
+  }),
+}));
+
 function makePipelineResult(overrides: Partial<PipelineResult> = {}): PipelineResult {
   return {
     notebook_id: "nb-1",
@@ -131,7 +145,15 @@ describe("PipelineTab", () => {
     await user.type(screen.getByLabelText("Focus query (optional)"), "  attention mechanisms  ");
     await user.click(screen.getByRole("button", { name: "Run Full Pipeline" }));
 
-    expect(runPipelineMock).toHaveBeenCalledWith({ notebook_id: "nb-1", query: "attention mechanisms" });
+    expect(runPipelineMock).toHaveBeenCalledWith({
+      notebook_id: "nb-1",
+      query: "attention mechanisms",
+      model: null,
+      num_ctx: 8192,
+      embed_model: null,
+      top_k: 8,
+      temperature_level: "focused",
+    });
     expect(await screen.findByText("Starting…")).toBeInTheDocument();
 
     await poll.update({

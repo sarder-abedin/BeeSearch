@@ -2,7 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { runCrossDocumentSummary } from "../../../api/notebookAdvanced";
 import { RunControls, TextExportButtons } from "./shared";
-import { useAdvancedToolJob } from "./useAdvancedToolJob";
+import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface CrossDocumentSummaryPanelProps {
   notebookId: string;
@@ -12,6 +12,7 @@ interface CrossDocumentSummaryPanelProps {
  * Section-by-Section Breakdown half has no REST endpoint yet). */
 function CrossDocumentSummaryPanel({ notebookId }: CrossDocumentSummaryPanelProps) {
   const job = useAdvancedToolJob();
+  const overrides = useModelOverrides();
   const { state, jobId, result, error } = job;
 
   return (
@@ -29,7 +30,7 @@ function CrossDocumentSummaryPanel({ notebookId }: CrossDocumentSummaryPanelProp
         spinnerText="Generating cross-document summary…"
         error={error}
         errorPrefix="Summary generation failed"
-        onRun={() => job.run(() => runCrossDocumentSummary({ notebook_id: notebookId }))}
+        onRun={() => job.run(() => runCrossDocumentSummary({ notebook_id: notebookId, ...overrides }))}
         onClear={job.clear}
       />
 

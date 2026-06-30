@@ -7,7 +7,7 @@ import { downloadText } from "../../../utils/download";
 import CollapsibleCard from "../../sr/CollapsibleCard";
 import { resolveValidSourceLabels } from "./format";
 import { RunControls } from "./shared";
-import { useAdvancedToolJob } from "./useAdvancedToolJob";
+import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface FaqPanelProps {
   notebookId: string;
@@ -23,6 +23,7 @@ function composeFaqMarkdown(items: FaqItem[]): string {
 
 function FaqPanel({ notebookId, sourceNames }: FaqPanelProps) {
   const job = useAdvancedToolJob();
+  const overrides = useModelOverrides();
   const { state, result, error } = job;
   const [nQuestions, setNQuestions] = useState(8);
 
@@ -51,7 +52,7 @@ function FaqPanel({ notebookId, sourceNames }: FaqPanelProps) {
         spinnerText="Generating FAQ…"
         error={error}
         errorPrefix="FAQ generation failed"
-        onRun={() => job.run(() => runFaq({ notebook_id: notebookId, n_questions: nQuestions }))}
+        onRun={() => job.run(() => runFaq({ notebook_id: notebookId, n_questions: nQuestions, ...overrides }))}
         onClear={job.clear}
       />
 

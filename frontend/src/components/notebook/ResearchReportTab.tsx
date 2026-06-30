@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { ApiError } from "../../api/client";
 import { exportReportCitations, pollReportJob, runReport } from "../../api/notebookReport";
 import type { ReportCitationFormat, ReportReference, ReportResult } from "../../api/notebookReportTypes";
+import { useSettings } from "../../context/SettingsContext";
 import CollapsibleCard from "../sr/CollapsibleCard";
 import { downloadText } from "../../utils/download";
 import "../sr/sr-common.css";
@@ -35,6 +36,7 @@ function errorMessage(err: unknown): string {
 }
 
 function ResearchReportTab({ notebookId, sourceCount }: ResearchReportTabProps) {
+  const settings = useSettings();
   const [goal, setGoal] = useState("");
   const [includeAcademic, setIncludeAcademic] = useState(true);
   const [includeWeb, setIncludeWeb] = useState(false);
@@ -83,6 +85,9 @@ function ResearchReportTab({ notebookId, sourceCount }: ResearchReportTabProps) 
         goal: goal.trim(),
         include_academic: includeAcademic,
         include_web: includeWeb,
+        model: settings.model,
+        num_ctx: settings.numCtx,
+        embed_model: settings.embedModel,
       });
       setJobId(job_id);
 

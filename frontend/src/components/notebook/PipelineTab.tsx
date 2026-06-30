@@ -9,6 +9,7 @@ import type {
   PipelineResult,
   StudyGuideFormat,
 } from "../../api/notebookPipelineTypes";
+import { useSettings } from "../../context/SettingsContext";
 import EvalResultPanel from "../EvalResultPanel";
 import RagReflectionPanel from "../RagReflectionPanel";
 import CollapsibleCard from "../sr/CollapsibleCard";
@@ -55,6 +56,7 @@ function formatPageLabel(pageNum: number): string {
 }
 
 function PipelineTab({ notebookId, sourceCount }: PipelineTabProps) {
+  const settings = useSettings();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<RunStatus>("idle");
   const [progressPct, setProgressPct] = useState(0);
@@ -87,7 +89,15 @@ function PipelineTab({ notebookId, sourceCount }: PipelineTabProps) {
     setActiveSubTab("ingestion");
 
     try {
-      const { job_id } = await runPipeline({ notebook_id: notebookId, query: query.trim() });
+      const { job_id } = await runPipeline({
+        notebook_id: notebookId,
+        query: query.trim(),
+        model: settings.model,
+        num_ctx: settings.numCtx,
+        embed_model: settings.embedModel,
+        top_k: settings.hybridTopK,
+        temperature_level: settings.temperatureLevel,
+      });
       setJobId(job_id);
 
       const final = await pollPipelineJob(

@@ -1,6 +1,6 @@
 import { runKnowledgeGraph } from "../../../api/notebookAdvanced";
 import { DotExportPanel, RunControls } from "./shared";
-import { useAdvancedToolJob } from "./useAdvancedToolJob";
+import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface KnowledgeGraphPanelProps {
   notebookId: string;
@@ -10,6 +10,7 @@ interface KnowledgeGraphPanelProps {
  * Graph tab, distinct from the 7-agent pipeline's own knowledge graph step). */
 function KnowledgeGraphPanel({ notebookId }: KnowledgeGraphPanelProps) {
   const job = useAdvancedToolJob();
+  const overrides = useModelOverrides();
   const { state, jobId, result, error } = job;
 
   return (
@@ -24,7 +25,7 @@ function KnowledgeGraphPanel({ notebookId }: KnowledgeGraphPanelProps) {
         spinnerText="Extracting knowledge graph…"
         error={error}
         errorPrefix="Knowledge graph generation failed"
-        onRun={() => job.run(() => runKnowledgeGraph({ notebook_id: notebookId }))}
+        onRun={() => job.run(() => runKnowledgeGraph({ notebook_id: notebookId, ...overrides }))}
         onClear={job.clear}
       />
 
