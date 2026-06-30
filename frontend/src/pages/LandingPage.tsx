@@ -32,10 +32,11 @@ const PROJECTS: Project[] = [
     name: "Research Notebook",
     description:
       "A NotebookLM-style workspace: upload PDFs, DOCX, TXT or web pages to build a " +
-      "source notebook, then chat with grounded citations and Self-Reflective RAG status. " +
-      "The full 7-agent pipeline, advanced tools (FAQ, mind map, knowledge graph, etc.), " +
-      "Explain tab, and Research Report are available in the Streamlit app and CLI.",
-    tags: ["Grounded Q&A", "Source Citations", "Hybrid RAG", "Self-Reflective RAG"],
+      "source notebook, then chat with grounded citations. Run a full 7-agent pipeline " +
+      "for cross-document summary, citation verification, knowledge graph, study guide, " +
+      "and podcast script. Advanced tools: FAQ, literature review, mind map, " +
+      "citation timeline, source comparison, and study comparison table.",
+    tags: ["Grounded Q&A", "7-Agent Pipeline", "Knowledge Graph", "Study Guide", "Hybrid RAG", "Source Citations"],
   },
   {
     id: "mode3",
