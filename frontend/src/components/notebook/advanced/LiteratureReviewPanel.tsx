@@ -4,7 +4,7 @@ import { runLiteratureReview } from "../../../api/notebookAdvanced";
 import type { ReferenceItem } from "../../../api/notebookAdvancedTypes";
 import { formatPageLabel } from "./format";
 import { RunControls, TextExportButtons } from "./shared";
-import { useAdvancedToolJob } from "./useAdvancedToolJob";
+import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface LiteratureReviewPanelProps {
   notebookId: string;
@@ -46,6 +46,7 @@ function ReferencesList({ references }: ReferencesListProps) {
  * TextExportButtons -- same split as the Streamlit tab's body vs. full_md. */
 function LiteratureReviewPanel({ notebookId }: LiteratureReviewPanelProps) {
   const job = useAdvancedToolJob();
+  const overrides = useModelOverrides();
   const { state, jobId, result, error } = job;
 
   return (
@@ -63,7 +64,7 @@ function LiteratureReviewPanel({ notebookId }: LiteratureReviewPanelProps) {
         spinnerText="Generating literature review…"
         error={error}
         errorPrefix="Literature review generation failed"
-        onRun={() => job.run(() => runLiteratureReview({ notebook_id: notebookId }))}
+        onRun={() => job.run(() => runLiteratureReview({ notebook_id: notebookId, ...overrides }))}
         onClear={job.clear}
       />
 

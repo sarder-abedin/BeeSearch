@@ -21,6 +21,20 @@ vi.mock("../../utils/download", () => ({
   downloadText: (...args: unknown[]) => downloadTextMock(...args),
 }));
 
+vi.mock("../../context/SettingsContext", () => ({
+  useSettings: () => ({
+    model: null,
+    numCtx: 8192,
+    temperatureLevel: "focused",
+    embedModel: null,
+    hybridTopK: 8,
+    maxResults: 6,
+    includeCrossref: true,
+    chunkSize: 800,
+    chunkOverlap: 150,
+  }),
+}));
+
 function makeReference(overrides: Partial<ReportReference> = {}): ReportReference {
   return {
     ref_num: 1,
@@ -162,6 +176,9 @@ describe("ResearchReportTab", () => {
       goal: "What is self-attention?",
       include_academic: true,
       include_web: true,
+      model: null,
+      num_ctx: 8192,
+      embed_model: null,
     });
     expect(await screen.findByText("Starting…")).toBeInTheDocument();
 

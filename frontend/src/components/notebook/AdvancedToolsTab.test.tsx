@@ -46,6 +46,22 @@ vi.mock("../../utils/download", () => ({
   downloadText: (...args: unknown[]) => downloadTextMock(...args),
 }));
 
+vi.mock("../../context/SettingsContext", () => ({
+  useSettings: () => ({
+    model: null,
+    numCtx: 8192,
+    temperatureLevel: "focused",
+    embedModel: null,
+    hybridTopK: 8,
+    maxResults: 6,
+    includeCrossref: true,
+    chunkSize: 800,
+    chunkOverlap: 150,
+  }),
+}));
+
+const MODEL_OVERRIDES = { model: null, num_ctx: 8192, temperature_level: "focused" as const };
+
 function makeSource(overrides: Partial<SourceMeta> = {}): SourceMeta {
   return {
     doc_id: "doc-1",
@@ -213,7 +229,7 @@ describe("AdvancedToolsTab", () => {
         makeAdvancedResult({ summary: "## Themes\n\nShared finding across papers." }),
       );
 
-      expect(runCrossDocumentSummaryMock).toHaveBeenCalledWith({ notebook_id: "nb-1" });
+      expect(runCrossDocumentSummaryMock).toHaveBeenCalledWith({ notebook_id: "nb-1", ...MODEL_OVERRIDES });
       expect(await screen.findByText("Themes")).toBeInTheDocument();
       expect(screen.getByText("Shared finding across papers.")).toBeInTheDocument();
 
@@ -305,7 +321,7 @@ describe("AdvancedToolsTab", () => {
       runFaqMock.mockResolvedValue({ job_id: "job-1" });
       const poll = controllablePoll();
       await user.click(screen.getByRole("button", { name: "Generate FAQ" }));
-      expect(runFaqMock).toHaveBeenCalledWith({ notebook_id: "nb-1", n_questions: 8 });
+      expect(runFaqMock).toHaveBeenCalledWith({ notebook_id: "nb-1", n_questions: 8, ...MODEL_OVERRIDES });
 
       await poll.settle({
         id: "job-1",
@@ -352,7 +368,7 @@ describe("AdvancedToolsTab", () => {
           references: [{ n: 1, doc_name: "paper1.pdf", page: 2, snippet: "A snippet.", doc_id: "doc-1" }],
         }),
       );
-      expect(runLiteratureReviewMock).toHaveBeenCalledWith({ notebook_id: "nb-1" });
+      expect(runLiteratureReviewMock).toHaveBeenCalledWith({ notebook_id: "nb-1", ...MODEL_OVERRIDES });
 
       expect(await screen.findByText("Introduction")).toBeInTheDocument();
       expect(screen.getByText("References (1)")).toBeInTheDocument();
@@ -387,7 +403,7 @@ describe("AdvancedToolsTab", () => {
       await selectTool(user, "Mind Map");
 
       await runToCompletion(runMindmapMock, "Generate Mind Map", makeAdvancedResult({ mindmap_dot: "digraph { a -> b; }" }));
-      expect(runMindmapMock).toHaveBeenCalledWith({ notebook_id: "nb-1" });
+      expect(runMindmapMock).toHaveBeenCalledWith({ notebook_id: "nb-1", ...MODEL_OVERRIDES });
       expect(exportDotMock).toHaveBeenCalledWith("job-1", "mindmap", "png");
       expect(await screen.findByAltText("Mind map")).toHaveAttribute("src", "blob:mock-url");
 
@@ -420,7 +436,7 @@ describe("AdvancedToolsTab", () => {
         "Generate Audio Script",
         makeAdvancedResult({ audio_script: "This is the spoken summary script." }),
       );
-      expect(runAudioSummaryMock).toHaveBeenCalledWith({ notebook_id: "nb-1" });
+      expect(runAudioSummaryMock).toHaveBeenCalledWith({ notebook_id: "nb-1", ...MODEL_OVERRIDES });
       expect(await screen.findByText("This is the spoken summary script.")).toBeInTheDocument();
       expect(screen.getByText("Word count: 6")).toBeInTheDocument();
 
@@ -514,7 +530,12 @@ describe("AdvancedToolsTab", () => {
         "Compare Sources",
         makeAdvancedResult({ comparison: "## Comparison\n\nBoth papers agree on X." }),
       );
-      expect(runCompareSourcesMock).toHaveBeenCalledWith({ notebook_id: "nb-1", doc_id_a: "doc-1", doc_id_b: "doc-2" });
+      expect(runCompareSourcesMock).toHaveBeenCalledWith({
+        notebook_id: "nb-1",
+        doc_id_a: "doc-1",
+        doc_id_b: "doc-2",
+        ...MODEL_OVERRIDES,
+      });
       expect(await screen.findByText("Comparison")).toBeInTheDocument();
 
       exportTextMock.mockResolvedValue("## Comparison\n\nBoth papers agree on X.");
@@ -533,7 +554,12 @@ describe("AdvancedToolsTab", () => {
       const poll = controllablePoll();
       await user.click(screen.getByRole("button", { name: "Compare Sources" }));
 
-      expect(runCompareSourcesMock).toHaveBeenCalledWith({ notebook_id: "nb-1", doc_id_a: "doc-1", doc_id_b: "doc-3" });
+      expect(runCompareSourcesMock).toHaveBeenCalledWith({
+        notebook_id: "nb-1",
+        doc_id_a: "doc-1",
+        doc_id_b: "doc-3",
+        ...MODEL_OVERRIDES,
+      });
       await poll.settle({ id: "job-1", status: "done", stage: "done", stage_info: {}, error: null, result: makeAdvancedResult() });
     });
 
@@ -559,7 +585,7 @@ describe("AdvancedToolsTab", () => {
         "Extract Knowledge Graph",
         makeAdvancedResult({ knowledge_graph_dot: "digraph { a -> b; }" }),
       );
-      expect(runKnowledgeGraphMock).toHaveBeenCalledWith({ notebook_id: "nb-1" });
+      expect(runKnowledgeGraphMock).toHaveBeenCalledWith({ notebook_id: "nb-1", ...MODEL_OVERRIDES });
       expect(exportDotMock).toHaveBeenCalledWith("job-1", "knowledge-graph", "png");
       expect(await screen.findByAltText("Knowledge graph")).toHaveAttribute("src", "blob:mock-url");
 
@@ -605,7 +631,11 @@ describe("AdvancedToolsTab", () => {
       runCitationTimelineMock.mockResolvedValue({ job_id: "job-1" });
       const poll = controllablePoll();
       await user.click(screen.getByRole("button", { name: "Extract Citation Timeline" }));
-      expect(runCitationTimelineMock).toHaveBeenCalledWith({ notebook_id: "nb-1", enrich_with_abstracts: true });
+      expect(runCitationTimelineMock).toHaveBeenCalledWith({
+        notebook_id: "nb-1",
+        enrich_with_abstracts: true,
+        ...MODEL_OVERRIDES,
+      });
       await poll.settle({ id: "job-1", status: "done", stage: "done", stage_info: {}, error: null, result: makeAdvancedResult() });
     });
 
@@ -677,7 +707,7 @@ describe("AdvancedToolsTab", () => {
         "Generate Study Comparison",
         makeAdvancedResult({ study_comparison: "| Study | N |\n| --- | --- |\n| A | 100 |" }),
       );
-      expect(runStudyComparisonMock).toHaveBeenCalledWith({ notebook_id: "nb-1" });
+      expect(runStudyComparisonMock).toHaveBeenCalledWith({ notebook_id: "nb-1", ...MODEL_OVERRIDES });
       expect(await screen.findByText("Study")).toBeInTheDocument();
 
       exportDocumentMock.mockResolvedValue(new Blob(["fake-docx"]));

@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { runCompareSources } from "../../../api/notebookAdvanced";
 import type { SourceMeta } from "../../../api/notebookTypes";
 import { RunControls, TextExportButtons } from "./shared";
-import { useAdvancedToolJob } from "./useAdvancedToolJob";
+import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface CompareSourcesPanelProps {
   notebookId: string;
@@ -15,6 +15,7 @@ interface CompareSourcesPanelProps {
  * sources" guard and its Source B default of index min(1, len-1). */
 function CompareSourcesPanel({ notebookId, sources }: CompareSourcesPanelProps) {
   const job = useAdvancedToolJob();
+  const overrides = useModelOverrides();
   const { state, jobId, result, error } = job;
   const [docIdA, setDocIdA] = useState(sources[0]?.doc_id ?? "");
   const [docIdB, setDocIdB] = useState(sources[Math.min(1, sources.length - 1)]?.doc_id ?? "");
@@ -63,7 +64,7 @@ function CompareSourcesPanel({ notebookId, sources }: CompareSourcesPanelProps) 
         spinnerText="Comparing sources…"
         error={error}
         errorPrefix="Source comparison failed"
-        onRun={() => job.run(() => runCompareSources({ notebook_id: notebookId, doc_id_a: docIdA, doc_id_b: docIdB }))}
+        onRun={() => job.run(() => runCompareSources({ notebook_id: notebookId, doc_id_a: docIdA, doc_id_b: docIdB, ...overrides }))}
         onClear={job.clear}
       />
 

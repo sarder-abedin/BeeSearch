@@ -3,7 +3,7 @@ import { exportAudioWav, exportText, runAudioSummary } from "../../../api/notebo
 import { downloadBlob, downloadText } from "../../../utils/download";
 import { type AsyncState, errorMessage } from "./format";
 import { RunControls } from "./shared";
-import { useAdvancedToolJob } from "./useAdvancedToolJob";
+import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface AudioSummaryPanelProps {
   notebookId: string;
@@ -12,6 +12,7 @@ interface AudioSummaryPanelProps {
 /** Mirrors ui/tabs/notebook.py::_tab_audio. */
 function AudioSummaryPanel({ notebookId }: AudioSummaryPanelProps) {
   const job = useAdvancedToolJob();
+  const overrides = useModelOverrides();
   const { state, jobId, result, error } = job;
 
   return (
@@ -29,7 +30,7 @@ function AudioSummaryPanel({ notebookId }: AudioSummaryPanelProps) {
         spinnerText="Generating audio summary script…"
         error={error}
         errorPrefix="Audio script generation failed"
-        onRun={() => job.run(() => runAudioSummary({ notebook_id: notebookId }))}
+        onRun={() => job.run(() => runAudioSummary({ notebook_id: notebookId, ...overrides }))}
         onClear={job.clear}
       />
 

@@ -15,6 +15,20 @@ vi.mock("../../api/notebookExplain", () => ({
   pollExplainJob: (...args: unknown[]) => pollExplainJobMock(...args),
 }));
 
+vi.mock("../../context/SettingsContext", () => ({
+  useSettings: () => ({
+    model: null,
+    numCtx: 8192,
+    temperatureLevel: "focused",
+    embedModel: null,
+    hybridTopK: 8,
+    maxResults: 6,
+    includeCrossref: true,
+    chunkSize: 800,
+    chunkOverlap: 150,
+  }),
+}));
+
 function makeExplainResult(overrides: Partial<ExplainResult> = {}): ExplainResult {
   return {
     notebook_id: "nb-1",
@@ -174,6 +188,9 @@ describe("ExplainTab", () => {
       message: "What is X?",
       explanation_style: "simple",
       explanation_level: "intermediate",
+      model: null,
+      num_ctx: 8192,
+      temperature_level: "focused",
     });
     expect(screen.getByLabelText("Message")).toHaveValue("");
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
@@ -243,6 +260,9 @@ describe("ExplainTab", () => {
       message: "Explain X",
       explanation_style: "analogy",
       explanation_level: "expert",
+      model: null,
+      num_ctx: 8192,
+      temperature_level: "focused",
     });
 
     await poll.settle({ id: "job-1", status: "done", stage: "done", stage_info: {}, error: null, result: makeExplainResult() });
@@ -265,6 +285,9 @@ describe("ExplainTab", () => {
       message: "What about Y?",
       explanation_style: "simple",
       explanation_level: "intermediate",
+      model: null,
+      num_ctx: 8192,
+      temperature_level: "focused",
     });
     expect(followupButton).toBeDisabled();
 

@@ -2,7 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { runStudyComparison } from "../../../api/notebookAdvanced";
 import { RunControls, TextExportButtons } from "./shared";
-import { useAdvancedToolJob } from "./useAdvancedToolJob";
+import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface StudyComparisonPanelProps {
   notebookId: string;
@@ -11,6 +11,7 @@ interface StudyComparisonPanelProps {
 /** Mirrors ui/tabs/notebook.py::_tab_study_comparison. */
 function StudyComparisonPanel({ notebookId }: StudyComparisonPanelProps) {
   const job = useAdvancedToolJob();
+  const overrides = useModelOverrides();
   const { state, jobId, result, error } = job;
 
   return (
@@ -25,7 +26,7 @@ function StudyComparisonPanel({ notebookId }: StudyComparisonPanelProps) {
         spinnerText="Comparing studies…"
         error={error}
         errorPrefix="Study comparison failed"
-        onRun={() => job.run(() => runStudyComparison({ notebook_id: notebookId }))}
+        onRun={() => job.run(() => runStudyComparison({ notebook_id: notebookId, ...overrides }))}
         onClear={job.clear}
       />
 

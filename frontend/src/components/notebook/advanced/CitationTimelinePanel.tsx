@@ -6,7 +6,7 @@ import type { CitationTimelineItem } from "../../../api/notebookAdvancedTypes";
 import { downloadText } from "../../../utils/download";
 import { resolveSourceLabel } from "./format";
 import { RunControls } from "./shared";
-import { useAdvancedToolJob } from "./useAdvancedToolJob";
+import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface CitationTimelinePanelProps {
   notebookId: string;
@@ -41,6 +41,7 @@ function composeCitationTimelineMarkdown(items: CitationTimelineItem[], sourceNa
  * and that same string backs both the on-screen render and the download. */
 function CitationTimelinePanel({ notebookId, sourceNames }: CitationTimelinePanelProps) {
   const job = useAdvancedToolJob();
+  const overrides = useModelOverrides();
   const { state, result, error } = job;
   const [enrich, setEnrich] = useState(false);
 
@@ -72,7 +73,7 @@ function CitationTimelinePanel({ notebookId, sourceNames }: CitationTimelinePane
         spinnerText="Extracting citation timeline…"
         error={error}
         errorPrefix="Citation timeline extraction failed"
-        onRun={() => job.run(() => runCitationTimeline({ notebook_id: notebookId, enrich_with_abstracts: enrich }))}
+        onRun={() => job.run(() => runCitationTimeline({ notebook_id: notebookId, enrich_with_abstracts: enrich, ...overrides }))}
         onClear={job.clear}
       />
 

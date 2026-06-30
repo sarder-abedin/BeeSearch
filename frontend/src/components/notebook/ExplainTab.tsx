@@ -10,6 +10,7 @@ import type {
   ExplanationStyle,
   SourceDecision,
 } from "../../api/notebookExplainTypes";
+import { useSettings } from "../../context/SettingsContext";
 import EvalResultPanel from "../EvalResultPanel";
 import "../sr/sr-common.css";
 import "./ExplainTab.css";
@@ -124,6 +125,7 @@ function SourceDecisionBanner({ decision }: { decision: SourceDecision | null })
 }
 
 function ExplainTab({ notebookId, notebookName }: ExplainTabProps) {
+  const settings = useSettings();
   const [history, setHistory] = useState<ExplainTurnData[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [loadedNotebookId, setLoadedNotebookId] = useState(notebookId);
@@ -202,6 +204,9 @@ function ExplainTab({ notebookId, notebookName }: ExplainTabProps) {
         message: text,
         explanation_style: explanationStyle,
         explanation_level: explanationLevel,
+        model: settings.model,
+        num_ctx: settings.numCtx,
+        temperature_level: settings.temperatureLevel,
       });
 
       const final = await pollExplainJob(
