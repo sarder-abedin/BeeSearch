@@ -22,20 +22,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # ── Augment PATH for common non-interactive-shell tool locations ─────────────
-# Homebrew (Apple Silicon and Intel), user-local bin
+# Static well-known dirs: Homebrew (Apple Silicon + Intel), user-local bin
 for _d in \
     /opt/homebrew/bin \
     /opt/homebrew/sbin \
     /usr/local/bin \
     /usr/local/sbin \
     "${HOME}/.local/bin" \
-    "${HOME}/bin"
+    "${HOME}/bin" \
+    "${HOME}/.volta/bin" \
+    "${HOME}/.asdf/shims"
 do
     [[ -d "$_d" ]] && PATH="${_d}:${PATH}"
 done
-export PATH
 
-# nvm — loads the nvm function and puts the active node on PATH
+# Homebrew versioned node formulae: /opt/homebrew/opt/node*/bin or /usr/local/opt/node*/bin
+for _d in /opt/homebrew/opt/node*/bin /usr/local/opt/node*/bin; do
+    [[ -d "$_d" ]] && PATH="${_d}:${PATH}"
+done
+
+# nvm — source the nvm loader and activate the default version
 if [[ -z "$(command -v node 2>/dev/null)" ]]; then
     NVM_DIR="${NVM_DIR:-${HOME}/.nvm}"
     if [[ -s "${NVM_DIR}/nvm.sh" ]]; then
@@ -44,6 +50,22 @@ if [[ -z "$(command -v node 2>/dev/null)" ]]; then
         nvm use default >/dev/null 2>&1 || nvm use node >/dev/null 2>&1 || true
     fi
 fi
+
+# fnm (Fast Node Manager) — eval its env setup
+if [[ -z "$(command -v node 2>/dev/null)" ]]; then
+    if command -v fnm >/dev/null 2>&1; then
+        eval "$(fnm env)" 2>/dev/null || true
+    fi
+fi
+
+# nvm glob fallback — pick the highest installed version bin dir
+if [[ -z "$(command -v node 2>/dev/null)" ]]; then
+    for _d in "${HOME}/.nvm/versions/node"/*/bin; do
+        [[ -d "$_d" ]] && PATH="${_d}:${PATH}"
+    done
+fi
+
+export PATH
 
 BACKEND_PORT=8000
 OPEN_BROWSER=true
