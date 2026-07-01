@@ -11,6 +11,7 @@ test_research_assistant_service.py uses for run_research_assistant.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,6 +31,13 @@ def mem(tmp_path, monkeypatch) -> NotebookMemory:
 
 def _txt(text: str) -> bytes:
     return text.encode("utf-8")
+
+
+def _write_tmp(tmp_path: Path, name: str, content: bytes) -> Path:
+    """Write content to a temp file and return its path (caller owns cleanup)."""
+    p = tmp_path / name
+    p.write_bytes(content)
+    return p
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -109,13 +117,14 @@ def test_get_history_empty_for_new_notebook(mem):
 # Source upload / removal
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_upload_source_txt_adds_source_and_evicts_store(mem):
+def test_upload_source_txt_adds_source_and_evicts_store(mem, tmp_path):
     summary = notebook_service.create_notebook(CreateNotebookRequest(name="X"))
     _stores[f"notebook_{summary.notebook_id}"] = object()
     _stores[f"notebook_{summary.notebook_id}_bm25"] = object()
 
     result = notebook_service.upload_source(
-        summary.notebook_id, "notes.txt", _txt("Hello world, this is page one.")
+        summary.notebook_id, "notes.txt",
+        _write_tmp(tmp_path, "notes.txt", _txt("Hello world, this is page one.")),
     )
 
     assert result.added is True
@@ -130,12 +139,16 @@ def test_upload_source_txt_adds_source_and_evicts_store(mem):
     assert detail.source_count == 1
 
 
-def test_upload_source_duplicate_returns_added_false(mem):
+def test_upload_source_duplicate_returns_added_false(mem, tmp_path):
     summary = notebook_service.create_notebook(CreateNotebookRequest(name="X"))
     content = _txt("Same content twice.")
-    notebook_service.upload_source(summary.notebook_id, "a.txt", content)
+    notebook_service.upload_source(
+        summary.notebook_id, "a.txt", _write_tmp(tmp_path, "a.txt", content)
+    )
 
-    result = notebook_service.upload_source(summary.notebook_id, "a.txt", content)
+    result = notebook_service.upload_source(
+        summary.notebook_id, "a.txt", _write_tmp(tmp_path, "a2.txt", content)
+    )
 
     assert result.added is False
     assert result.duplicate is True
@@ -143,20 +156,26 @@ def test_upload_source_duplicate_returns_added_false(mem):
     assert notebook_service.get_notebook_detail(summary.notebook_id).source_count == 1
 
 
-def test_upload_source_unknown_notebook_raises_keyerror(mem):
+def test_upload_source_unknown_notebook_raises_keyerror(mem, tmp_path):
     with pytest.raises(KeyError):
-        notebook_service.upload_source("nope", "a.txt", _txt("x"))
+        notebook_service.upload_source(
+            "nope", "a.txt", _write_tmp(tmp_path, "a.txt", _txt("x"))
+        )
 
 
-def test_upload_source_unsupported_file_type_raises_valueerror(mem):
+def test_upload_source_unsupported_file_type_raises_valueerror(mem, tmp_path):
     summary = notebook_service.create_notebook(CreateNotebookRequest(name="X"))
     with pytest.raises(ValueError):
-        notebook_service.upload_source(summary.notebook_id, "a.exe", b"binary junk")
+        notebook_service.upload_source(
+            summary.notebook_id, "a.exe", _write_tmp(tmp_path, "a.exe", b"binary junk")
+        )
 
 
-def test_remove_source(mem):
+def test_remove_source(mem, tmp_path):
     summary = notebook_service.create_notebook(CreateNotebookRequest(name="X"))
-    result = notebook_service.upload_source(summary.notebook_id, "a.txt", _txt("Hello"))
+    result = notebook_service.upload_source(
+        summary.notebook_id, "a.txt", _write_tmp(tmp_path, "a.txt", _txt("Hello"))
+    )
     _stores[f"notebook_{summary.notebook_id}"] = object()
 
     removed = notebook_service.remove_source(summary.notebook_id, result.source.doc_id)

@@ -17,6 +17,8 @@ fast, non-LLM operation against ``NotebookMemory``, so those run synchronously.
 from __future__ import annotations
 
 import logging
+import tempfile
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -99,23 +101,42 @@ async def upload_source(
     use_ocr: bool = Form(False),
     large_doc_page_threshold: int = Form(50, ge=1, le=500),
 ) -> UploadSourceResult:
-    file_bytes = await file.read()
-    if len(file_bytes) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large ({len(file_bytes) // (1024 * 1024)} MB). Maximum upload size is 50 MB.",
-        )
+    filename = file.filename or "upload"
+    suffix = Path(filename).suffix.lower() or ".bin"
+
+    # Stream upload directly to disk in 64 KiB chunks — never hold the full
+    # file in RAM alongside the extraction buffers (avoids OOM on large PDFs).
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp_path = Path(tmp.name)
     try:
-        return notebook_service.upload_source(
-            notebook_id, file.filename or "upload", file_bytes,
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
-            use_docling=use_docling, use_ocr=use_ocr,
-            large_doc_page_threshold=large_doc_page_threshold,
-        )
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Notebook '{notebook_id}' not found.")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        file_size = 0
+        while chunk := await file.read(1 << 16):
+            file_size += len(chunk)
+            if file_size > _MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+                )
+            tmp.write(chunk)
+        tmp.close()
+
+        try:
+            return notebook_service.upload_source(
+                notebook_id, filename, tmp_path,
+                chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+                use_docling=use_docling, use_ocr=use_ocr,
+                large_doc_page_threshold=large_doc_page_threshold,
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Notebook '{notebook_id}' not found.")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        try:
+            tmp.close()
+        except Exception:
+            pass
+        tmp_path.unlink(missing_ok=True)
 
 
 @router.delete("/notebooks/{notebook_id}/sources/{doc_id}", response_model=RemoveSourceResult)

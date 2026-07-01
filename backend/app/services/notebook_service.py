@@ -31,9 +31,7 @@ are read (live chat result or stored history), via :func:`_with_page_labels`.
 from __future__ import annotations
 
 import gc
-import io
 import logging
-import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -41,7 +39,7 @@ from agents.notebook_graph import run_notebook_turn
 from agents.notebook_memory import NotebookMemory
 from agents.notebook_state import NotebookState, create_notebook_state
 from config.settings import get_settings
-from tools.document_tools import DocumentProcessor, get_processor
+from tools.document_tools import get_processor
 from tools.hybrid_store import _stores
 from tools.text_parsing import format_page_label
 
@@ -166,10 +164,13 @@ def get_history(notebook_id: str, max_turns: int = 8) -> List[ConversationTurn]:
 # Source upload / removal
 # ─────────────────────────────────────────────────────────────────────────────
 
+_RAW_BYTES_LIMIT = 10 * 1024 * 1024  # 10 MB — only cache raw PDF bytes for small files
+
+
 def upload_source(
     notebook_id: str,
     filename: str,
-    file_bytes: bytes,
+    tmp_path: Path,  # temp file on disk; caller is responsible for deletion
     chunk_size: Optional[int] = None,
     chunk_overlap: Optional[int] = None,
     use_docling: bool = False,
@@ -188,44 +189,25 @@ def upload_source(
 
     is_pdf = Path(filename).suffix.lower() == ".pdf"
 
-    if is_pdf:
-        # Write to a temp file so the processor streams from disk instead of
-        # holding a second in-memory BytesIO copy alongside file_bytes during
-        # the expensive extraction pass. Pass the original filename as the path
-        # argument so doc_id and chunk metadata use the real name, not the
-        # temp path.
-        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-        tmp_path = Path(tmp.name)
-        try:
-            tmp.write(file_bytes)
-            tmp.close()
-            processor = get_processor(
-                use_docling=use_docling,
-                use_ocr=use_ocr,
-                chunk_size=chunk_size if chunk_size is not None else cfg.chunk_size,
-                overlap=chunk_overlap if chunk_overlap is not None else cfg.chunk_overlap,
-                max_raw_chars=200_000,
-                max_pages=150,
-                file_path=tmp_path,
-                large_doc_page_threshold=large_doc_page_threshold,
-            )
-            with open(tmp_path, "rb") as fh:
-                doc = processor.process_file(Path(filename), file_obj=fh)
-        finally:
-            tmp_path.unlink(missing_ok=True)
-            gc.collect()
-        doc.raw_bytes = file_bytes
-    else:
-        processor = get_processor(
-            use_docling=use_docling,
-            use_ocr=use_ocr,
-            chunk_size=chunk_size if chunk_size is not None else cfg.chunk_size,
-            overlap=chunk_overlap if chunk_overlap is not None else cfg.chunk_overlap,
-            max_raw_chars=200_000,
-            max_pages=150,
-        )
-        file_obj = io.BytesIO(file_bytes)
-        doc = processor.process_file(Path(filename), file_obj=file_obj)
+    processor = get_processor(
+        use_docling=use_docling,
+        use_ocr=use_ocr,
+        chunk_size=chunk_size if chunk_size is not None else cfg.chunk_size,
+        overlap=chunk_overlap if chunk_overlap is not None else cfg.chunk_overlap,
+        max_raw_chars=200_000,
+        max_pages=150,
+        file_path=tmp_path if is_pdf else None,
+        large_doc_page_threshold=large_doc_page_threshold,
+    )
+
+    with open(tmp_path, "rb") as fh:
+        doc = processor.process_file(Path(filename), file_obj=fh)
+    gc.collect()
+
+    # Cache raw bytes for PDF citation jump-navigation, but only for small
+    # files — re-reading a large PDF just to store it in SQLite wastes RAM.
+    if is_pdf and tmp_path.stat().st_size <= _RAW_BYTES_LIMIT:
+        doc.raw_bytes = tmp_path.read_bytes()
 
     if not mem.add_source(notebook_id, doc, source_type="file"):
         return UploadSourceResult(added=False, duplicate=True, source=None)
