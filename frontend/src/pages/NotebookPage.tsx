@@ -21,6 +21,7 @@ import ExplainTab from "../components/notebook/ExplainTab";
 import PipelineTab from "../components/notebook/PipelineTab";
 import ResearchReportTab from "../components/notebook/ResearchReportTab";
 import RagReflectionPanel from "../components/RagReflectionPanel";
+import GrammarGate, { type GrammarGateHandle } from "../components/sr/GrammarGate";
 import { useSettings } from "../context/SettingsContext";
 import "../components/sr/sr-common.css";
 import "./NotebookPage.css";
@@ -57,6 +58,7 @@ export default function NotebookPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [message, setMessage] = useState("");
+  const msgGateRef = useRef<GrammarGateHandle | null>(null);
   const [chatStatus, setChatStatus] = useState<ChatStatus>("idle");
   const [chatLabel, setChatLabel] = useState("");
   const [chatWarning, setChatWarning] = useState<string | null>(null);
@@ -303,9 +305,14 @@ export default function NotebookPage() {
       setChatWarning("Please enter a question.");
       return;
     }
+    const resolved = msgGateRef.current?.resolve() ?? { text: trimmed, ready: true };
+    if (!resolved.ready) {
+      setChatWarning("Please resolve the grammar suggestion above, then send again.");
+      return;
+    }
     setMessage("");
     setChatWarning(null);
-    void runChat(trimmed);
+    void runChat(resolved.text);
   }
 
   function handleFollowup(q: string) {
@@ -552,6 +559,12 @@ export default function NotebookPage() {
                         }
                       }}
                       placeholder="Ask a question about your sources…"
+                    />
+                    <GrammarGate
+                      ref={msgGateRef}
+                      rawText={message}
+                      contextHint="research question for a document notebook"
+                      fieldId="nb-message"
                     />
                     <button
                       type="button"

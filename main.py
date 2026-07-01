@@ -185,12 +185,12 @@ def _parse_args():
                         help="Documents to add to the notebook")
     parser.add_argument("--model", type=str, default="",
                         help="Ollama model to use (e.g. llama3.1:8b)")
-    parser.add_argument("--num-ctx", type=int, default=8192,
-                        help="Context window size in tokens (default: 8192)")
+    parser.add_argument("--num-ctx", type=int, default=None,
+                        help="Context window size in tokens (default: hardware-recommended, usually 8192–32768)")
     parser.add_argument("--embed-model", type=str, default="nomic-embed-text",
                         help="Embedding model for Hybrid RAG (default: nomic-embed-text)")
-    parser.add_argument("--top-k", type=int, default=8,
-                        help="Chunks per query for Hybrid RAG (default: 8)")
+    parser.add_argument("--top-k", type=int, default=None,
+                        help="Chunks per query for Hybrid RAG (default: hardware-recommended, usually 5–15)")
     parser.add_argument("--no-docling", action="store_true",
                         help="Disable Docling and always use pdfplumber for document parsing")
     parser.add_argument("--ocr", action="store_true",
@@ -380,6 +380,18 @@ def _parse_args():
     from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, TEMPERATURE_LEVELS
     if args.temperature_level not in TEMPERATURE_LEVELS:
         args.temperature_level = DEFAULT_TEMPERATURE_LEVEL
+
+    # Resolve num_ctx and top_k from hardware tier when not explicitly set.
+    # detect_hardware() + get_recommended_tier() are fast (pure RAM probe,
+    # no network/Ollama call) so it's fine to run here for every invocation.
+    if args.num_ctx is None or args.top_k is None:
+        from config.hardware import detect_hardware, get_recommended_tier
+        _hw = detect_hardware()
+        _tier = get_recommended_tier(_hw)
+        if args.num_ctx is None:
+            args.num_ctx = _tier["num_ctx"]
+        if args.top_k is None:
+            args.top_k = _tier["hybrid_top_k"]
 
     return args
 

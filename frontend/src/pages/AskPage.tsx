@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import { askResearchAssistant, pollAskJob } from "../api/researchAssistant";
 import type { AskJobStatus, AskResult } from "../api/types";
 import CitationCard from "../components/CitationCard";
+import GrammarGate, { type GrammarGateHandle } from "../components/sr/GrammarGate";
 import { useSettings } from "../context/SettingsContext";
 import "./AskPage.css";
 
@@ -49,6 +50,7 @@ export default function AskPage() {
   const [result, setResult] = useState<AskResult | null>(null);
   const [validationWarning, setValidationWarning] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const grammarRef = useRef<GrammarGateHandle | null>(null);
 
   async function runAsk(q: string, web: boolean) {
     abortRef.current?.abort();
@@ -100,8 +102,13 @@ export default function AskPage() {
       setValidationWarning(VALIDATION_MESSAGE);
       return;
     }
+    const resolved = grammarRef.current?.resolve() ?? { text: trimmed, ready: true };
+    if (!resolved.ready) {
+      setValidationWarning("Please resolve the grammar suggestion above, then click Ask again.");
+      return;
+    }
     setValidationWarning(null);
-    void runAsk(trimmed, includeWeb);
+    void runAsk(resolved.text, includeWeb);
   }
 
   function handleFollowup(fq: string) {
@@ -140,6 +147,12 @@ export default function AskPage() {
           setQuestion(e.target.value);
           setValidationWarning(null);
         }}
+      />
+      <GrammarGate
+        ref={grammarRef}
+        rawText={question}
+        contextHint="research question for an AI research assistant"
+        fieldId="ra-question"
       />
 
       <div className="ask-page__controls">

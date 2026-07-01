@@ -110,6 +110,19 @@ def render_sidebar() -> dict:
             rec = _cached_rec
             tier = get_recommended_tier(hw)
 
+        # ── Seed hardware-aware defaults on the very first session ────────────
+        # setdefault: leaves existing values untouched (the user may have
+        # already adjusted them); only initialises keys that don't exist yet.
+        # This runs on every render but is a no-op after the first one.
+        if rec.get("can_run") and rec.get("model"):
+            st.session_state.setdefault("sidebar_model", rec["model"])
+            st.session_state.setdefault("sidebar_num_ctx", tier["num_ctx"])
+        st.session_state.setdefault("sidebar_hybrid_top_k", tier["hybrid_top_k"])
+        st.session_state.setdefault("sidebar_max_results", tier["max_results"])
+        st.session_state.setdefault("sidebar_large_doc_threshold", tier["large_doc_page_threshold"])
+        st.session_state.setdefault("sidebar_chunk_size", tier["chunk_size"])
+        st.session_state.setdefault("sidebar_chunk_overlap", tier["chunk_overlap"])
+
         # ── Hardware panel ────────────────────────────────────
         gpu_labels = {
             "apple_silicon": "Apple Silicon (Metal)",
