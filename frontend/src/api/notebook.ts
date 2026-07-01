@@ -98,11 +98,17 @@ export function uploadSource(
   file: File,
   chunkSize?: number | null,
   chunkOverlap?: number | null,
+  useDocling?: boolean,
+  useOcr?: boolean,
+  largeDocPageThreshold?: number,
 ): Promise<UploadSourceResult> {
   const formData = new FormData();
   formData.append("file", file);
   if (chunkSize != null) formData.append("chunk_size", String(chunkSize));
   if (chunkOverlap != null) formData.append("chunk_overlap", String(chunkOverlap));
+  if (useDocling != null) formData.append("use_docling", String(useDocling));
+  if (useOcr != null) formData.append("use_ocr", String(useOcr));
+  if (largeDocPageThreshold != null) formData.append("large_doc_page_threshold", String(largeDocPageThreshold));
   return apiFetch<UploadSourceResult>(`${BASE}/notebooks/${notebookId}/sources`, {
     method: "POST",
     body: formData,

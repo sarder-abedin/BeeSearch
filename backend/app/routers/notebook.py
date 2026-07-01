@@ -95,6 +95,9 @@ async def upload_source(
     file: UploadFile = File(...),
     chunk_size: Optional[int] = Form(None, gt=0),
     chunk_overlap: Optional[int] = Form(None, ge=0),
+    use_docling: bool = Form(False),
+    use_ocr: bool = Form(False),
+    large_doc_page_threshold: int = Form(50, ge=1, le=500),
 ) -> UploadSourceResult:
     file_bytes = await file.read()
     if len(file_bytes) > _MAX_UPLOAD_BYTES:
@@ -106,6 +109,8 @@ async def upload_source(
         return notebook_service.upload_source(
             notebook_id, file.filename or "upload", file_bytes,
             chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            use_docling=use_docling, use_ocr=use_ocr,
+            large_doc_page_threshold=large_doc_page_threshold,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Notebook '{notebook_id}' not found.")
