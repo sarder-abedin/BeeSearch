@@ -22,6 +22,8 @@ from typing import List, Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from .. import jobs
+
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 from ..schemas.jobs import JobCreated
 from ..schemas.notebook import (
     ChatJobStatus,
@@ -95,6 +97,11 @@ async def upload_source(
     chunk_overlap: Optional[int] = Form(None, ge=0),
 ) -> UploadSourceResult:
     file_bytes = await file.read()
+    if len(file_bytes) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({len(file_bytes) // (1024 * 1024)} MB). Maximum upload size is 50 MB.",
+        )
     try:
         return notebook_service.upload_source(
             notebook_id, file.filename or "upload", file_bytes,
