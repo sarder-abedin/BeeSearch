@@ -1,0 +1,100 @@
+# ─────────────────────────────────────────────────────────────
+# BeeSearch — Web App only (React + FastAPI)
+#
+# Starts the React + FastAPI web app together with an Ollama LLM server.
+# All dependencies (npm install, pip install) are resolved automatically
+# during the Docker build — no manual setup required.
+#
+# Usage:
+#   ./scripts/start-web.sh              # recommended: builds + opens browser
+#   docker compose -f docker-compose.web.yml up --build   # manual equivalent
+#   docker compose -f docker-compose.web.yml up           # subsequent runs
+#   docker compose -f docker-compose.web.yml down         # stop
+#
+# App is served at http://localhost:8000  (React SPA + FastAPI on the same port)
+# API docs at       http://localhost:8000/docs
+#
+# Pull a different model while running:
+#   docker compose -f docker-compose.web.yml exec ollama ollama pull mistral-nemo:12b
+#
+# Apple Silicon Mac (M1/M2/M3) with native Ollama already running:
+#   Add OLLAMA_BASE_URL=http://host.docker.internal:11434 to .env, then:
+#   docker compose -f docker-compose.web.yml up web --build
+#   (skip the ollama + model-init services — native Ollama is used instead)
+#
+# For GPU support (Linux):
+#   docker compose -f docker-compose.web.yml -f docker-compose.gpu.yml up --build
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Ollama LLM server ───────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: beesearch-ollama
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/version 2>/dev/null || wget -qO- http://localhost:11434/api/version 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ── Pull the default model on first start ───────────────────
+  model-init:
+    image: ollama/ollama:latest
+    container_name: beesearch-model-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ollama_models:/root/.ollama
+    entrypoint: ["ollama", "pull"]
+    command: "${OLLAMA_MODEL:-llama3.2:3b}"
+    restart: "no"
+
+  # ── React + FastAPI web app ─────────────────────────────────
+  # Built from the root Dockerfile (multi-stage):
+  #   Stage 1: npm ci + npm run build  (React/Vite → frontend/dist/)
+  #   Stage 2: pip install -r requirements.txt  (Python + FastAPI)
+  # FastAPI serves the built React SPA at "/" via StaticFiles, and all
+  # API routes at "/api/*".  No nginx, no separate frontend container.
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: beesearch-web
+    command: >
+      python -m uvicorn backend.app.main:app
+      --host 0.0.0.0
+      --port 8000
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - NUM_CTX=${NUM_CTX:-8192}
+      - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
+      - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
+    volumes:
+      - ./outputs:/app/outputs
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 120s
+
+# ── Named volumes ───────────────────────────────────────────
+volumes:
+  ollama_models:
