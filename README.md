@@ -267,6 +267,23 @@ and CLI keep working exactly as documented above either way.
   [Prerequisites](#prerequisites) above
 - [Node.js](https://nodejs.org) 20+ and npm (bundled with Node)
 
+### Quick start (no Docker)
+
+The easiest way to launch both the backend and frontend together:
+
+```bash
+./scripts/start-react.sh             # normal start
+./scripts/start-react.sh --mock      # stub LLM + search — no Ollama needed
+./scripts/start-react.sh --port 9000 # use a different backend port
+./scripts/start-react.sh --no-open   # skip auto-opening the browser
+```
+
+The script checks prerequisites, runs `npm install` automatically if
+`node_modules` is absent, starts both the FastAPI backend and the Vite dev
+server, waits for the backend to be healthy, then opens
+`http://localhost:5173` in your default browser. Press **Ctrl-C** to stop
+both servers cleanly.
+
 ### Run the backend (FastAPI)
 
 ```bash
@@ -312,21 +329,12 @@ changes before previewing.
 
 The backend and frontend are built into the same container as Streamlit and
 the CLI — see [Option B — Docker](#option-b--docker) above for the full
-command reference.
+command reference. Once running:
 
-```bash
-docker compose up --build
-```
-
-- Backend + frontend (FastAPI serves the built React SPA at `/`, alongside
-  its `/api/*` routes): `http://localhost:8000`, docs at
-  `http://localhost:8000/docs`
-- Streamlit: `http://localhost:8501`
-
-The root `Dockerfile` builds the React app in a `node:20-alpine` stage
-(`npm run build`) and copies the static output into the final image, so
-there's no separate frontend container, no nginx process, and no
-`VITE_API_BASE_URL` or other build-time configuration needed.
+- **React + FastAPI:** `http://localhost:8000` (API docs at `/docs`) — FastAPI
+  serves the built React SPA at `/` alongside all `/api/*` routes; no separate
+  frontend container, no nginx, no build-time env configuration needed.
+- **Streamlit:** `http://localhost:8501`
 
 ### Tests
 
