@@ -21,6 +21,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# ── Augment PATH for common non-interactive-shell tool locations ─────────────
+# Homebrew (Apple Silicon and Intel), user-local bin
+for _d in \
+    /opt/homebrew/bin \
+    /opt/homebrew/sbin \
+    /usr/local/bin \
+    /usr/local/sbin \
+    "${HOME}/.local/bin" \
+    "${HOME}/bin"
+do
+    [[ -d "$_d" ]] && PATH="${_d}:${PATH}"
+done
+export PATH
+
+# nvm — loads the nvm function and puts the active node on PATH
+if [[ -z "$(command -v node 2>/dev/null)" ]]; then
+    NVM_DIR="${NVM_DIR:-${HOME}/.nvm}"
+    if [[ -s "${NVM_DIR}/nvm.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NVM_DIR}/nvm.sh" --no-use
+        nvm use default >/dev/null 2>&1 || nvm use node >/dev/null 2>&1 || true
+    fi
+fi
+
 BACKEND_PORT=8000
 OPEN_BROWSER=true
 MOCK_LLM=false
@@ -48,7 +72,7 @@ _check() {
     fi
 }
 _check python3  "Install Python 3.10+ and run: pip install -r requirements.txt"
-_check node     "Install Node.js 20+ from https://nodejs.org"
+_check node     "Install Node.js 20+ from https://nodejs.org  (or check that your shell profile loads nvm / Homebrew)"
 _check npm      "npm is bundled with Node.js — reinstall Node."
 
 if [[ "$MOCK_LLM" == "false" ]]; then
