@@ -63,6 +63,7 @@ export default function NotebookPage() {
   const [lastEvalResult, setLastEvalResult] = useState<Record<string, unknown> | null>(null);
   const [lastRagReflection, setLastRagReflection] = useState<Record<string, unknown> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
   const [loadedNotebookId, setLoadedNotebookId] = useState<string | null>(null);
   const [syncedNotebookId, setSyncedNotebookId] = useState<string | null>(null);
   const [activeTopTab, setActiveTopTab] = useState<NotebookTopTab>("chat");
@@ -120,6 +121,13 @@ export default function NotebookPage() {
     };
   }, [activeId]);
 
+  // Auto-scroll the transcript to the bottom whenever a new turn is appended.
+  useEffect(() => {
+    if (transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+    }
+  }, [detail?.conversation?.length]);
+
   async function refreshNotebooks() {
     try {
       setNotebooks(await listNotebooks());
@@ -160,7 +168,7 @@ export default function NotebookPage() {
     const duplicates: string[] = [];
     try {
       for (const file of Array.from(files)) {
-        const result = await uploadSource(activeId, file, settings.chunkSize, settings.chunkOverlap);
+        const result = await uploadSource(activeId, file, settings.chunkSize, settings.chunkOverlap, settings.useDocling, settings.useOcr, settings.largeDocPageThreshold);
         if (result.duplicate) duplicates.push(file.name);
       }
       if (duplicates.length > 0) {
@@ -393,6 +401,37 @@ export default function NotebookPage() {
                 Auto web search
               </label>
 
+              {(() => {
+                const allSuggested = (detail?.conversation ?? [])
+                  .filter((t) => t.role === "assistant")
+                  .flatMap((t) => t.suggested_questions ?? [])
+                  .filter(Boolean);
+                const deduped = [...new Set(allSuggested)].reverse().slice(0, 10);
+                if (deduped.length === 0) return null;
+                return (
+                  <details className="sr-explore-panel__details">
+                    <summary>Suggested questions ({deduped.length})</summary>
+                    <p className="sr-caption">From this notebook's chat — click to ask.</p>
+                    <div className="notebook-page__followups">
+                      {deduped.map((q, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          className="notebook-page__followup-button"
+                          disabled={chatStatus === "running"}
+                          onClick={() => {
+                            setChatWarning(null);
+                            void runChat(q);
+                          }}
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </details>
+                );
+              })()}
+
               <details className="sr-explore-panel__details">
                 <summary>Rename / Delete</summary>
                 <div className="sr-field">
@@ -455,7 +494,7 @@ export default function NotebookPage() {
 
               {activeTopTab === "chat" && (
                 <>
-                  <div className="notebook-page__transcript">
+                  <div className="notebook-page__transcript" ref={transcriptRef}>
                     {detail.conversation.map((turn, i) => (
                       <div key={i} className={`notebook-page__turn notebook-page__turn--${turn.role}`}>
                         <p className="notebook-page__turn-role">{turn.role === "user" ? "You" : "Assistant"}</p>

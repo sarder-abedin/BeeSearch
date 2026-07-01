@@ -414,8 +414,12 @@ def get_processor(
                 )
 
     if use_docling:
-        from tools.docling_processor import DoclingProcessor
-        return DoclingProcessor(use_ocr=use_ocr, max_raw_chars=max_raw_chars)
+        try:
+            import docling  # noqa: F401
+            from tools.docling_processor import DoclingProcessor
+            return DoclingProcessor(use_ocr=use_ocr, max_raw_chars=max_raw_chars)
+        except ImportError:
+            logger.warning("Docling not installed — falling back to DocumentProcessor")
     return DocumentProcessor(
         chunk_size=chunk_size, overlap=overlap,
         max_raw_chars=max_raw_chars, max_pages=max_pages,

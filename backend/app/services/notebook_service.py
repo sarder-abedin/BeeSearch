@@ -41,7 +41,7 @@ from agents.notebook_graph import run_notebook_turn
 from agents.notebook_memory import NotebookMemory
 from agents.notebook_state import NotebookState, create_notebook_state
 from config.settings import get_settings
-from tools.document_tools import DocumentProcessor
+from tools.document_tools import DocumentProcessor, get_processor
 from tools.hybrid_store import _stores
 from tools.text_parsing import format_page_label
 
@@ -172,38 +172,58 @@ def upload_source(
     file_bytes: bytes,
     chunk_size: Optional[int] = None,
     chunk_overlap: Optional[int] = None,
+    use_docling: bool = False,
+    use_ocr: bool = False,
+    large_doc_page_threshold: int = 50,
 ) -> UploadSourceResult:
     """Process one uploaded file and add it to the notebook.
 
     Raises ``KeyError`` if ``notebook_id`` doesn't exist (router -> 404) and
-    lets ``DocumentProcessor.process_file``'s ``ValueError`` (unsupported
-    file type) propagate (router -> 400).
+    lets the processor's ``ValueError`` (unsupported file type) propagate
+    (router -> 400).
     """
     mem = _get_memory()
     if mem.load(notebook_id) is None:
         raise KeyError(notebook_id)
 
-    processor = DocumentProcessor(
-        chunk_size=chunk_size if chunk_size is not None else cfg.chunk_size,
-        overlap=chunk_overlap if chunk_overlap is not None else cfg.chunk_overlap,
-        max_raw_chars=200_000,
-        max_pages=150,
-    )
     is_pdf = Path(filename).suffix.lower() == ".pdf"
+
     if is_pdf:
-        # Write to a temp file so pdfplumber can stream pages from disk.
-        # This avoids holding a second in-memory copy (io.BytesIO) alongside
-        # file_bytes during the expensive extraction pass.
+        # Write to a temp file so the processor streams from disk instead of
+        # holding a second in-memory BytesIO copy alongside file_bytes during
+        # the expensive extraction pass. Pass the original filename as the path
+        # argument so doc_id and chunk metadata use the real name, not the
+        # temp path.
         tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        tmp_path = Path(tmp.name)
         try:
             tmp.write(file_bytes)
             tmp.close()
-            doc = processor.process_file(Path(tmp.name))
+            processor = get_processor(
+                use_docling=use_docling,
+                use_ocr=use_ocr,
+                chunk_size=chunk_size if chunk_size is not None else cfg.chunk_size,
+                overlap=chunk_overlap if chunk_overlap is not None else cfg.chunk_overlap,
+                max_raw_chars=200_000,
+                max_pages=150,
+                file_path=tmp_path,
+                large_doc_page_threshold=large_doc_page_threshold,
+            )
+            with open(tmp_path, "rb") as fh:
+                doc = processor.process_file(Path(filename), file_obj=fh)
         finally:
-            Path(tmp.name).unlink(missing_ok=True)
+            tmp_path.unlink(missing_ok=True)
             gc.collect()
         doc.raw_bytes = file_bytes
     else:
+        processor = get_processor(
+            use_docling=use_docling,
+            use_ocr=use_ocr,
+            chunk_size=chunk_size if chunk_size is not None else cfg.chunk_size,
+            overlap=chunk_overlap if chunk_overlap is not None else cfg.chunk_overlap,
+            max_raw_chars=200_000,
+            max_pages=150,
+        )
         file_obj = io.BytesIO(file_bytes)
         doc = processor.process_file(Path(filename), file_obj=file_obj)
 

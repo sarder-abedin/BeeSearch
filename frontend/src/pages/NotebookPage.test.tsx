@@ -38,6 +38,9 @@ vi.mock("../context/SettingsContext", () => ({
     includeCrossref: true,
     chunkSize: 800,
     chunkOverlap: 150,
+    useDocling: true,
+    useOcr: false,
+    largeDocPageThreshold: 50,
   }),
 }));
 
@@ -218,7 +221,7 @@ describe("NotebookPage", () => {
     const file = new File(["content"], "paper.pdf", { type: "application/pdf" });
     await user.upload(screen.getByLabelText("Upload sources"), file);
 
-    expect(uploadSourceMock).toHaveBeenCalledWith("nb-1", file, 800, 150);
+    expect(uploadSourceMock).toHaveBeenCalledWith("nb-1", file, 800, 150, true, false, 50);
     expect(await screen.findByText("paper.pdf")).toBeInTheDocument();
     expect(screen.getByText("(12 chunks)")).toBeInTheDocument();
   });
@@ -310,7 +313,7 @@ describe("NotebookPage", () => {
 
     expect(await screen.findByText("The main finding is X [1].")).toBeInTheDocument();
     expect(screen.getByText("Sources (1)")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "What methodology was used?" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "What methodology was used?" }).length).toBeGreaterThan(0);
     expect(screen.getByText("Quality Score: 4/5 — Good — Solid, well-grounded answer.")).toBeInTheDocument();
     expect(screen.getByText("Self-Reflective RAG — 3/5 items passed grading (60%)")).toBeInTheDocument();
   });
@@ -336,7 +339,7 @@ describe("NotebookPage", () => {
       error: null,
       result: makeChatResult({ suggested_questions: ["What methodology was used?"] }),
     });
-    const followupButton = await screen.findByRole("button", { name: "What methodology was used?" });
+    const followupButton = (await screen.findAllByRole("button", { name: "What methodology was used?" }))[0];
 
     const poll2 = controllablePoll();
     await user.click(followupButton);

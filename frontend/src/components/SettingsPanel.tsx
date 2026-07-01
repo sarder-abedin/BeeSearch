@@ -349,10 +349,38 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                     onChange={(e) => s.setChunkOverlap(Number(e.target.value))}
                   />
                 </div>
-                <p className="sr-caption">
-                  Advanced Parsing (Docling) and OCR are Streamlit/CLI-only for now — the web app's upload
-                  endpoint uses pdfplumber.
-                </p>
+                <label className="sr-toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={s.useDocling}
+                    onChange={(e) => s.setUseDocling(e.target.checked)}
+                  />
+                  Advanced Parsing (Docling)
+                </label>
+                <label className="sr-toggle-label" style={{ opacity: s.useDocling ? 1 : 0.4 }}>
+                  <input
+                    type="checkbox"
+                    checked={s.useOcr}
+                    disabled={!s.useDocling}
+                    onChange={(e) => s.setUseOcr(e.target.checked)}
+                  />
+                  Enable OCR (slower)
+                </label>
+                <div className="sr-field">
+                  <label htmlFor="settings-large-doc-threshold">
+                    Large-PDF page threshold: {s.largeDocPageThreshold}
+                    <span className="settings-panel__help" title="PDFs above this page count use pdfplumber (streaming) instead of Docling ML models to avoid RAM spikes."> (?)</span>
+                  </label>
+                  <input
+                    id="settings-large-doc-threshold"
+                    type="range"
+                    min={10}
+                    max={150}
+                    step={10}
+                    value={s.largeDocPageThreshold}
+                    onChange={(e) => s.setLargeDocPageThreshold(Number(e.target.value))}
+                  />
+                </div>
               </section>
             </>
           )}

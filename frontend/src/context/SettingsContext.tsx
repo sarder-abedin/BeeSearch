@@ -14,6 +14,9 @@ export interface PersistedSettings {
   includeCrossref: boolean;
   chunkSize: number;
   chunkOverlap: number;
+  useDocling: boolean;
+  useOcr: boolean;
+  largeDocPageThreshold: number;
 }
 
 const DEFAULT_SETTINGS: PersistedSettings = {
@@ -26,6 +29,9 @@ const DEFAULT_SETTINGS: PersistedSettings = {
   includeCrossref: true,
   chunkSize: 800,
   chunkOverlap: 150,
+  useDocling: true,
+  useOcr: false,
+  largeDocPageThreshold: 50,
 };
 
 function loadPersisted(): PersistedSettings {
@@ -48,6 +54,9 @@ export interface SettingsContextValue extends PersistedSettings {
   setIncludeCrossref: (include: boolean) => void;
   setChunkSize: (size: number) => void;
   setChunkOverlap: (overlap: number) => void;
+  setUseDocling: (v: boolean) => void;
+  setUseOcr: (v: boolean) => void;
+  setLargeDocPageThreshold: (v: number) => void;
 
   status: SystemStatusResponse | null;
   statusLoading: boolean;
@@ -150,6 +159,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setIncludeCrossref: (includeCrossref) => setSettings((p) => ({ ...p, includeCrossref })),
       setChunkSize: (chunkSize) => setSettings((p) => ({ ...p, chunkSize })),
       setChunkOverlap: (chunkOverlap) => setSettings((p) => ({ ...p, chunkOverlap })),
+      setUseDocling: (useDocling) => setSettings((p) => ({ ...p, useDocling })),
+      setUseOcr: (useOcr) => setSettings((p) => ({ ...p, useOcr })),
+      setLargeDocPageThreshold: (largeDocPageThreshold) => setSettings((p) => ({ ...p, largeDocPageThreshold })),
       status,
       statusLoading,
       statusError,
