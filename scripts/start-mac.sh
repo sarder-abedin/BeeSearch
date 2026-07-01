@@ -17,7 +17,7 @@
 set -euo pipefail
 
 COMPOSE_FILE="docker-compose.mac.yml"
-APP_URL="http://localhost:${APP_PORT:-8501}"
+APP_URL="http://localhost:${APP_PORT:-8501}" # 8501 Streamlit default port. 8000 default for REACT frontend.
 
 _cleanup() {
     echo ""
