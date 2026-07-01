@@ -5,17 +5,19 @@
 BeeSearch is a **3-mode, local-first AI research system** built on LangGraph state machines, Ollama LLMs, and Hybrid RAG. All computation runs locally — no cloud LLM, no paid API.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                       User Interfaces                        │
-│   Streamlit web UI (app.py)       CLI terminal (main.py)     │
-│   Landing page → select mode      --systematic-review /      │
-│   (lazy: only selected mode       --notebook / --ask         │
-│    code is imported)                                         │
-└────────────────────┬─────────────────────────────────────────┘
-                     │
-           ┌─────────┴─────────┬──────────────────────┐
-           │                   │                      │
-   ┌───────▼──────┐   ┌────────▼────────┐    ┌────────▼───────┐
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              User Interfaces                                │
+│                                                                             │
+│  Streamlit UI (app.py)    CLI terminal (main.py)    React SPA (frontend/)  │
+│  Landing page →           --systematic-review /     Browser fetch() →      │
+│  select mode              --notebook / --ask        FastAPI (backend/)      │
+│  (lazy imports)                                     /api/* routes           │
+└───────────────────────────────┬─────────────────────────────────────────────┘
+                                │  (all three surfaces call the same
+                                │   agents/* / projects/* modules)
+           ┌────────────────────┼──────────────────────┐
+           │                    │                      │
+   ┌───────▼──────┐   ┌─────────▼───────┐    ┌────────▼───────┐
    │   Mode 1     │   │    Mode 2       │    │     Mode 3     │
    │  Systematic  │   │  Research       │    │  AI Research   │
    │  Literature  │   │  Notebook       │    │   Assistant    │
@@ -76,12 +78,14 @@ Self-Reflective RAG, and no SQLite memory. `run_research_assistant()`
 then a grounded Ollama LLM call directly, with citations rebuilt in code from the `[n]`
 actually used — no intermediate graph.
 
+All three user-interface surfaces (Streamlit, CLI, React + FastAPI) call the same
+`agents/*` / `projects/*` modules — there is no separate business logic for the web
+app. The React SPA sends `fetch()` requests to FastAPI routers, each of which is a thin
+layer over the shared service modules. See "React + FastAPI Web App" below for the
+HTTP-layer diagram, job-polling model, Docker setup, and mock mode.
+
 See "Mode 3: AI Research Assistant" below for source numbering, citation-rebuild, and
 CLI/UI details.
-
-An additional interface — a React SPA talking to a FastAPI backend — is also
-available, added alongside Streamlit/CLI rather than replacing them. See
-"React + FastAPI Web App" below.
 
 ---
 
