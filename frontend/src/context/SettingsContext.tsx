@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getSystemStatus, shutdownServer } from "../api/system";
 import type { SystemStatusResponse, TemperatureLevel } from "../api/systemTypes";
 
@@ -81,6 +81,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [shuttingDown, setShuttingDown] = useState(false);
   const [shutdownError, setShutdownError] = useState<string | null>(null);
 
+  // True when this is a first-ever visit (no prior localStorage data).
+  // We use a ref so it never triggers re-renders.
+  const freshInstall = useRef(
+    typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEY) === null,
+  );
+
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   }, [settings]);
@@ -107,6 +113,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // On the very first visit (no prior localStorage), auto-apply all hardware
+  // recommendations once status loads — so defaults are always hardware-aware.
+  useEffect(() => {
+    if (!freshInstall.current || !status) return;
+    if (status.recommendation.can_run && status.recommendation.model) {
+      freshInstall.current = false;
+      const { recommendation: rec, tier } = status;
+      setSettings((prev) => ({
+        ...prev,
+        model: rec.model as string,
+        numCtx: tier.num_ctx,
+        hybridTopK: tier.hybrid_top_k,
+        maxResults: tier.max_results,
+        chunkSize: tier.chunk_size,
+        chunkOverlap: tier.chunk_overlap,
+        largeDocPageThreshold: tier.large_doc_page_threshold,
+      }));
+    }
+  }, [status]);
 
   const applyRecommended = useCallback(
     (modelName?: string, numCtxOverride?: number) => {
