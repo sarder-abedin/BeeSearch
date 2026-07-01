@@ -30,8 +30,10 @@ are read (live chat result or stored history), via :func:`_with_page_labels`.
 
 from __future__ import annotations
 
+import gc
 import io
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -185,12 +187,25 @@ def upload_source(
         chunk_size=chunk_size if chunk_size is not None else cfg.chunk_size,
         overlap=chunk_overlap if chunk_overlap is not None else cfg.chunk_overlap,
         max_raw_chars=200_000,
-        max_pages=300,
+        max_pages=150,
     )
-    file_obj = io.BytesIO(file_bytes)
-    doc = processor.process_file(Path(filename), file_obj=file_obj)
-    if Path(filename).suffix.lower() == ".pdf":
+    is_pdf = Path(filename).suffix.lower() == ".pdf"
+    if is_pdf:
+        # Write to a temp file so pdfplumber can stream pages from disk.
+        # This avoids holding a second in-memory copy (io.BytesIO) alongside
+        # file_bytes during the expensive extraction pass.
+        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        try:
+            tmp.write(file_bytes)
+            tmp.close()
+            doc = processor.process_file(Path(tmp.name))
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+            gc.collect()
         doc.raw_bytes = file_bytes
+    else:
+        file_obj = io.BytesIO(file_bytes)
+        doc = processor.process_file(Path(filename), file_obj=file_obj)
 
     if not mem.add_source(notebook_id, doc, source_type="file"):
         return UploadSourceResult(added=False, duplicate=True, source=None)
