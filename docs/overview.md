@@ -26,7 +26,8 @@ BeeSearch/
 │   └── src/{api,pages,components}/
 ├── config/
 │   ├── settings.py                 ← Pydantic config from .env
-│   └── hardware.py                 ← Hardware detection + model recommendation
+│   ├── hardware.py                 ← Hardware detection + model recommendation
+│   └── observability.py            ← Langfuse callback singleton (opt-in LLM tracing)
 ├── agents/
 │   ├── systematic_review_state.py  ← SR TypedDict + create_systematic_review_state()
 │   ├── systematic_review_nodes.py  ← 7 PRISMA pipeline nodes
@@ -271,8 +272,8 @@ If no sources are found, the result is marked ungrounded: the answer carries an 
 
 ## React + FastAPI Web App
 
-A REST API (`backend/`) and a React SPA (`frontend/`) provide an additional
-interface, added alongside Streamlit/CLI without modifying either — same
+A REST API (`backend/`) and a React SPA (`frontend/`) form the **primary Docker
+interface** (port 8000), added alongside Streamlit/CLI without modifying either — same
 `agents/*`/`projects/*` logic underneath, no parallel business logic.
 **Coverage:** all three modes are fully covered. Mode 1 and Mode 3 are
 complete; Mode 2 covers the core Q&A workflow (create/upload/chat with

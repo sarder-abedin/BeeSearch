@@ -678,7 +678,7 @@ Both Literature Review and the Explain tab once let the LLM cite freely (`[1]`, 
 
 ## React + FastAPI Web App
 
-An optional additional interface (`backend/` + `frontend/`) exposes Mode 1, Mode 3,
+The **primary Docker interface** (`backend/` + `frontend/`) exposes Mode 1, Mode 3,
 and the core of Mode 2 over a REST API, added alongside the Streamlit UI and
 CLI without modifying either. It calls the exact same `agents/*` / `projects/*`
 logic described above — no parallel business logic, no parallel state machine.
@@ -706,10 +706,11 @@ FastAPI (backend/app/main.py)
 services/*_service.py  →  agents/*.py, projects/*.py   (same modules the CLI/Streamlit call)
 ```
 
-**Docker:** `docker compose up --build` runs Streamlit, the CLI, the FastAPI
-backend, and the built React frontend all in one `research-app` container,
-alongside the pre-existing `research-ollama` container — see the root
-`docker-compose.yml`. The root `Dockerfile` is multi-stage: a `node:20-alpine`
+**Docker:** `./scripts/start-web.sh` (uses `docker-compose.web.yml`) is the
+recommended one-command start — it brings up Ollama and the React/FastAPI app at
+**http://localhost:8000**. `docker compose up --build` (root `docker-compose.yml`)
+runs the full stack: React/FastAPI at port **8000** (primary) and Streamlit at port
+**8501** (secondary). The root `Dockerfile` is multi-stage: a `node:20-alpine`
 stage runs `npm run build` for `frontend/`, then the final `python:3.11-slim`
 stage copies the built static assets in, and `backend/app/main.py` mounts
 them with `StaticFiles(html=True)` at `/` (registered after all the
@@ -832,7 +833,8 @@ BeeSearch/
 │
 ├── config/
 │   ├── settings.py             ← Pydantic BaseSettings (env vars)
-│   └── hardware.py             ← detect_hardware() + recommend_config()
+│   ├── hardware.py             ← detect_hardware() + recommend_config()
+│   └── observability.py        ← get_langfuse_callbacks() + flush_langfuse() (opt-in LLM tracing)
 │
 ├── outputs/
 │   ├── chroma_db/              ← ChromaDB persistent embedding cache
@@ -856,6 +858,8 @@ BeeSearch/
 │   └── test_citation_context.py            ← Citation-context sentence matching + fulltext-fetch status paths
 │
 ├── docker-compose.yml
+├── docker-compose.web.yml      ← React + FastAPI only (no Streamlit); used by start-web.sh
+├── docker-compose.langfuse.yml ← Self-hosted Langfuse observability stack (optional)
 ├── .env.example
 └── requirements.txt
 ```
@@ -891,3 +895,4 @@ BeeSearch/
 | Web API | FastAPI + Uvicorn | `backend/` — REST layer over the same agents/projects modules |
 | Web Frontend | React 19 + TypeScript + Vite | `frontend/` — SPA; Vite dev-server proxy locally, served statically by FastAPI in Docker |
 | Web Frontend Tests | Vitest + Testing Library, Playwright | Component tests; E2E against the mock-LLM backend |
+| LLM Observability | Langfuse (optional) | Opt-in tracing of every ChatOllama call — prompts, completions, latency, tokens; self-hosted via `docker-compose.langfuse.yml` or Langfuse Cloud |

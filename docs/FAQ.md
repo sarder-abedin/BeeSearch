@@ -6,12 +6,14 @@
 ---
 
 **Q: How do I run this with Docker?**
-A: Run `docker compose up --build` from the project root. This starts Ollama (LLM), the Streamlit app (port 8501), the FastAPI backend (port 8000), and the React frontend (port 5173, nginx, reverse-proxies `/api/*` to the backend container). A one-shot `model-init` container pulls the default model on first start. Open http://localhost:8501 for the Streamlit UI or http://localhost:5173 for the React app — both share the same Ollama instance and run independently. To start only the Streamlit stack, run `docker compose up --build ollama model-init app`.
+A: The recommended one-command start is `./scripts/start-web.sh` (or `bash scripts/start-web.sh` on Windows). This uses `docker-compose.web.yml` — it starts Ollama, pulls the default model, builds the React + FastAPI app, and opens **http://localhost:8000** automatically. The React SPA is served by FastAPI at "/" from the compiled `frontend/dist/` assets — no separate nginx or port 5173.
+
+For the full stack (React + Streamlit + CLI together), run `docker compose up --build` (uses the root `docker-compose.yml`). This exposes port **8000** for the React/FastAPI app (primary) and **8501** for the Streamlit UI (secondary, still available). The browser opens at 8000 when you use `./scripts/start.sh` or `./scripts/start-mac.sh`. Either way, a one-shot `model-init` container pulls the default model on first start.
 
 ---
 
-**Q: Is there a web app alternative to the Streamlit UI?**
-A: Yes — a React + TypeScript frontend backed by a FastAPI REST API, added alongside Streamlit and the CLI (neither was changed to make room for it). It fully covers all three modes: Mode 1 (Systematic Review) and Mode 3 (AI Research Assistant), plus the Research Notebook's core workflow (create/upload/chat with citations), 7-agent pipeline, advanced one-shot tools, Explain tab, and Research Report. Run the backend with `python -m uvicorn backend.app.main:app --reload --port 8000` and the frontend with `cd frontend && npm install && npm run dev`, then open http://localhost:5173 — see the README's "Web App (React + FastAPI)" section for the full setup, build, and test commands.
+**Q: Is Streamlit still available alongside the React app?**
+A: Yes. The React + FastAPI web app (port 8000) is now the default interface — it's what `./scripts/start-web.sh` and the Docker `Run:` example open. Streamlit (port 8501) still runs in the full stack (`docker compose up --build`) and is available as a secondary interface at http://localhost:8501. Both call the same underlying `agents/*` / `projects/*` modules — no parallel business logic. To run only the React app without Streamlit (lighter container), use `docker-compose.web.yml` directly. To develop the React frontend locally without Docker, run `python -m uvicorn backend.app.main:app --reload --port 8000` and `cd frontend && npm install && npm run dev`, then open http://localhost:5173 — see the README's "Web interface — manual startup" section for details.
 
 ---
 
@@ -152,6 +154,20 @@ A: The `repetition_tracker` node detects this automatically — no toggle needed
 
 **Q: How does BeeSearch rank web search results?**
 A: `WebSearcher` (DuckDuckGo) fetches more results than requested, deduplicates them by URL and normalised title, then re-ranks: recognised research domains (arxiv.org, PubMed, IEEE Xplore, Nature, ScienceDirect, `.edu`/`.gov`, and similar) move to the front, a short list of low-signal sites (Pinterest, Quora) moves to the back, and everything else keeps DuckDuckGo's own relative order. Nothing is ever dropped for being non-academic — only reordered — so a relevant blog or vendor page is never hidden, just deprioritised behind primary sources.
+
+---
+
+**Q: Can I trace LLM calls — prompts, completions, latency, token counts?**
+A: Yes — BeeSearch ships with optional Langfuse integration that instruments every ChatOllama call across all agents and tools. It's opt-in: leave `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` blank in `.env` to disable it entirely (no overhead, no errors). To enable:
+1. Start the self-hosted Langfuse stack: `docker compose -f docker-compose.langfuse.yml up -d`
+2. Open http://localhost:3000 → create an account → Settings → API Keys
+3. Add the keys to your `.env`:
+   ```env
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_HOST=http://localhost:3000
+   ```
+The dashboard shows every prompt, completion, latency, and token count for each pipeline run. Alternatively, set `LANGFUSE_HOST=https://cloud.langfuse.com` to use Langfuse Cloud instead of self-hosting.
 
 ---
 
