@@ -271,6 +271,7 @@ def _stance_llm(model_name: str, num_ctx: int):
     """
     import httpx
     from langchain_ollama import ChatOllama
+    from config.observability import get_langfuse_callbacks
     return ChatOllama(
         model=model_name or cfg.ollama_model,
         base_url=cfg.ollama_base_url,
@@ -278,6 +279,7 @@ def _stance_llm(model_name: str, num_ctx: int):
         num_predict=128,
         num_ctx=num_ctx or cfg.num_ctx,
         sync_client_kwargs={"timeout": httpx.Timeout(120.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

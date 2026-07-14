@@ -53,6 +53,7 @@ def _max_predict(state: SystematicReviewState) -> int:
 def _llm(state: SystematicReviewState, temperature: float = 0.2, num_predict: int = 4096) -> ChatOllama:
     """Build a ChatOllama client configured from the SR state's model/context settings."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     return ChatOllama(
         model=state.get("model_name", cfg.ollama_model),
         base_url=cfg.ollama_base_url,
@@ -60,6 +61,7 @@ def _llm(state: SystematicReviewState, temperature: float = 0.2, num_predict: in
         num_predict=num_predict,
         num_ctx=state.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(300.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

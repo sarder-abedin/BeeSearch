@@ -41,6 +41,7 @@ cfg = get_settings()
 def _make_llm(model_name: str, num_ctx: int) -> ChatOllama:
     """Build a low-temperature ChatOllama client tuned for short scoring replies."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     return ChatOllama(
         model=model_name or cfg.ollama_model,
         base_url=cfg.ollama_base_url,
@@ -48,6 +49,7 @@ def _make_llm(model_name: str, num_ctx: int) -> ChatOllama:
         num_predict=256,
         num_ctx=num_ctx,
         sync_client_kwargs={"timeout": httpx.Timeout(120.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

@@ -64,6 +64,7 @@ def is_available() -> bool:
 def _make_llm(model_name: str, ollama_base_url: str) -> ChatOllama:
     """Build a deterministic ChatOllama client for claim extraction/verification."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     return ChatOllama(
         model=model_name or cfg.ollama_model,
         base_url=ollama_base_url or cfg.ollama_base_url,
@@ -71,6 +72,7 @@ def _make_llm(model_name: str, ollama_base_url: str) -> ChatOllama:
         num_predict=512,
         num_ctx=min(cfg.num_ctx, 8192),
         sync_client_kwargs={"timeout": httpx.Timeout(120.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

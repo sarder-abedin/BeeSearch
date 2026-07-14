@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     output_dir: str = Field("./outputs", alias="OUTPUT_DIR")
     log_level: str = Field("INFO", alias="LOG_LEVEL")
 
+    # ── Langfuse Observability (optional) ────────────────────
+    langfuse_public_key: str = Field("", alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: str = Field("", alias="LANGFUSE_SECRET_KEY")
+    langfuse_host: str = Field("http://localhost:3000", alias="LANGFUSE_HOST")
+
     class Config:
         """Pydantic settings config: load `.env` from the project root and
         allow constructing `Settings` with either field names or their

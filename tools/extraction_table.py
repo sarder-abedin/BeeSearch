@@ -22,7 +22,8 @@ cfg = get_settings()
 def _llm(model_name: str, num_ctx: int) -> ChatOllama:
     """Build a low-temperature ChatOllama client for structured PICO extraction."""
     import httpx
-    return ChatOllama(model=model_name or cfg.ollama_model, base_url=cfg.ollama_base_url, temperature=0.1, num_predict=512, num_ctx=num_ctx or cfg.num_ctx, sync_client_kwargs={"timeout": httpx.Timeout(300.0)})
+    from config.observability import get_langfuse_callbacks
+    return ChatOllama(model=model_name or cfg.ollama_model, base_url=cfg.ollama_base_url, temperature=0.1, num_predict=512, num_ctx=num_ctx or cfg.num_ctx, sync_client_kwargs={"timeout": httpx.Timeout(300.0)}, callbacks=get_langfuse_callbacks())
 
 def extract_structured_row(paper: Dict[str, Any], research_question: str, model_name: str, num_ctx: int) -> Dict[str, str]:
     """Ask the LLM to fill in PICO fields for one paper and assemble a full table row.

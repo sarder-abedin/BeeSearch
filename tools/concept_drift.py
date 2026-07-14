@@ -155,6 +155,7 @@ def detect_concept_drift(
             from langchain_core.messages import HumanMessage, SystemMessage
             from langchain_ollama import ChatOllama
             from config.settings import get_settings
+            from config.observability import get_langfuse_callbacks
             import httpx
             cfg_s = get_settings()
             llm = ChatOllama(
@@ -164,6 +165,7 @@ def detect_concept_drift(
                 num_predict=512,
                 num_ctx=num_ctx,
                 sync_client_kwargs={"timeout": httpx.Timeout(120.0)},
+                callbacks=get_langfuse_callbacks(),
             )
             period_lines = [
                 f"{label} ({meta['papers']} papers): {', '.join(meta['top_terms'][:8])}"

@@ -56,7 +56,8 @@ def refine_with_feedback(
     from langchain_core.messages import HumanMessage, SystemMessage
 
     mode_label = _MODE_LABELS.get(mode, "research output")
-    llm = ChatOllama(model=model_name, temperature=0.4, num_ctx=num_ctx, num_predict=4096)
+    from config.observability import get_langfuse_callbacks
+    llm = ChatOllama(model=model_name, temperature=0.4, num_ctx=num_ctx, num_predict=4096, callbacks=get_langfuse_callbacks())
 
     system = (
         f"You are a research assistant refining a {mode_label} based on user feedback. "

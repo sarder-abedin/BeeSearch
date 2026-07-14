@@ -54,6 +54,7 @@ def _make_llm(settings: Dict[str, Any], temperature: float = 0.3, num_predict: i
     falling back to config defaults.
     """
     import httpx
+    from config.observability import get_langfuse_callbacks
     level = settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=settings.get("model") or cfg.ollama_model,
@@ -62,6 +63,7 @@ def _make_llm(settings: Dict[str, Any], temperature: float = 0.3, num_predict: i
         num_predict=num_predict,
         num_ctx=settings.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(300.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

@@ -38,6 +38,7 @@ cfg = get_settings()
 def _reflection_llm(model_name: str, num_ctx: int, temperature: float, num_predict: int):
     """Private LLM factory — mirrors eval_nodes._eval_llm but caps ctx at 4096."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     return ChatOllama(
         model=model_name or cfg.ollama_model,
         base_url=cfg.ollama_base_url,
@@ -45,6 +46,7 @@ def _reflection_llm(model_name: str, num_ctx: int, temperature: float, num_predi
         num_predict=num_predict,
         num_ctx=min(num_ctx or cfg.num_ctx, 4096),
         sync_client_kwargs={"timeout": httpx.Timeout(60.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 
