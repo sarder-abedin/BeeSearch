@@ -38,8 +38,13 @@ streamlit run app.py
 ### Docker
 
 ```bash
+# Recommended — React + FastAPI web app only (lighter)
+./scripts/start-web.sh
+# Open http://localhost:8000
+
+# Full stack — React + Streamlit + CLI
 docker compose up --build
-# Open http://localhost:8501
+# React app at http://localhost:8000; Streamlit also at http://localhost:8501
 ```
 
 ---

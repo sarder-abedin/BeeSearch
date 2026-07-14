@@ -187,6 +187,17 @@ SEMANTIC_SCHOLAR_API_KEY=
 CROSSREF_EMAIL=your@email.com
 ```
 
+Optional — LLM observability with [Langfuse](https://langfuse.com) (traces every AI call with prompts, latency, and token counts):
+
+```env
+# 1. Start self-hosted Langfuse: docker compose -f docker-compose.langfuse.yml up -d
+# 2. Open http://localhost:3000 → create account → Settings → API Keys
+# 3. Paste the keys below. Leave blank to disable tracing (no overhead, no errors).
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_SECRET_KEY=
+LANGFUSE_HOST=http://localhost:3000
+```
+
 ---
 
 ## For developers
