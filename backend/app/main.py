@@ -38,11 +38,14 @@ if os.environ.get("BEESEARCH_MOCK_LLM") == "1":
     install_mock_llm()
     install_mock_search()
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from config.observability import flush_langfuse
 from config.settings import get_settings
 
 from .routers import (
@@ -61,7 +64,14 @@ cfg = get_settings()
 logging.basicConfig(level=getattr(logging, cfg.log_level.upper(), logging.INFO))
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BeeSearch API", version="0.1.0")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    yield
+    flush_langfuse()
+
+
+app = FastAPI(title="BeeSearch API", version="0.1.0", lifespan=_lifespan)
 
 _DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 app.add_middleware(

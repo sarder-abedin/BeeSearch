@@ -6,8 +6,10 @@
 #   ./scripts/start-mac.sh           # standard start
 #   ./scripts/start-mac.sh --build   # force rebuild images
 #
-# The browser opens automatically at http://localhost:8501 once the app
-# passes its health-check.  On Ctrl-C the script shuts the containers down.
+# The browser opens automatically at http://localhost:8000 (React app)
+# once the app passes its health-check.  On Ctrl-C the script shuts
+# the containers down.
+# Streamlit is also available at http://localhost:8501.
 #
 # Prerequisites:
 #   1. Install Ollama: https://ollama.com/download (macOS .dmg)
@@ -17,7 +19,7 @@
 set -euo pipefail
 
 COMPOSE_FILE="docker-compose.mac.yml"
-APP_URL="http://localhost:${APP_PORT:-8501}" # 8501 Streamlit default port. 8000 default for REACT frontend.
+APP_URL="http://localhost:${REACT_PORT:-8000}"
 
 _cleanup() {
     echo ""
@@ -31,7 +33,7 @@ trap _cleanup EXIT INT TERM
 (
     echo "Waiting for BeeSearch to be ready at $APP_URL …"
     for i in $(seq 1 90); do
-        if curl -sf "${APP_URL}/_stcore/health" >/dev/null 2>&1; then
+        if curl -sf "${APP_URL}/api/health" >/dev/null 2>&1; then
             echo ""
             echo "BeeSearch is ready — opening $APP_URL"
             open "$APP_URL"

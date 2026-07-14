@@ -55,6 +55,7 @@ def _max_predict(settings: dict) -> int:
 def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 4096) -> ChatOllama:
     """Build a ChatOllama client whose temperature is adjusted by the user's response-tuning level."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     level = settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=settings.get("model", cfg.ollama_model),
@@ -63,6 +64,7 @@ def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 4096)
         num_predict=num_predict,
         num_ctx=settings.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(300.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

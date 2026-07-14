@@ -81,6 +81,7 @@ def _make_llm(
 ) -> ChatOllama:
     """Build a ChatOllama client for section-tool calls (detection, summary, Q&A, review)."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     return ChatOllama(
         model=model_name or cfg.ollama_model,
         base_url=cfg.ollama_base_url,
@@ -88,6 +89,7 @@ def _make_llm(
         num_predict=num_predict,
         num_ctx=num_ctx or cfg.num_ctx,
         sync_client_kwargs={"timeout": httpx.Timeout(300.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

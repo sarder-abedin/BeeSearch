@@ -58,6 +58,7 @@ def _get_memory() -> StorytellerMemory:
 def _llm(state: StoryState, temperature: float = 0.7) -> ChatOllama:
     """Build a ChatOllama client whose temperature is adjusted by the user's response-tuning level."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     level = state.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=state.get("model_name", cfg.ollama_model),
@@ -66,6 +67,7 @@ def _llm(state: StoryState, temperature: float = 0.7) -> ChatOllama:
         num_predict=4096,
         num_ctx=state.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(180.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 
@@ -305,6 +307,7 @@ def _build_web_query(question: str, doc_context: str, model_name: str, num_ctx: 
         return question
     try:
         import httpx
+        from config.observability import get_langfuse_callbacks
         llm = ChatOllama(
             model=model_name or cfg.ollama_model,
             base_url=cfg.ollama_base_url,
@@ -312,6 +315,7 @@ def _build_web_query(question: str, doc_context: str, model_name: str, num_ctx: 
             num_predict=40,
             num_ctx=min(num_ctx, 4096),
             sync_client_kwargs={"timeout": httpx.Timeout(30.0)},
+            callbacks=get_langfuse_callbacks(),
         )
         system = (
             "Rewrite the question as a short, self-contained search query "
@@ -347,6 +351,7 @@ def source_router_node(state: StoryState) -> Dict[str, Any]:
         reason = "No documents uploaded — searching online for context."
     else:
         import httpx
+        from config.observability import get_langfuse_callbacks
         router_llm = ChatOllama(
             model=state.get("model_name", cfg.ollama_model),
             base_url=cfg.ollama_base_url,
@@ -354,6 +359,7 @@ def source_router_node(state: StoryState) -> Dict[str, Any]:
             num_predict=128,
             num_ctx=min(state.get("num_ctx", cfg.num_ctx), 4096),
             sync_client_kwargs={"timeout": httpx.Timeout(60.0)},
+            callbacks=get_langfuse_callbacks(),
         )
         system = (
             "You are a document coverage assessor. Score how well the document context "
@@ -840,6 +846,7 @@ EXPLANATION:
 
     try:
         import httpx
+        from config.observability import get_langfuse_callbacks
         micro_llm = ChatOllama(
             model=state.get("model_name", cfg.ollama_model),
             base_url=cfg.ollama_base_url,
@@ -847,6 +854,7 @@ EXPLANATION:
             num_predict=256,
             num_ctx=min(state.get("num_ctx", cfg.num_ctx), 4096),
             sync_client_kwargs={"timeout": httpx.Timeout(60.0)},
+            callbacks=get_langfuse_callbacks(),
         )
         raw_concepts = _call(
             micro_llm,
@@ -894,6 +902,7 @@ def _extract_concept_graph_data(user_message: str, explanation_text: str, state:
     response-tuning variety.
     """
     import httpx
+    from config.observability import get_langfuse_callbacks
     llm = ChatOllama(
         model=state.get("model_name", cfg.ollama_model),
         base_url=cfg.ollama_base_url,
@@ -901,6 +910,7 @@ def _extract_concept_graph_data(user_message: str, explanation_text: str, state:
         num_predict=512,
         num_ctx=min(state.get("num_ctx", cfg.num_ctx), 4096),
         sync_client_kwargs={"timeout": httpx.Timeout(60.0)},
+        callbacks=get_langfuse_callbacks(),
     )
     system = (
         "You are a concept-map extractor. From the explanation, identify the "

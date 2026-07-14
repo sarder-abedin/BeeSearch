@@ -40,6 +40,7 @@ _EVAL_SYSTEM = (
 def _eval_llm(model_name: str, num_ctx: int) -> ChatOllama:
     """Build the shared deterministic (temperature=0.1) ChatOllama client used by every eval node."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     return ChatOllama(
         model=model_name or cfg.ollama_model,
         base_url=cfg.ollama_base_url,
@@ -47,6 +48,7 @@ def _eval_llm(model_name: str, num_ctx: int) -> ChatOllama:
         num_predict=300,
         num_ctx=min(num_ctx or cfg.num_ctx, 8192),
         sync_client_kwargs={"timeout": httpx.Timeout(120.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

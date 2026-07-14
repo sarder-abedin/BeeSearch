@@ -1,11 +1,11 @@
 #!/bin/bash
 # docker-entrypoint.sh
 #
-# Runs the Streamlit UI (port 8501) and the FastAPI backend (port 8000,
-# which also serves the built React frontend -- see backend/app/main.py)
-# as sibling processes in the same container. The CLI (main.py) isn't a
-# long-running server, so it isn't started here -- run it ad hoc with
-# `docker compose exec app python main.py ...`.
+# Primary:   FastAPI backend + React SPA (port 8000) — built React assets
+#            are served by FastAPI at "/" (see backend/app/main.py).
+# Secondary: Streamlit UI (port 8501) — still available for power users.
+# CLI:       Not started here — run ad hoc with
+#            `docker compose exec app python main.py ...`.
 #
 # If either server process exits, this script exits too, so Docker's
 # restart policy brings the whole container back up rather than leaving

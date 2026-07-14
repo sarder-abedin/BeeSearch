@@ -1,15 +1,16 @@
 # ─────────────────────────────────────────────────────────────
 # BeeSearch — Application Container
 #
-# This single container runs the Streamlit web UI, the CLI, the FastAPI
-# backend, and the built React frontend (served by FastAPI at "/" -- see
-# backend/app/main.py) side by side -- see docker-entrypoint.sh.
-# It connects to an Ollama server (run separately or via
-# docker-compose) for LLM inference.
+# This single container runs the React/FastAPI web app (primary UI),
+# the Streamlit UI (secondary), and the CLI side by side.
+# The React SPA is built in stage 1 and served by FastAPI at "/" (port 8000).
+# It connects to an Ollama server (run separately or via docker-compose).
 #
 # Build:   docker build -t beesearch .
-# Run:     docker run -p 8501:8501 -p 8000:8000 \
+# Run:     docker run -p 8000:8000 -p 8501:8501 \
 #              -e OLLAMA_BASE_URL=http://host.docker.internal:11434 beesearch
+#          → React app at http://localhost:8000
+#          → Streamlit UI at http://localhost:8501 (still available)
 # CLI:     docker run --rm -e OLLAMA_BASE_URL=... beesearch python main.py --check-system
 # ─────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ FROM python:3.11-slim
 
 # Metadata
 LABEL maintainer="BeeSearch"
-LABEL description="Local-first AI research assistant — Streamlit UI + CLI + FastAPI/React web app"
+LABEL description="Local-first AI research assistant — React/FastAPI web app (port 8000) + Streamlit UI (port 8501) + CLI"
 
 # ── System dependencies ───────────────────────────────────────
 # libffi-dev    : required by some Python C extensions (cryptography, etc.)
@@ -87,13 +88,13 @@ ENV OLLAMA_BASE_URL=http://ollama:11434
 ENV OLLAMA_MODEL=llama3.2:3b
 ENV NUM_CTX=32768
 
-# ── Expose Streamlit + FastAPI/React ports ────────────────────
-EXPOSE 8501
+# ── Expose React/FastAPI (primary) + Streamlit (secondary) ───
 EXPOSE 8000
+EXPOSE 8501
 
-# ── Healthcheck (both surfaces must be up) ────────────────────
+# ── Healthcheck — React/FastAPI is the primary readiness gate ─
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health && curl -f http://localhost:8000/api/health || exit 1
+    CMD curl -f http://localhost:8000/api/health && curl -f http://localhost:8501/_stcore/health || exit 1
 
-# ── Default command — Streamlit UI + FastAPI/React together ──
+# ── Default command — React/FastAPI (primary) + Streamlit (secondary) ──
 CMD ["./docker-entrypoint.sh"]

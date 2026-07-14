@@ -73,6 +73,7 @@ def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 2048)
     """ChatOllama factory — mirrors notebook_advanced._make_llm."""
     import httpx
     from langchain_ollama import ChatOllama
+    from config.observability import get_langfuse_callbacks
     level = settings.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=settings.get("model", cfg.ollama_model),
@@ -81,6 +82,7 @@ def _make_llm(settings: dict, temperature: float = 0.3, num_predict: int = 2048)
         num_predict=num_predict,
         num_ctx=settings.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(300.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

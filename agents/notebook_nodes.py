@@ -129,6 +129,7 @@ def _build_web_query(state: NotebookState, query: str, notebook_chunks: List[Dic
     topic_hint = " ".join(c.get("text", "") for c in notebook_chunks[:2])[:300]
     try:
         import httpx
+        from config.observability import get_langfuse_callbacks
         llm = ChatOllama(
             model=state.get("model_name", cfg.ollama_model),
             base_url=cfg.ollama_base_url,
@@ -136,6 +137,7 @@ def _build_web_query(state: NotebookState, query: str, notebook_chunks: List[Dic
             num_predict=40,
             num_ctx=state.get("num_ctx", cfg.num_ctx),
             sync_client_kwargs={"timeout": httpx.Timeout(30.0)},
+            callbacks=get_langfuse_callbacks(),
         )
         system = (
             "Rewrite the question as a short, self-contained web search query "
@@ -302,6 +304,7 @@ def _max_predict(state: NotebookState) -> int:
 def _llm(state: NotebookState, temperature: float = 0.3) -> ChatOllama:
     """Build a ChatOllama client whose temperature is adjusted by the user's response-tuning level."""
     import httpx
+    from config.observability import get_langfuse_callbacks
     level = state.get("temperature_level", DEFAULT_TEMPERATURE_LEVEL)
     return ChatOllama(
         model=state.get("model_name", cfg.ollama_model),
@@ -310,6 +313,7 @@ def _llm(state: NotebookState, temperature: float = 0.3) -> ChatOllama:
         num_predict=_max_predict(state),
         num_ctx=state.get("num_ctx", cfg.num_ctx),
         sync_client_kwargs={"timeout": httpx.Timeout(180.0)},
+        callbacks=get_langfuse_callbacks(),
     )
 
 

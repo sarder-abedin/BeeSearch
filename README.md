@@ -77,9 +77,9 @@ The first run downloads the AI model (~2 GB) and builds the app — this takes 5
 > Add `OLLAMA_BASE_URL=http://host.docker.internal:11434` to your `.env` file, then run:
 > `docker compose -f docker-compose.web.yml up web --build`
 
-> **Want Streamlit + CLI too?**
+> **Want the full stack (React + Streamlit + CLI)?**
 > Use `./scripts/start.sh` (Linux/Windows) or `./scripts/start-mac.sh` (macOS) instead.
-> This starts the full stack at **http://localhost:8501**.
+> Opens **http://localhost:8000** (React); Streamlit is also available at http://localhost:8501.
 
 > **No Docker?** See [Local install (no Docker)](#local-install-no-docker) in the For developers section.
 

@@ -1,12 +1,12 @@
 # ─────────────────────────────────────────────────────────────
-# Agentic Research Assistant — Docker Compose (CPU)
+# BeeSearch — Docker Compose (CPU)
 #
 # Starts two services:
 #   ollama — Ollama LLM server (model storage persisted in a volume)
-#   app    — one container running the Streamlit UI (http://localhost:8501),
-#            the CLI, and the FastAPI backend together with the React
-#            frontend it serves (http://localhost:8000) -- see Dockerfile
-#            and docker-entrypoint.sh.
+#   app    — one container running the React/FastAPI web app (primary UI,
+#            http://localhost:8000), the Streamlit UI (secondary,
+#            http://localhost:8501), and the CLI -- see Dockerfile and
+#            docker-entrypoint.sh.
 #
 # Usage:
 #   docker compose up --build          # first run (builds app image)
@@ -66,19 +66,19 @@ services:
     command: "${OLLAMA_MODEL:-llama3.2:3b}"
     restart: "no"
 
-  # ── Streamlit UI + CLI + FastAPI backend + React frontend ───
-  # One image/container serves all four surfaces: Streamlit (8501), and
-  # the FastAPI backend together with the built React SPA it serves at
-  # "/" (8000) -- see Dockerfile and docker-entrypoint.sh. The CLI is
-  # available via `docker compose exec app python main.py ...`.
+  # ── React/FastAPI (primary) + Streamlit (secondary) + CLI ──
+  # One image/container serves both UIs:
+  #   React SPA served by FastAPI at http://localhost:8000  ← primary
+  #   Streamlit UI                  http://localhost:8501  ← secondary
+  # CLI available via `docker compose exec app python main.py ...`.
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: research-app
     ports:
-      - "${APP_PORT:-8501}:8501"
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${REACT_PORT:-8000}:8000"
+      - "${STREAMLIT_PORT:-8501}:8501"
     environment:
       # Point to the Ollama service by its compose service name
       - OLLAMA_BASE_URL=http://ollama:11434
@@ -95,7 +95,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://localhost:8501/_stcore/health && curl -f http://localhost:8000/api/health"]
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:8000/api/health && curl -f http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
       retries: 3
