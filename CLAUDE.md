@@ -148,7 +148,7 @@ ResearchReportTab.tsx`).
   directly -- no nginx, no separate frontend container. `docker-entrypoint.sh` runs
   Streamlit and `uvicorn backend.app.main:app` as sibling background processes in the
   same `app` container (`docker-compose.yml`/`docker-compose.mac.yml`), exposing both
-  8501 and 8000; the CLI runs ad hoc via `docker compose exec app python main.py ...`.
+  8000 (React/FastAPI, primary) and 8501 (Streamlit, secondary); the CLI runs ad hoc via `docker compose exec app python main.py ...`.
   The standalone `frontend/Dockerfile` + `frontend/nginx.conf` (multi-stage `npm run
   build` → nginx, reverse-proxying `/api/*`) still work standalone (`docker build -t
   beesearch-frontend ./frontend`) but are no longer referenced by the default Compose

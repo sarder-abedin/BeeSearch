@@ -12,10 +12,9 @@
 #   (Ollama starts automatically on login after installation)
 #
 # Starts one service:
-#   app — one container running the Streamlit UI (http://localhost:8501),
-#         the CLI, and the FastAPI backend together with the React
-#         frontend it serves (http://localhost:8000) -- see Dockerfile
-#         and docker-entrypoint.sh.
+#   app — React/FastAPI web app (primary, http://localhost:8000),
+#         Streamlit UI (secondary, http://localhost:8501), and the CLI.
+#         See Dockerfile and docker-entrypoint.sh.
 #
 # Usage (this file only — do NOT combine with docker-compose.yml):
 #   docker compose -f docker-compose.mac.yml up --build
@@ -24,20 +23,19 @@
 
 services:
 
-  # ── Streamlit UI + CLI + FastAPI backend + React frontend ───
-  # One image/container serves all four surfaces: Streamlit (8501), and
-  # the FastAPI backend together with the built React SPA it serves at
-  # "/" (8000) -- see Dockerfile and docker-entrypoint.sh. The CLI is
-  # available via `docker compose -f docker-compose.mac.yml exec app
-  # python main.py ...`.
+  # ── React/FastAPI (primary) + Streamlit (secondary) + CLI ──
+  # One image/container serves both UIs:
+  #   React SPA served by FastAPI at http://localhost:8000  ← primary
+  #   Streamlit UI                  http://localhost:8501  ← secondary
+  # CLI: `docker compose -f docker-compose.mac.yml exec app python main.py ...`
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: research-app
     ports:
-      - "${APP_PORT:-8501}:8501"
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${REACT_PORT:-8000}:8000"
+      - "${STREAMLIT_PORT:-8501}:8501"
     environment:
       # Talk to native Ollama running on the Mac host
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -53,7 +51,7 @@ services:
       - ./outputs:/app/outputs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://localhost:8501/_stcore/health && curl -f http://localhost:8000/api/health"]
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:8000/api/health && curl -f http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
       retries: 3
