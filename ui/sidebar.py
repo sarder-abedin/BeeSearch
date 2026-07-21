@@ -349,6 +349,14 @@ def render_sidebar() -> dict:
             _co = st.session_state.pop("sidebar_chunk_overlap_applied", 150)
             chunk_size = st.slider("Chunk size (chars)", 400, 1200, _cs, step=100, key="sidebar_chunk_size")
             chunk_overlap = st.slider("Chunk overlap (chars)", 50, 300, _co, step=25, key="sidebar_chunk_overlap")
+        vision_model = st.text_input(
+            "Vision model (figure captioning)",
+            value=cfg.vision_model,
+            key="sidebar_vision_model",
+            placeholder="e.g. llava:7b — leave blank to skip",
+            help="Ollama vision model used to auto-caption figures in uploaded PDFs. "
+                 "Pull the model first: ollama pull llava:7b. Leave blank to disable.",
+        ).strip()
         _threshold_default = st.session_state.pop("sidebar_large_doc_threshold_applied", cfg.large_doc_page_threshold)
         large_doc_page_threshold = st.slider(
             "Large-PDF page threshold", min_value=10, max_value=300,
@@ -397,6 +405,7 @@ def render_sidebar() -> dict:
         "use_docling": use_docling,
         "use_ocr": use_ocr,
         "large_doc_page_threshold": large_doc_page_threshold,
+        "vision_model": vision_model,
         "style_profile": None,
         "temperature_level": temperature_level,
     }

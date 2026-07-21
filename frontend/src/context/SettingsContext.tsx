@@ -17,6 +17,7 @@ export interface PersistedSettings {
   useDocling: boolean;
   useOcr: boolean;
   largeDocPageThreshold: number;
+  visionModel: string;
 }
 
 const DEFAULT_SETTINGS: PersistedSettings = {
@@ -32,6 +33,7 @@ const DEFAULT_SETTINGS: PersistedSettings = {
   useDocling: true,
   useOcr: false,
   largeDocPageThreshold: 50,
+  visionModel: "",
 };
 
 function loadPersisted(): PersistedSettings {
@@ -57,6 +59,7 @@ export interface SettingsContextValue extends PersistedSettings {
   setUseDocling: (v: boolean) => void;
   setUseOcr: (v: boolean) => void;
   setLargeDocPageThreshold: (v: number) => void;
+  setVisionModel: (v: string) => void;
 
   status: SystemStatusResponse | null;
   statusLoading: boolean;
@@ -100,6 +103,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setSettings((prev) => ({
         ...prev,
         embedModel: prev.embedModel ?? next.embed_models.find((m) => m.pulled)?.name ?? next.embed_models[0]?.name ?? null,
+        visionModel: prev.visionModel || next.vision_model || "",
       }));
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : String(err));
@@ -188,6 +192,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setUseDocling: (useDocling) => setSettings((p) => ({ ...p, useDocling })),
       setUseOcr: (useOcr) => setSettings((p) => ({ ...p, useOcr })),
       setLargeDocPageThreshold: (largeDocPageThreshold) => setSettings((p) => ({ ...p, largeDocPageThreshold })),
+      setVisionModel: (visionModel) => setSettings((p) => ({ ...p, visionModel })),
       status,
       statusLoading,
       statusError,

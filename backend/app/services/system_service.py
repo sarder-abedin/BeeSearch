@@ -83,6 +83,7 @@ def get_system_status(ram_override_gb: Optional[float] = None) -> SystemStatusRe
         ],
         default_temperature_level=DEFAULT_TEMPERATURE_LEVEL,
         context_window_options=CONTEXT_WINDOW_OPTIONS,
+        vision_model=cfg.vision_model,
     )
 
 

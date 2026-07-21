@@ -385,6 +385,7 @@ def get_processor(
     max_pages: int = 300,
     file_path: Optional[Union[str, Path]] = None,
     large_doc_page_threshold: int = 50,
+    vision_model: str = "",
 ):
     """
     Return a DoclingProcessor (default) or DocumentProcessor (fallback).
@@ -422,7 +423,7 @@ def get_processor(
             return DoclingProcessor(
                 use_ocr=use_ocr,
                 max_raw_chars=max_raw_chars,
-                vision_model=cfg.vision_model,
+                vision_model=vision_model or cfg.vision_model,
                 ollama_base_url=cfg.ollama_base_url,
             )
         except ImportError:

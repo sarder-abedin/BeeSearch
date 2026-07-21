@@ -62,6 +62,7 @@ def process_uploads(uploaded_files, settings: dict) -> list:
     use_docling = settings.get("use_docling", True)
     use_ocr = settings.get("use_ocr", False)
     large_doc_threshold = settings.get("large_doc_page_threshold", cfg.large_doc_page_threshold)
+    vision_model = settings.get("vision_model", "")
 
     if use_docling:
         ocr_label = " + OCR" if use_ocr else ""
@@ -94,6 +95,7 @@ def process_uploads(uploaded_files, settings: dict) -> list:
                 overlap=settings.get("chunk_overlap", 150),
                 max_raw_chars=200_000,
                 max_pages=300,
+                vision_model=vision_model,
             )
             doc = processor.process_file(Path(f.name), file_obj=file_obj)
             if Path(f.name).suffix.lower() == ".pdf":

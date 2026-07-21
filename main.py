@@ -195,6 +195,9 @@ def _parse_args():
                         help="Disable Docling and always use pdfplumber for document parsing")
     parser.add_argument("--ocr", action="store_true",
                         help="Enable OCR when using Docling (slower but handles scanned PDFs)")
+    parser.add_argument("--vision-model", type=str, default="",
+                        help="Ollama vision model for figure captioning in uploaded PDFs "
+                             "(e.g. llava:7b, llama3.2-vision:11b). Leave empty to skip figure extraction.")
     parser.add_argument("--large-doc-threshold", type=int, default=None,
                         help="PDFs with more pages than this switch from Docling to pdfplumber "
                              "(default: LARGE_DOC_PAGE_THRESHOLD from settings, usually 50)")
@@ -537,7 +540,8 @@ def _print_rag_reflection_cli(rag_reflection_info) -> None:
 # ─── File processing ──────────────────────────────────────────────────────────
 
 def _process_files(files, chunk_size=800, overlap=150, max_raw_chars=0,
-                   use_docling=True, use_ocr=False, large_doc_page_threshold=50):
+                   use_docling=True, use_ocr=False, large_doc_page_threshold=50,
+                   vision_model=""):
     """Process each path in `files` into a ProcessedDocument, printing progress/errors to console.
 
     Missing files and per-file processing failures are reported and
@@ -561,6 +565,7 @@ def _process_files(files, chunk_size=800, overlap=150, max_raw_chars=0,
                 max_raw_chars=max_raw_chars,
                 file_path=fp,
                 large_doc_page_threshold=large_doc_page_threshold,
+                vision_model=vision_model,
             )
             doc = processor.process_file(fp)
             chars = len(doc.raw_text)
@@ -1386,6 +1391,7 @@ def _cmd_notebook(args) -> None:
     _use_docling = not getattr(args, "no_docling", False)
     _use_ocr = getattr(args, "ocr", False)
     _large_doc_threshold = getattr(args, "large_doc_threshold", settings_cfg.large_doc_page_threshold)
+    _vision_model = getattr(args, "vision_model", "") or settings_cfg.vision_model
     settings = {
         "model": args.model,
         "num_ctx": args.num_ctx,
@@ -1431,6 +1437,7 @@ def _cmd_notebook(args) -> None:
                 use_docling=_use_docling,
                 use_ocr=_use_ocr,
                 large_doc_page_threshold=_large_doc_threshold,
+                vision_model=_vision_model,
             )
         if processed:
             store = get_or_create_store(
@@ -1577,6 +1584,7 @@ def _cmd_notebook(args) -> None:
                     use_docling=_use_docling,
                     use_ocr=_use_ocr,
                     large_doc_page_threshold=_large_doc_threshold,
+                    vision_model=_vision_model,
                 )
                 if docs:
                     from tools.hybrid_store import get_or_create_store

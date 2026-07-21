@@ -176,6 +176,7 @@ def upload_source(
     use_docling: bool = False,
     use_ocr: bool = False,
     large_doc_page_threshold: int = 50,
+    vision_model: str = "",
 ) -> UploadSourceResult:
     """Process one uploaded file and add it to the notebook.
 
@@ -198,6 +199,7 @@ def upload_source(
         max_pages=150,
         file_path=tmp_path if is_pdf else None,
         large_doc_page_threshold=large_doc_page_threshold,
+        vision_model=vision_model,
     )
 
     with open(tmp_path, "rb") as fh:

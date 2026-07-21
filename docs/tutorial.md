@@ -168,6 +168,32 @@ PRISMA Flow
 
 ## Mode 2 — Research Notebook
 
+### Table and figure support
+
+BeeSearch understands both tables and figures inside your uploaded PDFs.
+
+**Tables** work automatically — Docling extracts each table as full Markdown (column headers, rows, alignment) and presents it to the LLM in that format so it can compare values and cite them correctly with a `[TABLE]` label.
+
+**Figures** require an optional Ollama vision model. To enable:
+
+```bash
+# 1. Pull a vision model
+ollama pull llava:7b          # good balance of quality and RAM (needs ~4 GB)
+# or:
+ollama pull llama3.2-vision:11b   # best quality, needs ~16 GB RAM
+# or:
+ollama pull minicpm-v:8b      # strong on diagrams, 5 GB
+
+# 2. Set it in .env
+VISION_MODEL=llava:7b
+
+# 3. Or pass it on the CLI
+python main.py --notebook --notebook-name "My Research" \
+  --files paper.pdf --vision-model llava:7b
+```
+
+BeeSearch calls the vision model once per figure at upload time to generate a caption, which is indexed alongside text and retrieved normally. In Chat, captions appear with a `[FIGURE]` label. Leave `VISION_MODEL` blank (the default) to skip figure extraction with no overhead.
+
 ### UI walkthrough
 
 1. Click **Open Research Notebook** on the landing page
