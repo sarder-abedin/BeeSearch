@@ -417,7 +417,14 @@ def get_processor(
         try:
             import docling  # noqa: F401
             from tools.docling_processor import DoclingProcessor
-            return DoclingProcessor(use_ocr=use_ocr, max_raw_chars=max_raw_chars)
+            from config.settings import get_settings
+            cfg = get_settings()
+            return DoclingProcessor(
+                use_ocr=use_ocr,
+                max_raw_chars=max_raw_chars,
+                vision_model=cfg.vision_model,
+                ollama_base_url=cfg.ollama_base_url,
+            )
         except ImportError:
             logger.warning("Docling not installed — falling back to DocumentProcessor")
     return DocumentProcessor(

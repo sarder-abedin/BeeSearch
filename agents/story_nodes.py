@@ -524,7 +524,7 @@ _LEVEL_DESCRIPTIONS = {
 # isolation convention).
 
 _DOC_EXCERPT_BLOCK_RE = re.compile(
-    r"\[(\d+)\]\s*\(source:\s*([^,]+?),\s*p\.\s*(\d+)\)\n(.*?)(?=\n\n\[\d+\]\s*\(source:|\Z)",
+    r"\[(\d+)\]\s*\(source:\s*([^,]+?),\s*p\.\s*(\d+)\)(?:\s*\[[^\]]+\])?\n(.*?)(?=\n\n\[\d+\]\s*\(source:|\Z)",
     re.DOTALL,
 )
 
@@ -561,7 +561,16 @@ def build_numbered_doc_context(
             break
         doc_chunks = sorted(by_doc.get(src["doc_id"], []), key=lambda c: c.get("chunk_index", 0))
         for ch in doc_chunks:
-            text = ch.get("text", "").strip()[:max_chars_per_chunk]
+            content_type = ch.get("content_type", "text")
+            if content_type == "table" and ch.get("table_md"):
+                type_tag = " [TABLE]"
+                text = ch["table_md"].strip()[:max_chars_per_chunk]
+            elif content_type == "figure":
+                type_tag = " [FIGURE]"
+                text = ch.get("text", "").strip()[:max_chars_per_chunk]
+            else:
+                type_tag = ""
+                text = ch.get("text", "").strip()[:max_chars_per_chunk]
             if not text:
                 continue
             if total_chars + len(text) > max_chars:
@@ -569,7 +578,7 @@ def build_numbered_doc_context(
             n = len(lines) + 1
             page_label = format_page_label(ch.get("page_num"))
             doc_name = ch.get("doc_name") or src.get("filename", "unknown")
-            lines.append(f"[{n}] (source: {doc_name}, {page_label})\n{text}")
+            lines.append(f"[{n}] (source: {doc_name}, {page_label}){type_tag}\n{text}")
             total_chars += len(text)
 
     return "\n\n".join(lines)

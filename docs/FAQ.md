@@ -142,6 +142,26 @@ A: After every retrieval call, a single batched LLM call (`temperature=0.0`) gra
 
 ---
 
+**Q: Can BeeSearch explain the tables and figures in my documents?**
+A: Yes. Tables and figures are handled at different levels:
+
+- **Tables** — when Docling parses a PDF, it extracts each table both as pipe-delimited plain text (used for keyword search and embeddings) and as a Markdown table (used when the table is retrieved as context). When a table chunk reaches the LLM in Chat, Literature Review, or Explain, it is presented in full Markdown format with a `[TABLE]` label so the model can reason about column structure, compare rows, and cite the source accurately.
+
+- **Figures** — automatic figure captioning requires a vision model. Set `VISION_MODEL` in your `.env` to an Ollama multimodal model (e.g. `VISION_MODEL=llava:7b`), then pull it:
+  ```bash
+  ollama pull llava:7b
+  ```
+  On the next document upload, BeeSearch calls the vision model once per figure to generate a concise caption (what type of figure, what it shows, visible labels and values). Captions are indexed alongside text chunks, so you can ask about a figure in Chat and get a cited answer. When the vision model is not set (the default), figures are silently skipped — no errors, no overhead.
+
+  Recommended models (best quality → lightest):
+  | Model | Size | Notes |
+  |-------|------|-------|
+  | `llama3.2-vision:11b` | 7 GB | Best accuracy, needs 16 GB RAM |
+  | `llava:7b` | 4 GB | Good balance, works on most machines |
+  | `minicpm-v:8b` | 5 GB | Strong on diagrams and charts |
+
+---
+
 **Q: How trustworthy are the citations in Chat, Literature Review, and Explain?**
 A: All three are grounded the same way under the hood: every retrievable excerpt (a chunk, not a whole document) gets its own number and a real page reference baked in *before* the LLM ever sees it, and the prompt instructs it to cite only those numbers. After the LLM responds, BeeSearch discards any References list it wrote and rebuilds one in code from whichever numbers were actually used in the body text — the model's self-written list is never trusted. A citation number the model invents with no matching excerpt (e.g. a hallucinated `[99]`) is silently dropped instead of shown with made-up source details.
 

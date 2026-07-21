@@ -90,7 +90,14 @@ def _sources_context(
 
     by_doc: Dict[str, List[str]] = {}
     for ch in chunks:
-        by_doc.setdefault(ch["doc_id"], []).append(ch.get("text", ""))
+        content_type = ch.get("content_type", "text")
+        if content_type == "table" and ch.get("table_md"):
+            body = "[TABLE]\n" + ch["table_md"].strip()
+        elif content_type == "figure":
+            body = "[FIGURE]\n" + ch.get("text", "")
+        else:
+            body = ch.get("text", "")
+        by_doc.setdefault(ch["doc_id"], []).append(body)
 
     parts: List[str] = []
     total_chars = 0
@@ -145,11 +152,20 @@ def _build_numbered_excerpts(
         for ch in doc_chunks:
             if doc_chars >= max_chars_per_doc or total_chars >= _MAX_TOTAL_CHARS:
                 break
-            text = ch.get("text", "").strip()
+            content_type = ch.get("content_type", "text")
+            if content_type == "table" and ch.get("table_md"):
+                type_tag = " [TABLE]"
+                text = ch["table_md"].strip()
+            elif content_type == "figure":
+                type_tag = " [FIGURE]"
+                text = ch.get("text", "").strip()
+            else:
+                type_tag = ""
+                text = ch.get("text", "").strip()
             excerpts.append(ch)
             page_label = format_page_label(ch.get("page_num"))
             doc_name = ch.get("doc_name") or src.get("filename", "unknown")
-            lines.append(f"[{len(excerpts)}] (source: {doc_name}, {page_label})\n{text}")
+            lines.append(f"[{len(excerpts)}] (source: {doc_name}, {page_label}){type_tag}\n{text}")
             doc_chars += len(text)
             total_chars += len(text)
 
