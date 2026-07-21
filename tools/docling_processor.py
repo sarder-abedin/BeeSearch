@@ -56,8 +56,8 @@ def _set_cache_env(models_path: Path) -> None:
     os.environ.setdefault("TORCH_HOME", str(models_path / "torch"))
 
 
-def _build_converter(use_ocr: bool, models_path: Path):
-    """Build a Docling DocumentConverter (expensive — cached per (use_ocr, path))."""
+def _build_converter(use_ocr: bool, models_path: Path, generate_images: bool = False):
+    """Build a Docling DocumentConverter (expensive — cached per (use_ocr, path, generate_images))."""
     try:
         from docling.document_converter import DocumentConverter
     except ImportError as exc:
@@ -73,10 +73,13 @@ def _build_converter(use_ocr: bool, models_path: Path):
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         from docling.datamodel.base_models import InputFormat
 
-        pdf_opts = PdfPipelineOptions(
-            do_ocr=use_ocr,
-            do_table_structure=True,
-        )
+        opts_kwargs: Dict[str, Any] = {
+            "do_ocr": use_ocr,
+            "do_table_structure": True,
+        }
+        if generate_images:
+            opts_kwargs["generate_picture_images"] = True
+        pdf_opts = PdfPipelineOptions(**opts_kwargs)
         return DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts)}
         )
@@ -85,12 +88,39 @@ def _build_converter(use_ocr: bool, models_path: Path):
         return DocumentConverter()
 
 
-def _get_converter(use_ocr: bool, models_path: Path):
-    """Return the cached DocumentConverter for this (use_ocr, models_path) combo, building it on first use."""
-    key = (use_ocr, str(models_path.resolve()))
+def _get_converter(use_ocr: bool, models_path: Path, generate_images: bool = False):
+    """Return the cached DocumentConverter for this combination of options, building it on first use."""
+    key = (use_ocr, str(models_path.resolve()), generate_images)
     if key not in _converter_cache:
-        _converter_cache[key] = _build_converter(use_ocr, models_path)
+        _converter_cache[key] = _build_converter(use_ocr, models_path, generate_images)
     return _converter_cache[key]
+
+
+def _caption_image(image_b64: str, vision_model: str, ollama_base_url: str) -> str:
+    """Caption a base64-encoded PNG image using the configured Ollama vision model."""
+    try:
+        from langchain_ollama import ChatOllama
+        from langchain_core.messages import HumanMessage
+
+        llm = ChatOllama(model=vision_model, base_url=ollama_base_url, temperature=0.0)
+        resp = llm.invoke([
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": f"data:image/png;base64,{image_b64}"},
+                {
+                    "type": "text",
+                    "text": (
+                        "Describe this figure from an academic document. "
+                        "Include: what type of figure it is (chart, diagram, photograph, etc.), "
+                        "what it shows, any visible labels, titles, axes, or key values. "
+                        "Be concise but complete."
+                    ),
+                },
+            ])
+        ])
+        return resp.content.strip()
+    except Exception as exc:
+        logger.debug("Vision model captioning failed: %s", exc)
+        return ""
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -251,14 +281,19 @@ class DoclingProcessor:
         use_ocr: bool = False,
         max_raw_chars: int = 0,
         models_path: Optional[Union[str, Path]] = None,
+        vision_model: str = "",
+        ollama_base_url: str = "",
     ):
         """
-        Configure OCR, the raw-text size cap, and where Docling's ML model
-        weights are cached on disk (defaults to the project models dir).
+        Configure OCR, the raw-text size cap, where Docling's ML model
+        weights are cached on disk, and an optional vision model for figure
+        captioning (defaults to disabled).
         """
         self.use_ocr = use_ocr
         self.max_raw_chars = max_raw_chars
         self.models_path = Path(models_path or _default_models_path())
+        self.vision_model = vision_model
+        self.ollama_base_url = ollama_base_url
 
     # ── Public API ────────────────────────────────────────────
 
@@ -326,7 +361,7 @@ class DoclingProcessor:
         doc_id: str,
     ) -> ProcessedDocument:
         """Run the Docling conversion + chunking pipeline and assemble a ProcessedDocument."""
-        converter = _get_converter(self.use_ocr, self.models_path)
+        converter = _get_converter(self.use_ocr, self.models_path, bool(self.vision_model))
 
         # Docling requires a real file path — write in-memory streams to a temp file
         tmp_path: Optional[Path] = None
@@ -352,6 +387,9 @@ class DoclingProcessor:
 
         # Structure-aware chunking
         chunks = self._chunk_document(docling_doc, doc_id, path.name)
+        if self.vision_model:
+            figure_chunks = self._extract_figure_chunks(docling_doc, doc_id, path.name, len(chunks))
+            chunks.extend(figure_chunks)
 
         # Export raw text as Markdown (best quality, preserves headings)
         try:
@@ -427,6 +465,73 @@ class DoclingProcessor:
                 metadata={"source": doc_name, "page": 0, "chunk_index": i},
             ))
         return result
+
+    def _extract_figure_chunks(
+        self,
+        docling_doc,
+        doc_id: str,
+        doc_name: str,
+        start_index: int,
+    ) -> List[DocumentChunk]:
+        """Caption each PictureItem in the Docling document using the vision model.
+
+        Returns one DocumentChunk per figure, with content_type="figure" and the
+        caption as the chunk text. Silently skips any figure that fails extraction
+        or captioning — never blocks the main pipeline.
+        """
+        if not self.vision_model:
+            return []
+
+        try:
+            from docling_core.types.doc import PictureItem
+        except ImportError:
+            return []
+
+        import base64
+        import io as _io
+
+        chunks: List[DocumentChunk] = []
+        figure_index = 0
+        try:
+            for item, _level in docling_doc.iterate_items():
+                if not isinstance(item, PictureItem):
+                    continue
+                try:
+                    pil_img = item.get_image(docling_doc)
+                    if pil_img is None:
+                        continue
+                    buf = _io.BytesIO()
+                    pil_img.save(buf, format="PNG")
+                    image_b64 = base64.b64encode(buf.getvalue()).decode()
+
+                    caption = _caption_image(image_b64, self.vision_model, self.ollama_base_url)
+                    if not caption:
+                        continue
+
+                    page_num = _extract_page_num(item)
+                    idx = start_index + figure_index
+                    cid = _stable_id(f"{doc_id}:figure:{figure_index}:{caption[:50]}")
+                    chunks.append(DocumentChunk(
+                        chunk_id=cid,
+                        doc_id=doc_id,
+                        doc_name=doc_name,
+                        page_num=page_num,
+                        chunk_index=idx,
+                        text=caption,
+                        metadata={
+                            "source": doc_name,
+                            "page": page_num + 1,
+                            "chunk_index": idx,
+                            "content_type": "figure",
+                        },
+                    ))
+                    figure_index += 1
+                except Exception as exc:
+                    logger.debug("Figure captioning skipped for one item: %s", exc)
+        except Exception as exc:
+            logger.debug("Figure extraction pass failed: %s", exc)
+
+        return chunks
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

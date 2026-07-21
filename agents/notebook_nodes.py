@@ -322,9 +322,19 @@ def _build_context_block(chunks: List[Dict[str, Any]]) -> str:
     lines = []
     for i, ch in enumerate(chunks, 1):
         page_label = format_page_label(ch.get("page_num"))
+        content_type = ch.get("content_type", "text")
+        if content_type == "table" and ch.get("table_md"):
+            type_tag = " [TABLE]"
+            body = ch["table_md"].strip()
+        elif content_type == "figure":
+            type_tag = " [FIGURE]"
+            body = ch.get("text", "").strip()
+        else:
+            type_tag = ""
+            body = ch.get("text", "").strip()
         lines.append(
-            f"[{i}] (source: {ch.get('doc_name', 'unknown')}, {page_label})\n"
-            f"{ch.get('text', '').strip()}"
+            f"[{i}] (source: {ch.get('doc_name', 'unknown')}, {page_label}){type_tag}\n"
+            f"{body}"
         )
     return "\n\n".join(lines)
 

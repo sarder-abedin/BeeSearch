@@ -170,7 +170,7 @@ export default function NotebookPage() {
     const duplicates: string[] = [];
     try {
       for (const file of Array.from(files)) {
-        const result = await uploadSource(activeId, file, settings.chunkSize, settings.chunkOverlap, settings.useDocling, settings.useOcr, settings.largeDocPageThreshold);
+        const result = await uploadSource(activeId, file, settings.chunkSize, settings.chunkOverlap, settings.useDocling, settings.useOcr, settings.largeDocPageThreshold, settings.visionModel);
         if (result.duplicate) duplicates.push(file.name);
       }
       if (duplicates.length > 0) {

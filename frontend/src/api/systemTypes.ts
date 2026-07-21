@@ -67,6 +67,7 @@ export interface SystemStatusResponse {
   temperature_levels: TemperatureLevelOption[];
   default_temperature_level: TemperatureLevel;
   context_window_options: number[];
+  vision_model: string;
 }
 
 export interface ShutdownResult {

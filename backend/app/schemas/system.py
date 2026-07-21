@@ -82,6 +82,7 @@ class SystemStatusResponse(BaseModel):
     temperature_levels: List[TemperatureLevelOption] = Field(default_factory=list)
     default_temperature_level: TemperatureLevel
     context_window_options: List[int] = Field(default_factory=list)
+    vision_model: str = ""
 
 
 class ShutdownResult(BaseModel):

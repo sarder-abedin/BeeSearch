@@ -381,6 +381,20 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                     onChange={(e) => s.setLargeDocPageThreshold(Number(e.target.value))}
                   />
                 </div>
+                <div className="sr-field">
+                  <label htmlFor="settings-vision-model">
+                    Vision model (figure captioning)
+                    <span className="settings-panel__help" title="Ollama vision model used to auto-caption figures and diagrams in uploaded PDFs. Pull first: ollama pull llava:7b. Leave blank to skip."> (?)</span>
+                  </label>
+                  <input
+                    id="settings-vision-model"
+                    type="text"
+                    placeholder="e.g. llava:7b — blank to skip"
+                    value={s.visionModel}
+                    onChange={(e) => s.setVisionModel(e.target.value)}
+                    style={{ width: "100%", fontFamily: "monospace", fontSize: "0.85em" }}
+                  />
+                </div>
               </section>
             </>
           )}

@@ -101,6 +101,7 @@ export function uploadSource(
   useDocling?: boolean,
   useOcr?: boolean,
   largeDocPageThreshold?: number,
+  visionModel?: string,
 ): Promise<UploadSourceResult> {
   const formData = new FormData();
   formData.append("file", file);
@@ -109,6 +110,7 @@ export function uploadSource(
   if (useDocling != null) formData.append("use_docling", String(useDocling));
   if (useOcr != null) formData.append("use_ocr", String(useOcr));
   if (largeDocPageThreshold != null) formData.append("large_doc_page_threshold", String(largeDocPageThreshold));
+  if (visionModel) formData.append("vision_model", visionModel);
   return apiFetch<UploadSourceResult>(`${BASE}/notebooks/${notebookId}/sources`, {
     method: "POST",
     body: formData,

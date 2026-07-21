@@ -487,11 +487,18 @@ Document (PDF / DOCX / TXT / HTML / web page)
   ├── PDF ≤ LARGE_DOC_PAGE_THRESHOLD pages (default 50, env-configurable)
   │     └── Docling  →  layout-aware parsing, table extraction,
   │                       PPTX/XLSX/HTML/image support
+  │                       Tables: Markdown + plain-text stored in chunk metadata
+  │                       (content_type="table", table_md=<markdown string>)
+  │                       Figures: PictureItem → _extract_figure_chunks()
+  │                       → _caption_image() via VISION_MODEL (opt-in;
+  │                       blank = skipped; content_type="figure")
   ├── PDF >  LARGE_DOC_PAGE_THRESHOLD pages  (auto RAM guard)
   │     └── DocumentProcessor  →  pdfplumber page-by-page streaming,
   │                                no ~500 MB ML models loaded
   └── --no-docling flag  →  always DocumentProcessor
   Both paths: clean_text → chunk_text (chunk_size=800, overlap=150)
+  _flatten_chunks passes content_type + table_md into every retrieved chunk dict
+  Context builders label chunks [TABLE] (Markdown body) or [FIGURE] (caption)
         │
         ├──────────────────────────────────┐
         ▼                                  ▼
@@ -819,8 +826,8 @@ BeeSearch/
 │   ├── sensitivity_analysis.py ← Leave-one-out / subgroup sensitivity scenarios (library-level, no UI/CLI hook yet)
 │   ├── literature_monitor.py   ← Saved-search snapshots + new-papers-since-last-run diff (library-level, no UI/CLI hook yet)
 │   │
-│   ├── document_tools.py       ← get_processor() auto-selects Docling or pdfplumber by page count
-│   ├── docling_processor.py    ← Advanced Docling parser
+│   ├── document_tools.py       ← get_processor() auto-selects Docling or pdfplumber by page count; accepts vision_model param
+│   ├── docling_processor.py    ← Advanced Docling parser; table_md extraction; figure captioning via VISION_MODEL (_extract_figure_chunks)
 │   ├── hybrid_store.py         ← HybridStore: FAISS + ChromaDB + BM25 + RRF
 │   ├── embeddings.py           ← OllamaEmbedder (batched /api/embed)
 │   ├── search_tools.py         ← GoogleScholarSearcher + arXiv + Semantic Scholar + CrossRef + WebSearcher (DuckDuckGo, research-domain re-ranked)
@@ -832,7 +839,7 @@ BeeSearch/
 │   └── shutdown.py             ← Safe port release + ChromaDB flush
 │
 ├── config/
-│   ├── settings.py             ← Pydantic BaseSettings (env vars)
+│   ├── settings.py             ← Pydantic BaseSettings (env vars); includes VISION_MODEL for figure captioning
 │   ├── hardware.py             ← detect_hardware() + recommend_config()
 │   └── observability.py        ← get_langfuse_callbacks() + flush_langfuse() (opt-in LLM tracing)
 │

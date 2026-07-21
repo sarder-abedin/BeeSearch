@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     output_dir: str = Field("./outputs", alias="OUTPUT_DIR")
     log_level: str = Field("INFO", alias="LOG_LEVEL")
 
+    # ── Vision model for figure captioning (optional) ────────
+    # Set to an Ollama vision model (e.g. "llava:7b", "llama3.2-vision:11b")
+    # to enable automatic captioning of figures in uploaded PDFs.
+    # Leave blank to skip figure extraction (default, no overhead).
+    vision_model: str = Field("", alias="VISION_MODEL")
+
     # ── Langfuse Observability (optional) ────────────────────
     langfuse_public_key: str = Field("", alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: str = Field("", alias="LANGFUSE_SECRET_KEY")

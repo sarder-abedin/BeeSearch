@@ -100,6 +100,7 @@ async def upload_source(
     use_docling: bool = Form(False),
     use_ocr: bool = Form(False),
     large_doc_page_threshold: int = Form(50, ge=1, le=500),
+    vision_model: str = Form(""),
 ) -> UploadSourceResult:
     filename = file.filename or "upload"
     suffix = Path(filename).suffix.lower() or ".bin"
@@ -126,6 +127,7 @@ async def upload_source(
                 chunk_size=chunk_size, chunk_overlap=chunk_overlap,
                 use_docling=use_docling, use_ocr=use_ocr,
                 large_doc_page_threshold=large_doc_page_threshold,
+                vision_model=vision_model,
             )
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Notebook '{notebook_id}' not found.")

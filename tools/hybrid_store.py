@@ -397,14 +397,22 @@ def _flatten_chunks(docs: list) -> List[Dict[str, Any]]:
     chunks = []
     for doc in docs:
         for chunk in doc.chunks:
-            chunks.append({
+            flat: Dict[str, Any] = {
                 "chunk_id": chunk.chunk_id,
                 "doc_id": chunk.doc_id,
                 "doc_name": chunk.doc_name,
                 "page_num": chunk.page_num,
                 "chunk_index": chunk.chunk_index,
                 "text": chunk.text,
-            })
+            }
+            if chunk.metadata:
+                ct = chunk.metadata.get("content_type")
+                if ct:
+                    flat["content_type"] = ct
+                tmd = chunk.metadata.get("table_md")
+                if tmd:
+                    flat["table_md"] = tmd
+            chunks.append(flat)
     return chunks
 
 
