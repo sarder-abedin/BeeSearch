@@ -64,22 +64,18 @@ The `.env` file holds your settings. The defaults work fine to get started.
 **Step 3 — Start the app**
 
 ```bash
-# macOS / Linux
-./scripts/start-web.sh
+# Linux / Windows (Git Bash or WSL)
+docker compose up --build
 
-# Windows (Git Bash or WSL)
-bash scripts/start-web.sh
+# macOS (Apple Silicon M1/M2/M3) — uses native Ollama instead of Docker Ollama
+./scripts/start-mac.sh
 ```
 
-The first run downloads the AI model (~2 GB) and builds the app — this takes 5–10 minutes. After that, starts take under a minute. The app opens at **http://localhost:8000** automatically. Press **Ctrl-C** to stop.
+The first run downloads the AI model (~2 GB) and builds the app — this takes 5–10 minutes. After that, starts take under a minute. The app opens at **http://localhost:8000**. Press **Ctrl-C** to stop.
 
 > **macOS with Ollama already installed natively:**
 > Add `OLLAMA_BASE_URL=http://host.docker.internal:11434` to your `.env` file, then run:
-> `docker compose -f docker-compose.web.yml up web --build`
-
-> **Want the full stack (React + Streamlit + CLI)?**
-> Use `./scripts/start.sh` (Linux/Windows) or `./scripts/start-mac.sh` (macOS) instead.
-> Opens **http://localhost:8000** (React); Streamlit is also available at http://localhost:8501.
+> `docker compose -f docker-compose.mac.yml up web --build`
 
 > **No Docker?** See [Local install (no Docker)](#local-install-no-docker) in the For developers section.
 
@@ -99,9 +95,6 @@ To use a different model, pull it with Ollama first:
 
 ```bash
 # While Docker is running:
-docker compose -f docker-compose.web.yml exec ollama ollama pull mistral-nemo:12b
-
-# Or with the full stack:
 docker compose exec ollama ollama pull mistral-nemo:12b
 ```
 
@@ -224,11 +217,11 @@ python3 -m venv .venv
 source .venv/bin/activate         # Windows: .venv\Scripts\activate.bat
 pip install -r requirements.txt
 
-# Start the Streamlit UI
-streamlit run app.py
-
-# Or start the web interface (React + backend) — auto-installs npm deps
-./scripts/start-react.sh
+# Start the web interface (React + backend)
+python -m uvicorn backend.app.main:app --reload --port 8000
+# Then in a separate terminal:
+cd frontend && npm install && npm run dev
+# React app at http://localhost:5173 (proxies /api/* to the backend)
 ```
 
 **Windows — PowerShell:**
@@ -239,7 +232,7 @@ python -m venv .venv
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-streamlit run app.py
+python -m uvicorn backend.app.main:app --reload --port 8000
 ```
 
 > **Optional — Mind Map / Knowledge Graph rendering:** needs the system `dot` binary:
@@ -409,9 +402,9 @@ While in `--notebook` mode:
 #### Running the CLI inside Docker
 
 ```bash
-docker compose -f docker-compose.web.yml exec web python main.py --notebook --notebook-name "My Research"
-docker compose -f docker-compose.web.yml exec web python main.py --list-notebooks
-docker compose -f docker-compose.web.yml exec web bash   # open a shell
+docker compose exec web python main.py --notebook --notebook-name "My Research"
+docker compose exec web python main.py --list-notebooks
+docker compose exec web bash   # open a shell
 ```
 
 ### MCP Server (optional)

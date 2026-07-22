@@ -12,9 +12,7 @@
 #   (Ollama starts automatically on login after installation)
 #
 # Starts one service:
-#   app — React/FastAPI web app (primary, http://localhost:8000),
-#         Streamlit UI (secondary, http://localhost:8501), and the CLI.
-#         See Dockerfile and docker-entrypoint.sh.
+#   web — React/FastAPI web app at http://localhost:8000.
 #
 # Usage (this file only — do NOT combine with docker-compose.yml):
 #   docker compose -f docker-compose.mac.yml up --build
@@ -23,19 +21,24 @@
 
 services:
 
-  # ── React/FastAPI (primary) + Streamlit (secondary) + CLI ──
-  # One image/container serves both UIs:
-  #   React SPA served by FastAPI at http://localhost:8000  ← primary
-  #   Streamlit UI                  http://localhost:8501  ← secondary
-  # CLI: `docker compose -f docker-compose.mac.yml exec app python main.py ...`
-  app:
+  # ── React/FastAPI web app ───────────────────────────────────
+  # Built from the root Dockerfile (multi-stage):
+  #   Stage 1: npm ci + npm run build  (React/Vite → frontend/dist/)
+  #   Stage 2: pip install -r requirements.txt  (Python + FastAPI)
+  # FastAPI serves the built React SPA at "/" via StaticFiles, and all
+  # API routes at "/api/*".
+  # CLI: `docker compose -f docker-compose.mac.yml exec web python main.py ...`
+  web:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: research-app
+    container_name: beesearch-web
+    command: >
+      python -m uvicorn backend.app.main:app
+      --host 0.0.0.0
+      --port 8000
     ports:
-      - "${REACT_PORT:-8000}:8000"
-      - "${STREAMLIT_PORT:-8501}:8501"
+      - "${PORT:-8000}:8000"
     environment:
       # Talk to native Ollama running on the Mac host
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -43,16 +46,13 @@ services:
       - NUM_CTX=${NUM_CTX:-32768}
       - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
       - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
-      # Web search uses DuckDuckGo in-process — no separate service needed
-      # Keep sessions alive for long LLM/PDF runs (1 hour)
-      - STREAMLIT_SERVER_SESSION_IDLE_SECONDS=3600
     volumes:
       # Generated reports and session memory persist on the host
       - ./outputs:/app/outputs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://localhost:8000/api/health && curl -f http://localhost:8501/_stcore/health"]
-      interval: 30s
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 20s
+      retries: 8
+      start_period: 120s

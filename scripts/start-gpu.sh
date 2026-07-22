@@ -6,23 +6,20 @@
 #   ./scripts/start-gpu.sh           # standard start
 #   ./scripts/start-gpu.sh --build   # force rebuild images
 #
-# The browser opens automatically at http://localhost:8000 (React app)
-# once the app passes its health-check.  On Ctrl-C the script shuts
-# the containers down.
-# Streamlit is also available at http://localhost:8501.
+# The browser opens automatically at http://localhost:8000 once the app
+# passes its health-check.  Press Ctrl-C to shut the containers down.
 #
 # Prerequisites:
 #   NVIDIA Container Toolkit installed and nvidia-ctk configured.
 
 set -euo pipefail
 
-COMPOSE_FILE="docker-compose.gpu.yml"
-APP_URL="http://localhost:${REACT_PORT:-8000}"
+APP_URL="http://localhost:${PORT:-8000}"
 
 _cleanup() {
     echo ""
     echo "Shutting down…"
-    docker compose -f "$COMPOSE_FILE" down --remove-orphans
+    docker compose -f docker-compose.yml -f docker-compose.gpu.yml down --remove-orphans
 }
 
 trap _cleanup EXIT INT TERM
@@ -48,4 +45,4 @@ trap _cleanup EXIT INT TERM
     echo "App did not become ready within 180 s — open $APP_URL manually."
 ) &
 
-docker compose -f "$COMPOSE_FILE" up --build "$@"
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build "$@"

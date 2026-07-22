@@ -6,15 +6,13 @@
 #   ./scripts/start.sh           # standard start
 #   ./scripts/start.sh --build   # force rebuild images
 #
-# The browser opens automatically at http://localhost:8000 (React app)
-# once the app passes its health-check.  On Ctrl-C the script shuts
-# the containers down.
-# Streamlit is also available at http://localhost:8501.
+# The browser opens automatically at http://localhost:8000 once the app
+# passes its health-check.  Press Ctrl-C to shut the containers down.
 
 set -euo pipefail
 
 COMPOSE_FILE="docker-compose.yml"
-APP_URL="http://localhost:${REACT_PORT:-8000}"
+APP_URL="http://localhost:${PORT:-8000}"
 
 _cleanup() {
     echo ""

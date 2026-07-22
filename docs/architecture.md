@@ -8,10 +8,10 @@ BeeSearch is a **3-mode, local-first AI research system** built on LangGraph sta
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              User Interfaces                                │
 │                                                                             │
-│  Streamlit UI (app.py)    CLI terminal (main.py)    React SPA (frontend/)  │
-│  Landing page →           --systematic-review /     Browser fetch() →      │
-│  select mode              --notebook / --ask        FastAPI (backend/)      │
-│  (lazy imports)                                     /api/* routes           │
+│  CLI terminal (main.py)         React SPA (frontend/)                      │
+│  --systematic-review /          Browser fetch() →                          │
+│  --notebook / --ask             FastAPI (backend/)                          │
+│                                 /api/* routes                               │
 └───────────────────────────────┬─────────────────────────────────────────────┘
                                 │  (all three surfaces call the same
                                 │   agents/* / projects/* modules)
@@ -641,7 +641,7 @@ Up to 3 rounds of plain-English feedback after every pipeline output. Each round
 
 ## Hardware Detection
 
-`config/hardware.py` is called at CLI startup and in the Streamlit sidebar.
+`config/hardware.py` is called at CLI startup and by the backend `/api/health` endpoint.
 
 ```
 detect_hardware()
@@ -685,10 +685,9 @@ Both Literature Review and the Explain tab once let the LLM cite freely (`[1]`, 
 
 ## React + FastAPI Web App
 
-The **primary Docker interface** (`backend/` + `frontend/`) exposes Mode 1, Mode 3,
-and the core of Mode 2 over a REST API, added alongside the Streamlit UI and
-CLI without modifying either. It calls the exact same `agents/*` / `projects/*`
-logic described above — no parallel business logic, no parallel state machine.
+The **primary interface** (`backend/` + `frontend/`) exposes Mode 1, Mode 3,
+and the core of Mode 2 over a REST API. It calls the exact same `agents/*` / `projects/*`
+logic as the CLI — no parallel business logic, no parallel state machine.
 
 **Coverage:** all three modes are fully covered. Mode 1 (Systematic Review)
 and Mode 3 (AI Research Assistant) are complete. Mode 2 (Research Notebook)
@@ -710,20 +709,17 @@ FastAPI (backend/app/main.py)
   └── routers/notebook.py             Mode 2 — /api/notebook/...
         │  each router delegates to a services/*_service.py
         ▼
-services/*_service.py  →  agents/*.py, projects/*.py   (same modules the CLI/Streamlit call)
+services/*_service.py  →  agents/*.py, projects/*.py   (same modules the CLI calls)
 ```
 
-**Docker:** `./scripts/start-web.sh` (uses `docker-compose.web.yml`) is the
-recommended one-command start — it brings up Ollama and the React/FastAPI app at
-**http://localhost:8000**. `docker compose up --build` (root `docker-compose.yml`)
-runs the full stack: React/FastAPI at port **8000** (primary) and Streamlit at port
-**8501** (secondary). The root `Dockerfile` is multi-stage: a `node:20-alpine`
-stage runs `npm run build` for `frontend/`, then the final `python:3.11-slim`
-stage copies the built static assets in, and `backend/app/main.py` mounts
-them with `StaticFiles(html=True)` at `/` (registered after all the
-`/api/*` routers, so it only catches unmatched paths). `docker-entrypoint.sh`
-runs Streamlit and `uvicorn backend.app.main:app` as sibling processes inside
-that one container. The standalone `frontend/Dockerfile` + `frontend/nginx.conf`
+**Docker:** `docker compose up --build` is the single command to start the app — it
+brings up Ollama and the React/FastAPI web app at **http://localhost:8000**. Apple
+Silicon users run `./scripts/start-mac.sh` instead (uses native Ollama). The root
+`Dockerfile` is multi-stage: a `node:20-alpine` stage runs `npm run build` for
+`frontend/`, then the final `python:3.11-slim` stage copies the built static assets
+in, and `backend/app/main.py` mounts them with `StaticFiles(html=True)` at `/`
+(registered after all the `/api/*` routers, so it only catches unmatched paths).
+The standalone `frontend/Dockerfile` + `frontend/nginx.conf`
 (multi-stage Node build → nginx) still work on their own
 (`docker build -t beesearch-frontend ./frontend`) but are no longer wired
 into the default Compose files.
@@ -732,8 +728,8 @@ Long-running calls (an SR pipeline run, a notebook chat turn) go through
 `backend/app/jobs.py`'s in-memory, thread-based background job runner: the
 endpoint returns a `job_id` immediately (HTTP 202), and the frontend polls
 `GET /api/.../jobs/{job_id}` every 700ms until `status` is `done` or `error` —
-the same progress reporting the CLI/Streamlit get from `stream_callback`,
-just surfaced over HTTP instead of updating a terminal/widget directly.
+the same progress reporting the CLI gets from `stream_callback`,
+just surfaced over HTTP instead of updating a terminal directly.
 
 **Dev/test-only mock mode:** setting `BEESEARCH_MOCK_LLM=1` before starting
 the backend installs stubs (`backend/app/mock_llm.py`, `mock_search.py`) that
@@ -864,9 +860,10 @@ BeeSearch/
 │   ├── test_citation_stance.py             ← Smart Citations stance parsing + classification + pyvis colouring
 │   └── test_citation_context.py            ← Citation-context sentence matching + fulltext-fetch status paths
 │
-├── docker-compose.yml
-├── docker-compose.web.yml      ← React + FastAPI only (no Streamlit); used by start-web.sh
-├── docker-compose.langfuse.yml ← Self-hosted Langfuse observability stack (optional)
+├── docker-compose.yml           ← React + FastAPI web app + Ollama (single `docker compose up --build`)
+├── docker-compose.mac.yml       ← Apple Silicon: uses native Ollama, no ollama service
+├── docker-compose.gpu.yml       ← GPU override (merge with docker-compose.yml)
+├── docker-compose.langfuse.yml  ← Self-hosted Langfuse observability stack (optional)
 ├── .env.example
 └── requirements.txt
 ```
@@ -893,7 +890,6 @@ BeeSearch/
 | Visualisation | Plotly, matplotlib, networkx, pyvis | Evidence map, citation network |
 | Concept Drift | stdlib only (no scikit-learn) | TF-IDF + 5-year buckets |
 | Audio | pyttsx3 | WAV synthesis from script |
-| UI | Streamlit ≥ 1.37 | Web app |
 | CLI | Rich ≥ 13 | Terminal panels, tables, Markdown |
 | Config | pydantic-settings ≥ 2.0 | Typed env vars |
 | Hardware Detection | psutil | Cross-platform RAM/CPU |

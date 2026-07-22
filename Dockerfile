@@ -1,16 +1,14 @@
 # ─────────────────────────────────────────────────────────────
 # BeeSearch — Application Container
 #
-# This single container runs the React/FastAPI web app (primary UI),
-# the Streamlit UI (secondary), and the CLI side by side.
+# Runs the React/FastAPI web app only.
 # The React SPA is built in stage 1 and served by FastAPI at "/" (port 8000).
 # It connects to an Ollama server (run separately or via docker-compose).
 #
 # Build:   docker build -t beesearch .
-# Run:     docker run -p 8000:8000 -p 8501:8501 \
+# Run:     docker run -p 8000:8000 \
 #              -e OLLAMA_BASE_URL=http://host.docker.internal:11434 beesearch
-#          → React app at http://localhost:8000
-#          → Streamlit UI at http://localhost:8501 (still available)
+#          → App at http://localhost:8000
 # CLI:     docker run --rm -e OLLAMA_BASE_URL=... beesearch python main.py --check-system
 # ─────────────────────────────────────────────────────────────
 
@@ -29,7 +27,7 @@ FROM python:3.11-slim
 
 # Metadata
 LABEL maintainer="BeeSearch"
-LABEL description="Local-first AI research assistant — React/FastAPI web app (port 8000) + Streamlit UI (port 8501) + CLI"
+LABEL description="Local-first AI research assistant — React/FastAPI web app (port 8000) + CLI"
 
 # ── System dependencies ───────────────────────────────────────
 # libffi-dev    : required by some Python C extensions (cryptography, etc.)
@@ -68,17 +66,6 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 # ── Create runtime directories ────────────────────────────────
 RUN mkdir -p outputs/memory
-RUN chmod +x docker-entrypoint.sh
-
-# ── Streamlit configuration ───────────────────────────────────
-# These can be overridden with -e at runtime
-ENV STREAMLIT_SERVER_HEADLESS=true
-ENV STREAMLIT_SERVER_PORT=8501
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
-ENV STREAMLIT_THEME_BASE=dark
-# Keep sessions alive during long LLM/PDF analysis runs (default is 600s)
-ENV STREAMLIT_SERVER_SESSION_IDLE_SECONDS=3600
 
 # ── Ollama connection (override with -e OLLAMA_BASE_URL=...) ──
 # Default points to the companion Ollama service in docker-compose.
@@ -88,13 +75,12 @@ ENV OLLAMA_BASE_URL=http://ollama:11434
 ENV OLLAMA_MODEL=llama3.2:3b
 ENV NUM_CTX=32768
 
-# ── Expose React/FastAPI (primary) + Streamlit (secondary) ───
+# ── Expose React/FastAPI ──────────────────────────────────────
 EXPOSE 8000
-EXPOSE 8501
 
-# ── Healthcheck — React/FastAPI is the primary readiness gate ─
+# ── Healthcheck ───────────────────────────────────────────────
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health && curl -f http://localhost:8501/_stcore/health || exit 1
+    CMD curl -f http://localhost:8000/api/health || exit 1
 
-# ── Default command — React/FastAPI (primary) + Streamlit (secondary) ──
-CMD ["./docker-entrypoint.sh"]
+# ── Default command ───────────────────────────────────────────
+CMD ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
