@@ -1,0 +1,72 @@
+# ─────────────────────────────────────────────────────────────
+#  BeeSearch — Python Dependencies
+#  Systematic Literature Review + Research Notebook
+# ─────────────────────────────────────────────────────────────
+
+# ── Agentic Orchestration ────────────────────────────────────
+langgraph>=0.2.0          # State-machine agent framework (Apache 2.0)
+langchain>=0.3.0          # LLM toolkit used by LangGraph nodes
+langchain-community>=0.3.0
+
+# ── Local LLM via Ollama ─────────────────────────────────────
+ollama>=0.3.0             # Python client for Ollama (MIT)
+langchain-ollama>=0.2.0   # LangChain × Ollama integration
+
+# ── Document Processing ──────────────────────────────────────
+pdfplumber>=0.11.0        # PDF text + table extraction (MIT)
+python-docx>=1.1.0        # DOCX processing (MIT)
+docling>=2.0.0            # Advanced parsing: layout, tables, OCR, PPTX, XLSX (MIT)
+opencv-python-headless>=4.8.0  # Headless OpenCV — avoids libGL.so.1 in Docker
+
+# ── Hybrid RAG ───────────────────────────────────────────────
+faiss-cpu>=1.8.0          # Fast in-memory dense vector search (MIT)
+chromadb>=0.5.0           # Persistent embedding cache (Apache 2.0)
+rank-bm25>=0.2.2          # BM25 sparse keyword retrieval (Apache 2.0)
+
+# ── Academic / Scientific Search ─────────────────────────────
+scholarly>=1.7.0          # Google Scholar scraper — no API key (Unlicense)
+arxiv>=2.1.0              # arXiv API client (MIT)
+httpx>=0.27.0             # Async HTTP client (BSD)
+tenacity>=8.2.3           # Retry logic with exponential back-off (Apache 2.0)
+
+# ── SR Post-Synthesis Tools ───────────────────────────────────
+networkx>=3.0             # Citation network graph (BSD)
+pyvis>=0.3.2              # Interactive Pyvis HTML graphs (BSD)
+plotly>=5.18.0            # Evidence map + trend charts (MIT)
+matplotlib>=3.8.0         # PNG fallback for evidence map (PSF)
+reportlab>=4.0.0          # PDF report generation (BSD)
+pandas>=2.0.0             # Meta-analysis data_editor rows (BSD-3-Clause)
+graphviz>=0.20            # Knowledge graph / mind map DOT rendering (MIT) —
+                          # Python bindings; also needs the system `dot`
+                          # binary (`apt install graphviz`, already in Dockerfile)
+
+# ── UI ────────────────────────────────────────────────────────
+streamlit>=1.40.0         # Web application framework (Apache 2.0)
+watchdog>=4.0.0           # Streamlit file-change watcher (Apache 2.0)
+
+# ── Web API (FastAPI, backs the React frontend) ───────────────
+fastapi>=0.110.0          # API framework for the React frontend (MIT)
+uvicorn[standard]>=0.29.0 # ASGI server for FastAPI (BSD)
+python-multipart>=0.0.9   # Form/file upload parsing for FastAPI (Apache 2.0)
+
+# ── Utilities ─────────────────────────────────────────────────
+rich>=13.7.0              # Terminal formatting (MIT)
+python-dotenv>=1.0.0      # .env config loading (BSD)
+pydantic-settings>=2.0.0  # config/settings.py BaseSettings singleton (MIT)
+orjson>=3.9.0             # Fast JSON path for tools/session_db.py (Apache 2.0/MIT)
+psutil>=5.9.0             # RAM/CPU detection (BSD)
+requests>=2.32.0          # HTTP requests (Apache 2.0)
+pyttsx3>=2.90             # Text-to-speech for audio scripts (MPL 2.0)
+duckduckgo-search>=6.0.0  # Auto web search for Research Notebook (MIT)
+ddgs>=9.0.0               # duckduckgo-search's renamed successor package —
+                          # tools/search_tools.py falls back to it if the
+                          # `duckduckgo_search` import path is unavailable
+
+# ── LLM Observability (optional — requires LANGFUSE_PUBLIC_KEY in .env) ──────
+langfuse>=2.0.0           # Prompt/completion tracing dashboard (MIT)
+
+# ── MCP Server (optional — Claude Code / Claude Desktop integration) ──
+mcp>=1.0.0                # Model Context Protocol SDK for mcp_servers/research_tools_server.py (MIT)
+
+# ── Testing ───────────────────────────────────────────────────
+pytest>=8.0.0             # Test runner for tests/ + backend/tests/ (MIT)
