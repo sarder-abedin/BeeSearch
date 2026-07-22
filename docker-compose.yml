@@ -1,12 +1,9 @@
 # ─────────────────────────────────────────────────────────────
-# BeeSearch — Docker Compose (CPU)
+# BeeSearch — Docker Compose
 #
 # Starts two services:
 #   ollama — Ollama LLM server (model storage persisted in a volume)
-#   app    — one container running the React/FastAPI web app (primary UI,
-#            http://localhost:8000), the Streamlit UI (secondary,
-#            http://localhost:8501), and the CLI -- see Dockerfile and
-#            docker-entrypoint.sh.
+#   web    — React/FastAPI web app at http://localhost:8000
 #
 # Usage:
 #   docker compose up --build          # first run (builds app image)
@@ -17,16 +14,15 @@
 #   docker compose exec ollama ollama pull mistral-nemo:12b
 #
 # Run a CLI command inside the running container:
-#   docker compose exec app python main.py --check-system
+#   docker compose exec web python main.py --check-system
 #
 # Apple Silicon Mac (M1/M2/M3): the ollama/ollama image runs under
 #     x86 emulation and will fail its healthcheck. Install native Ollama
-#     (https://ollama.com/download), pull your model, then use the
-#     standalone Mac file instead (do NOT combine with this file):
+#     (https://ollama.com/download), pull your model, then use:
 #   docker compose -f docker-compose.mac.yml up --build
 #
 # For GPU support use:
-#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 # ─────────────────────────────────────────────────────────────
 
 services:
@@ -34,7 +30,7 @@ services:
   # ── Ollama LLM server ───────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
-    container_name: research-ollama
+    container_name: beesearch-ollama
     volumes:
       # Model weights persist across restarts — avoids re-downloading
       - ollama_models:/root/.ollama
@@ -54,7 +50,7 @@ services:
   # If the model is already downloaded, the pull is a no-op.
   model-init:
     image: ollama/ollama:latest
-    container_name: research-model-init
+    container_name: beesearch-model-init
     depends_on:
       ollama:
         condition: service_healthy
@@ -66,19 +62,24 @@ services:
     command: "${OLLAMA_MODEL:-llama3.2:3b}"
     restart: "no"
 
-  # ── React/FastAPI (primary) + Streamlit (secondary) + CLI ──
-  # One image/container serves both UIs:
-  #   React SPA served by FastAPI at http://localhost:8000  ← primary
-  #   Streamlit UI                  http://localhost:8501  ← secondary
-  # CLI available via `docker compose exec app python main.py ...`.
-  app:
+  # ── React/FastAPI web app ───────────────────────────────────
+  # Built from the root Dockerfile (multi-stage):
+  #   Stage 1: npm ci + npm run build  (React/Vite → frontend/dist/)
+  #   Stage 2: pip install -r requirements.txt  (Python + FastAPI)
+  # FastAPI serves the built React SPA at "/" via StaticFiles, and all
+  # API routes at "/api/*".  No nginx, no separate frontend container.
+  # CLI available via `docker compose exec web python main.py ...`.
+  web:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: research-app
+    container_name: beesearch-web
+    command: >
+      python -m uvicorn backend.app.main:app
+      --host 0.0.0.0
+      --port 8000
     ports:
-      - "${REACT_PORT:-8000}:8000"
-      - "${STREAMLIT_PORT:-8501}:8501"
+      - "${PORT:-8000}:8000"
     environment:
       # Point to the Ollama service by its compose service name
       - OLLAMA_BASE_URL=http://ollama:11434
@@ -95,11 +96,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://localhost:8000/api/health && curl -f http://localhost:8501/_stcore/health"]
-      interval: 30s
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 20s
+      retries: 8
+      start_period: 120s
 
 # ── Named volumes ───────────────────────────────────────────
 volumes:

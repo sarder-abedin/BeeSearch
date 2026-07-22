@@ -28,23 +28,31 @@ python main.py --check-system
 
 ## Running the app
 
-### Streamlit UI
+### Docker (recommended)
 
 ```bash
-streamlit run app.py
-# Open http://localhost:8501
-```
-
-### Docker
-
-```bash
-# Recommended — React + FastAPI web app only (lighter)
-./scripts/start-web.sh
+# Linux / Windows (Git Bash or WSL)
+docker compose up --build
 # Open http://localhost:8000
 
-# Full stack — React + Streamlit + CLI
-docker compose up --build
-# React app at http://localhost:8000; Streamlit also at http://localhost:8501
+# macOS (Apple Silicon) — uses native Ollama
+./scripts/start-mac.sh
+# Open http://localhost:8000
+
+# NVIDIA GPU
+./scripts/start-gpu.sh
+# Open http://localhost:8000
+```
+
+### Local (no Docker)
+
+```bash
+# Backend
+python -m uvicorn backend.app.main:app --reload --port 8000
+
+# Frontend (separate terminal)
+cd frontend && npm install && npm run dev
+# Open http://localhost:5173
 ```
 
 ---

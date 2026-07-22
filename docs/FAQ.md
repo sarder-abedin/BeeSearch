@@ -6,14 +6,11 @@
 ---
 
 **Q: How do I run this with Docker?**
-A: The recommended one-command start is `./scripts/start-web.sh` (or `bash scripts/start-web.sh` on Windows). This uses `docker-compose.web.yml` — it starts Ollama, pulls the default model, builds the React + FastAPI app, and opens **http://localhost:8000** automatically. The React SPA is served by FastAPI at "/" from the compiled `frontend/dist/` assets — no separate nginx or port 5173.
+A: Run `docker compose up --build` — that's the single command. It starts Ollama, pulls the default model, builds the React + FastAPI app, and serves **http://localhost:8000** automatically. The React SPA is served by FastAPI at "/" from the compiled `frontend/dist/` assets — no separate nginx or separate port. A one-shot `model-init` container pulls the default model on first start.
 
-For the full stack (React + Streamlit + CLI together), run `docker compose up --build` (uses the root `docker-compose.yml`). This exposes port **8000** for the React/FastAPI app (primary) and **8501** for the Streamlit UI (secondary, still available). The browser opens at 8000 when you use `./scripts/start.sh` or `./scripts/start-mac.sh`. Either way, a one-shot `model-init` container pulls the default model on first start.
+Apple Silicon (M1/M2/M3): use `./scripts/start-mac.sh` instead, which targets `docker-compose.mac.yml` and connects to native Ollama on the host.
 
----
-
-**Q: Is Streamlit still available alongside the React app?**
-A: Yes. The React + FastAPI web app (port 8000) is now the default interface — it's what `./scripts/start-web.sh` and the Docker `Run:` example open. Streamlit (port 8501) still runs in the full stack (`docker compose up --build`) and is available as a secondary interface at http://localhost:8501. Both call the same underlying `agents/*` / `projects/*` modules — no parallel business logic. To run only the React app without Streamlit (lighter container), use `docker-compose.web.yml` directly. To develop the React frontend locally without Docker, run `python -m uvicorn backend.app.main:app --reload --port 8000` and `cd frontend && npm install && npm run dev`, then open http://localhost:5173 — see the README's "Web interface — manual startup" section for details.
+To develop the React frontend locally without Docker, run `python -m uvicorn backend.app.main:app --reload --port 8000` and `cd frontend && npm install && npm run dev`, then open http://localhost:5173 — see the README's "Web interface — manual startup" section for details.
 
 ---
 
@@ -23,7 +20,7 @@ A: No. Documents are processed entirely locally — parsed with Docling (or pdfp
 ---
 
 **Q: Which Ollama model should I use?**
-A: Run `python main.py --check-system` or open the Streamlit sidebar — the hardware detector reads your RAM and GPU type and recommends the best model. Rule of thumb: `llama3.2:3b` for < 8 GB RAM, `llama3.1:8b` for most laptops, `mistral-nemo:12b` for long documents (128k context). On Apple Silicon, Ollama uses Metal automatically.
+A: Run `python main.py --check-system` — the hardware detector reads your RAM and GPU type and recommends the best model. You can also change the model in the Settings panel (⚙ button) in the web app. Rule of thumb: `llama3.2:3b` for < 8 GB RAM, `llama3.1:8b` for most laptops, `mistral-nemo:12b` for long documents (128k context). On Apple Silicon, Ollama uses Metal automatically.
 
 ---
 
@@ -38,12 +35,12 @@ A: No. Embeddings are cached in ChromaDB on disk (`outputs/chroma_db/`). On subs
 ---
 
 **Q: Does Docling require a separate download?**
-A: Docling is included in `requirements.txt` and enabled by default. On first use, it downloads its ML models (~500 MB) automatically to `models/docling/`. Subsequent runs use the cached models. To use the lightweight pdfplumber-only parser instead, toggle "Advanced Parsing (Docling)" off in the sidebar or pass `--no-docling` on the CLI.
+A: Docling is included in `requirements.txt` and enabled by default. On first use, it downloads its ML models (~500 MB) automatically to `models/docling/`. Subsequent runs use the cached models. To use the lightweight pdfplumber-only parser instead, toggle "Advanced Parsing (Docling)" off in the upload settings or pass `--no-docling` on the CLI.
 
 ---
 
 **Q: Uploading a large PDF crashes or freezes my machine — what can I do?**
-A: Docling loads ~500 MB of ML models into RAM, which can exhaust memory on resource-constrained machines. BeeSearch automatically switches to the lightweight pdfplumber parser for PDFs that exceed the `LARGE_DOC_PAGE_THRESHOLD` (default: 50 pages). pdfplumber streams pages one at a time and uses a fraction of the RAM — Docling is never loaded for those files. To lower the threshold (e.g. on an 8 GB machine), set `LARGE_DOC_PAGE_THRESHOLD=20` in your `.env`, pass `--large-doc-threshold 20` on the CLI, or toggle "Advanced Parsing (Docling)" off in the sidebar to disable Docling entirely.
+A: Docling loads ~500 MB of ML models into RAM, which can exhaust memory on resource-constrained machines. BeeSearch automatically switches to the lightweight pdfplumber parser for PDFs that exceed the `LARGE_DOC_PAGE_THRESHOLD` (default: 50 pages). pdfplumber streams pages one at a time and uses a fraction of the RAM — Docling is never loaded for those files. To lower the threshold (e.g. on an 8 GB machine), set `LARGE_DOC_PAGE_THRESHOLD=20` in your `.env`, pass `--large-doc-threshold 20` on the CLI, or toggle "Advanced Parsing (Docling)" off in the upload settings to disable Docling entirely.
 
 ---
 

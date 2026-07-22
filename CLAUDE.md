@@ -19,11 +19,9 @@ user-facing modes, built on LangGraph + Ollama (no cloud LLM, no API keys requir
   published literature with code-rebuilt inline citations (`agents/research_assistant.py`,
   `ui/tabs/research_assistant.py`, `main.py --ask`) — no upload, no PRISMA workflow.
 
-All modes are reachable from the Streamlit UI (`app.py`) and the CLI (`main.py`,
-plus `cli.py` for the section-by-section breakdown tool). Modes 1 and 3, plus
-the core of Mode 2, are also reachable from a React + FastAPI web app
-(`frontend/` + `backend/`) added alongside them — see "React + FastAPI web
-app" under Architecture below.
+All modes are reachable from the CLI (`main.py`, plus `cli.py` for the section-by-section
+breakdown tool) and from the React + FastAPI web app (`frontend/` + `backend/`) — see
+"React + FastAPI web app" under Architecture below.
 
 For deep dives beyond this file: `docs/architecture.md` (full pipeline diagrams,
 state field lists, file map, tech stack), `docs/overview.md` (condensed version),
@@ -39,9 +37,6 @@ cp .env.example .env
 ollama pull llama3.1:8b
 ollama pull nomic-embed-text          # required for Hybrid RAG in Research Notebook
 
-# Run — Streamlit UI
-streamlit run app.py
-
 # Run — CLI
 python main.py --check-system                          # hardware-aware model recommendation
 python main.py --notebook --notebook-name "My Notes"   # Research Notebook session
@@ -49,16 +44,15 @@ python main.py --systematic-review --goal "..." \
   --inclusion "Peer-reviewed" --exclusion "Animal studies"
 python cli.py sections <notebook-id> --source paper.pdf # section-by-section breakdown
 
-# Run — React + FastAPI web app (two separate processes)
+# Run — React + FastAPI web app (two separate processes, local dev)
 python -m uvicorn backend.app.main:app --reload --port 8000   # backend, http://localhost:8000
 cd frontend && npm install && npm run dev                      # frontend, http://localhost:5173
 BEESEARCH_MOCK_LLM=1 python -m uvicorn backend.app.main:app --reload --port 8000  # backend w/ stubbed LLM+search, no Ollama needed
 
-# Docker
-./scripts/start.sh        # Linux CPU
-./scripts/start-gpu.sh    # Linux NVIDIA GPU
-./scripts/start-mac.sh    # macOS
-docker compose up --build  # ollama + app (Streamlit + CLI + FastAPI + React, one container)
+# Docker (single command — React + FastAPI + Ollama)
+docker compose up --build   # Linux/Windows — opens http://localhost:8000
+./scripts/start-mac.sh      # macOS Apple Silicon (uses native Ollama)
+./scripts/start-gpu.sh      # Linux NVIDIA GPU
 ```
 
 ### Tests
@@ -78,31 +72,30 @@ cd frontend && npm run e2e                                       # frontend E2E 
 `backend/tests/` (FastAPI service/API tests). Always use the no-path form
 (`python -m pytest -q`, from repo root) when you mean "run everything."
 
-`rich` and `streamlit` may not be installed in some sandboxes even though they're in
-`requirements.txt`. If so, `py_compile` is enough for a syntax check; to exercise
-`main.py`'s argparse logic, stub `sys.modules["rich"]` (and submodules) with
-`MagicMock()` before importing `main`.
+`rich` may not be installed in some sandboxes even though it's in `requirements.txt`. If
+so, `py_compile` is enough for a syntax check; to exercise `main.py`'s argparse logic,
+stub `sys.modules["rich"]` (and submodules) with `MagicMock()` before importing `main`.
 
 ## Architecture
 
 ### Entry points and dispatch
 
-- `app.py` → `ui/landing.py` → `projects/{mode1_systematic_review,mode2_notebook,mode3_research_assistant}.py::run(settings)`,
-  registered in `projects/__init__.py::PROJECT_REGISTRY` (keys `mode1`/`mode2`/`mode3` must
-  stay in sync across `PROJECT_REGISTRY`, `app.py::_PROJECT_MODULES`, and `ui/landing.py::_PROJECTS`).
+- `main.py` → `--systematic-review` / `--notebook` (+ one-shot `--notebook-*` flags) /
+  `--ask` (Mode 3) drive the core logic. SR adds `--sr-quality` to print the
+  risk-of-bias / GRADE / contradiction results.
+- `app.py` → `ui/landing.py` → `projects/{mode1_systematic_review,mode2_notebook,mode3_research_assistant}.py::run(settings)` —
+  a Streamlit UI that still works locally (`streamlit run app.py`) but is not part of the
+  Docker setup; registered in `projects/__init__.py::PROJECT_REGISTRY`.
   `ui/tabs/notebook.py` is the large tab container for all of Mode 2 (Chat, Sources, Summary,
   FAQ, Literature Review, Mind Map, Knowledge Graph, Citation Timeline, Study Comparison,
   Pipeline, Research Report, Explain). `ui/tabs/research_assistant.py` is the single-screen
   Mode 3 tab.
-- `main.py` → `--systematic-review` / `--notebook` (+ one-shot `--notebook-*` flags) /
-  `--ask` (Mode 3) drive the same logic as the UI. SR adds `--sr-quality` to print the
-  risk-of-bias / GRADE / contradiction results.
 
 ### React + FastAPI web app
 
-A REST API (`backend/`) and a React + TypeScript SPA (`frontend/`) expose the
-same core logic as the CLI/Streamlit UI, added alongside them — `main.py` and
-`app.py` are unmodified by this. Current coverage: all three modes are fully
+A REST API (`backend/`) and a React + TypeScript SPA (`frontend/`) are the primary
+web interface. They expose the same core logic as the CLI — `main.py` and `app.py`
+are unmodified. Current coverage: all three modes are fully
 covered. Mode 1 and Mode 3 are complete; Mode 2 covers the core notebook
 workflow (create/rename/delete, source upload, grounded chat with citations),
 the 7-agent analysis pipeline, the standalone advanced tools (cross-document
@@ -145,10 +138,11 @@ ResearchReportTab.tsx`).
   into the final `python:3.11-slim` stage at `frontend/dist`. `backend/app/main.py`
   mounts that directory with `StaticFiles(html=True)` at `/` (after all API routers,
   so it only catches unmatched paths), so the FastAPI process serves the React SPA
-  directly -- no nginx, no separate frontend container. `docker-entrypoint.sh` runs
-  Streamlit and `uvicorn backend.app.main:app` as sibling background processes in the
-  same `app` container (`docker-compose.yml`/`docker-compose.mac.yml`), exposing both
-  8000 (React/FastAPI, primary) and 8501 (Streamlit, secondary); the CLI runs ad hoc via `docker compose exec app python main.py ...`.
+  directly — no nginx, no separate frontend container. The Dockerfile CMD runs
+  `uvicorn backend.app.main:app` directly; `docker compose up --build` is the single
+  command (Linux/Windows). Apple Silicon uses `docker-compose.mac.yml` (native Ollama);
+  GPU uses `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up`.
+  The CLI runs ad hoc via `docker compose exec web python main.py ...`.
   The standalone `frontend/Dockerfile` + `frontend/nginx.conf` (multi-stage `npm run
   build` → nginx, reverse-proxying `/api/*`) still work standalone (`docker build -t
   beesearch-frontend ./frontend`) but are no longer referenced by the default Compose
