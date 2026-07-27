@@ -1,0 +1,100 @@
+.grammar-gate {
+  margin: 0.4rem 0 0.9rem;
+  font-size: 0.85rem;
+}
+
+.grammar-gate__toggle {
+  display: flex;
+  gap: 1.25rem;
+  color: var(--color-muted);
+}
+
+.grammar-gate__toggle label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.grammar-gate__checking {
+  color: var(--color-muted);
+  margin: 0.4rem 0;
+}
+
+.grammar-gate__caption {
+  color: var(--color-muted);
+  margin: 0.4rem 0;
+}
+
+.grammar-gate__suggestion {
+  margin-top: 0.6rem;
+  padding: 0.8rem;
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-bg);
+  border-radius: 6px;
+}
+
+.grammar-gate__suggestion-intro {
+  margin: 0 0 0.6rem;
+}
+
+.grammar-gate__comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.grammar-gate__comparison-label {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  margin: 0 0 0.25rem;
+}
+
+.grammar-gate__comparison blockquote {
+  margin: 0;
+  padding-left: 0.6rem;
+  border-left: 3px solid var(--color-border);
+}
+
+.grammar-gate__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.grammar-gate__actions button {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.grammar-gate__actions button:hover {
+  border-color: var(--color-accent);
+}
+
+.grammar-gate__edit {
+  margin-top: 0.6rem;
+}
+
+.grammar-gate__edit textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin: 0.3rem 0 0.5rem;
+}
+
+.grammar-gate__edit button {
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+}

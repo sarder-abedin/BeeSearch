@@ -1,0 +1,425 @@
+"""
+agents/graph.py
+───────────────
+Research Report workflow for the Research Notebook mode.
+
+Public entry point:
+    run_research(state, stream_callback=None) → final_state
+
+Steps
+─────
+  document_ingestion    Build a text context block from notebook sources
+  query_generation      LLM generates focused search queries from the goal
+  academic_search       arXiv + Semantic Scholar (skipped for mode="document")
+  web_search            DuckDuckGo (only when include_web_search=True)
+  document_analysis     Merge all context blocks for the report step
+  reference_compilation Build a reference list from the academic papers found
+  report_generation     LLM generates a structured Markdown research report
+  research_eval         LLM self-evaluates report quality (1-5 per dimension)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Callable, Optional
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_ollama import ChatOllama
+
+from config.settings import get_settings
+
+logger = logging.getLogger(__name__)
+cfg = get_settings()
+
+_MAX_CHARS_PER_DOC = 5_000
+_MAX_DOC_CONTEXT = 15_000
+_MAX_ACADEMIC_CONTEXT = 5_000
+_MAX_WEB_CONTEXT = 2_000
+
+
+# ── LLM helpers ────────────────────────────────────────────────────────────────
+
+def _max_predict(state: dict) -> int:
+    """Reserve 25% of context for the prompt; use the rest for output (min 4096)."""
+    return max(4096, int(state.get("num_ctx", cfg.num_ctx) * 0.75))
+
+
+def _llm(state: dict, temperature: float = 0.3, num_predict: int = 4096) -> ChatOllama:
+    """Build a ChatOllama client from state's model/context settings, falling back to config defaults."""
+    import httpx
+    from config.observability import get_langfuse_callbacks
+    return ChatOllama(
+        model=state.get("model_name") or cfg.ollama_model,
+        base_url=cfg.ollama_base_url,
+        temperature=temperature,
+        num_predict=num_predict,
+        num_ctx=state.get("num_ctx", cfg.num_ctx),
+        sync_client_kwargs={"timeout": httpx.Timeout(300.0)},
+        callbacks=get_langfuse_callbacks(),
+    )
+
+
+def _invoke(llm: ChatOllama, system: str, human: str) -> str:
+    """Send a system+human message pair to the LLM and return the stripped text response."""
+    return llm.invoke([SystemMessage(content=system), HumanMessage(content=human)]).content.strip()
+
+
+# ── Context builders ────────────────────────────────────────────────────────────
+
+def _build_doc_context(uploaded_docs: list) -> str:
+    """Concatenate notebook source chunks into a labelled context block, capped at `_MAX_DOC_CONTEXT` chars."""
+    parts: list[str] = []
+    total = 0
+    for i, doc in enumerate(uploaded_docs, 1):
+        chunks = doc.chunks if hasattr(doc, "chunks") else []
+        text = " ".join(c.text for c in chunks)[:_MAX_CHARS_PER_DOC]
+        parts.append(f"[Source {i}: {doc.filename}]\n{text}")
+        total += len(text)
+        if total >= _MAX_DOC_CONTEXT:
+            break
+    return "\n\n".join(parts)
+
+
+def _build_academic_context(papers: list) -> str:
+    """Format academic search results (title/authors/year/abstract) into a labelled context block."""
+    parts: list[str] = []
+    total = 0
+    for i, p in enumerate(papers, 1):
+        title = getattr(p, "title", "Untitled")
+        authors = ", ".join((getattr(p, "authors", None) or [])[:3])
+        year = getattr(p, "year", "") or ""
+        abstract = (getattr(p, "abstract", "") or "")[:400]
+        source = getattr(p, "source", "") or ""
+        snippet = (
+            f"[Paper {i}: {title} ({year}, {source})]\n"
+            f"Authors: {authors}\nAbstract: {abstract}"
+        )
+        parts.append(snippet)
+        total += len(snippet)
+        if total >= _MAX_ACADEMIC_CONTEXT:
+            break
+    return "\n\n".join(parts)
+
+
+def _build_web_context(web_results: list, ref_offset: int = 0) -> str:
+    """Format up to 5 web search results (title/snippet/url) into a labelled context block.
+
+    `ref_offset` (the number of academic papers already numbered) continues the
+    numbering so inline [Web N] citations match the combined references list.
+    """
+    parts: list[str] = []
+    for i, r in enumerate(web_results[:5], 1):
+        title = getattr(r, "title", "")
+        snippet = getattr(r, "snippet", "")
+        url = getattr(r, "url", "")
+        parts.append(f"[Web {ref_offset + i}: {title}]\n{snippet}\n{url}")
+    return "\n\n".join(parts)
+
+
+# ── Workflow steps ──────────────────────────────────────────────────────────────
+
+def _step_document_ingestion(state: dict) -> dict:
+    """Build the notebook-source context block and stash it under `_doc_context`."""
+    docs = state.get("uploaded_docs") or []
+    state["_doc_context"] = _build_doc_context(docs)
+    logger.info("[Research Report] Ingested %d document(s)", len(docs))
+    return state
+
+
+def _clean_generated_query(line: str) -> str:
+    """Strip bullets/numbering and wrapping quote characters from one LLM-generated query line.
+
+    LLMs commonly wrap each generated query in straight or curly quotes; left in
+    place, those quotes turn the query into an exact-phrase search against arXiv/
+    Google Scholar, which reliably returns 0 results for any specific phrase.
+    """
+    return line.strip().lstrip("•-*0123456789.) ").strip("'\"“”‘’")
+
+
+def _step_query_generation(state: dict) -> dict:
+    """Generate up to 3 academic search queries from the goal, or skip the LLM call in pure-document mode."""
+    goal = state["goal"]
+    if state["mode"] == "document" and not state.get("include_web_search"):
+        state["search_queries"] = [goal]
+        return state
+
+    system = (
+        "You are a research assistant. Given a research goal, output exactly 3 focused "
+        "search queries suitable for arXiv and Semantic Scholar. "
+        "One query per line. No numbering, no bullets, no extra text."
+    )
+    try:
+        raw = _invoke(_llm(state, temperature=0.2, num_predict=200), system,
+                      f"Research goal: {goal}")
+        queries = [_clean_generated_query(q) for q in raw.splitlines() if q.strip()]
+        queries = [q for q in queries if q]
+        state["search_queries"] = queries[:3] or [goal]
+    except Exception as e:
+        logger.warning("[Research Report] Query generation failed: %s", e)
+        state["search_queries"] = [goal]
+    return state
+
+
+def _step_academic_search(state: dict) -> dict:
+    """Search arXiv + Semantic Scholar for the first 2 queries, deduping papers by normalised title.
+
+    Skipped entirely when `mode == "document"` (notebook-only reports have no
+    academic search step).
+    """
+    if state["mode"] == "document":
+        state["academic_papers"] = []
+        return state
+
+    from tools.search_tools import AcademicSearcher
+    searcher = AcademicSearcher()
+    papers: list = []
+    seen: set[str] = set()
+
+    for query in (state.get("search_queries") or [state["goal"]])[:2]:
+        try:
+            for p in searcher.search(query, max_per_source=4):
+                # Normalise title (strip non-word chars, lowercase, truncate) so the same
+                # paper returned by two different queries/sources is only counted once.
+                key = re.sub(r"\W+", "", (getattr(p, "title", "") or "").lower())[:60]
+                if key and key not in seen:
+                    seen.add(key)
+                    papers.append(p)
+        except Exception as e:
+            logger.warning("[Research Report] Academic search failed for '%s': %s", query[:40], e)
+
+    state["academic_papers"] = papers[:12]
+    logger.info("[Research Report] %d unique academic paper(s) found", len(papers))
+    return state
+
+
+def _step_web_search(state: dict) -> dict:
+    """Search DuckDuckGo for the first 2 queries; no-op unless `include_web_search` is True.
+
+    Sets `web_search_status` to "disabled"/"ok"/"empty"/"error" so the UI can tell
+    "web search was never requested" apart from "it ran and found nothing" or "it
+    ran and failed" — without this, a report with no [Web N] references looks the
+    same in all three cases even though only one of them means the toggle did
+    nothing useful.
+    """
+    if not state.get("include_web_search"):
+        state["web_results"] = []
+        state["web_search_status"] = "disabled"
+        return state
+
+    from tools.search_tools import WebSearcher
+    searcher = WebSearcher()
+    results: list = []
+    had_error = False
+    for query in (state.get("search_queries") or [state["goal"]])[:2]:
+        try:
+            results.extend(searcher.search(query, max_results=3))
+        except Exception as e:
+            logger.warning("[Research Report] Web search failed: %s", e)
+            had_error = True
+    state["web_results"] = results[:6]
+    state["web_search_status"] = "ok" if results else ("error" if had_error else "empty")
+    return state
+
+
+def _step_document_analysis(state: dict) -> dict:
+    """Build the academic and web context blocks for the upcoming report-generation step."""
+    papers = state.get("academic_papers") or []
+    state["_academic_context"] = _build_academic_context(papers)
+    state["_web_context"] = _build_web_context(state.get("web_results") or [], ref_offset=len(papers))
+    return state
+
+
+def _step_reference_compilation(state: dict) -> dict:
+    """Build the `references` list (with APA-style citation strings) from the academic
+    papers and web search results found. Web results are numbered continuing after the
+    papers so their [Web N] inline citations match this combined list."""
+    refs: list[dict] = []
+    papers = state.get("academic_papers") or []
+    for i, p in enumerate(papers, 1):
+        authors = getattr(p, "authors", None) or []
+        year = getattr(p, "year", "") or ""
+        title = getattr(p, "title", "") or ""
+        journal = getattr(p, "journal", "") or ""
+        doi = getattr(p, "doi", "") or ""
+        url = getattr(p, "url", "") or ""
+        source = getattr(p, "source", "") or ""
+        abstract = (getattr(p, "abstract", "") or "")[:250]
+        citation_count = getattr(p, "citation_count", None)
+
+        auth_str = "; ".join(authors[:3]) + ("…" if len(authors) > 3 else "")
+        apa = f"{auth_str} ({year}). {title}. {journal}."
+        if doi:
+            apa += f" https://doi.org/{doi}"
+        elif url:
+            apa += f" {url}"
+
+        refs.append({
+            "ref_num": i,
+            "title": title,
+            "authors": authors,
+            "journal": journal,
+            "year": year,
+            "doi": doi,
+            "url": url,
+            "abstract_snippet": abstract,
+            "source": source,
+            "citation_count": citation_count,
+            "apa": apa,
+        })
+
+    for j, r in enumerate(state.get("web_results") or [], 1):
+        title = getattr(r, "title", "") or "Untitled page"
+        url = getattr(r, "url", "") or ""
+        snippet = (getattr(r, "snippet", "") or "")[:250]
+        refs.append({
+            "ref_num": len(papers) + j,
+            "title": title,
+            "authors": [],
+            "journal": "",
+            "year": "",
+            "doi": "",
+            "url": url,
+            "abstract_snippet": snippet,
+            "source": "web",
+            "citation_count": None,
+            "apa": f"{title}. Retrieved from {url}" if url else title,
+        })
+
+    state["references"] = refs
+    return state
+
+
+def _step_report_generation(state: dict) -> dict:
+    """Generate the Markdown research report from all gathered context, then parse out `key_findings`.
+
+    The numbered list under the report's "## Key Findings" section is
+    re-parsed back out of the generated Markdown (rather than requested as
+    separate structured output) so the report text and the findings list
+    can never drift out of sync.
+    """
+    goal = state["goal"]
+    doc_ctx = state.get("_doc_context", "")
+    acad_ctx = state.get("_academic_context", "")
+    web_ctx = state.get("_web_context", "")
+
+    context_parts: list[str] = []
+    if doc_ctx:
+        context_parts.append("## Notebook Sources\n" + doc_ctx)
+    if acad_ctx:
+        context_parts.append("## Academic Literature\n" + acad_ctx)
+    if web_ctx:
+        context_parts.append("## Web Sources\n" + web_ctx)
+    context = "\n\n".join(context_parts) or "(No sources provided — draw from general knowledge.)"
+
+    system = (
+        "You are an expert research analyst. Write a comprehensive, well-structured "
+        "Markdown research report grounded in the provided sources. "
+        "Use this exact section structure:\n\n"
+        "# [Descriptive Report Title]\n"
+        "## Executive Summary\n"
+        "## Background and Context\n"
+        "## Key Findings\n"
+        "## Analysis and Discussion\n"
+        "## Conclusions\n"
+        "## Limitations\n\n"
+        "Rules:\n"
+        "- Cite sources inline as [Source N] for notebook excerpts, [Paper N] for "
+        "academic literature, or [Web N] for web sources — matching the numbers "
+        "shown in the context below. Use [Web N] citations when web sources are "
+        "provided; do not ignore them in favor of other source types.\n"
+        "- Under Key Findings, use a numbered list (1. finding text).\n"
+        "- Be analytical and critical, not just descriptive.\n"
+        "- Do not fabricate information not present in the sources."
+    )
+
+    try:
+        report = _invoke(_llm(state, temperature=0.3, num_predict=_max_predict(state)),
+                         system, f"Research goal: {goal}\n\n{context}")
+        state["report"] = report
+
+        findings: list[str] = []
+        in_findings = False
+        for line in report.splitlines():
+            if "## Key Findings" in line:
+                in_findings = True
+                continue
+            if in_findings:
+                if line.startswith("## "):
+                    break
+                m = re.match(r"^\s*\d+\.\s+(.+)", line)
+                if m:
+                    findings.append(m.group(1).strip())
+        state["key_findings"] = findings[:10]
+    except Exception as e:
+        logger.error("[Research Report] Report generation failed: %s", e)
+        state["report"] = f"*Report generation failed: {e}*"
+        state.setdefault("errors", []).append(str(e))
+    return state
+
+
+def _step_research_eval(state: dict) -> dict:
+    """LLM self-evaluates report quality (1-5 per dimension); no-op if generation already failed."""
+    report = state.get("report", "")
+    if not report or report.startswith("*Report generation failed"):
+        state["eval_result"] = {}
+        return state
+
+    system = (
+        "Score this research report on five dimensions (1–5 scale). "
+        "Reply with ONLY a JSON object — no extra text:\n"
+        '{"relevance": N, "depth": N, "clarity": N, "evidence": N, '
+        '"overall": N, "summary": "one sentence"}'
+    )
+    try:
+        # temperature=0.0: this is a quality grading call, not creative generation —
+        # deterministic scoring is more trustworthy than a sampled one.
+        raw = _invoke(_llm(state, temperature=0.0, num_predict=200),
+                      system, f"Goal: {state['goal']}\n\nReport:\n{report[:2000]}")
+        m = re.search(r"\{[^}]+\}", raw, re.DOTALL)
+        if m:
+            state["eval_result"] = json.loads(m.group())
+    except Exception as e:
+        logger.warning("[Research Report] Eval failed: %s", e)
+        state["eval_result"] = {}
+    return state
+
+
+# ── Public entry point ──────────────────────────────────────────────────────────
+
+def run_research(
+    state: dict,
+    stream_callback: Optional[Callable[[str, dict], None]] = None,
+) -> dict:
+    """Run the research report workflow and return the final state.
+
+    Calls ``stream_callback(node_name, state)`` after each step so the UI
+    can update a progress bar.
+    """
+    _steps = [
+        ("document_ingestion",    15, _step_document_ingestion),
+        ("query_generation",      30, _step_query_generation),
+        ("academic_search",       50, _step_academic_search),
+        ("web_search",            60, _step_web_search),
+        ("document_analysis",     75, _step_document_analysis),
+        ("reference_compilation", 82, _step_reference_compilation),
+        ("report_generation",     95, _step_report_generation),
+        ("research_eval",        100, _step_research_eval),
+    ]
+
+    for node_name, pct, fn in _steps:
+        try:
+            state = fn(state)
+        except Exception as exc:
+            logger.exception("[Research Report] Step '%s' failed", node_name)
+            state.setdefault("errors", []).append(f"{node_name}: {exc}")
+
+        state["progress_pct"] = pct
+        if stream_callback:
+            try:
+                stream_callback(node_name, state)
+            except Exception:
+                pass
+
+    return state

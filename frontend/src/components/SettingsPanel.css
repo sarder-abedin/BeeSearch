@@ -1,0 +1,91 @@
+.settings-panel__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 100;
+}
+
+.settings-panel {
+  width: min(420px, 100%);
+  height: 100%;
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  position: sticky;
+  top: 0;
+}
+
+.settings-panel__header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.settings-panel__close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.settings-panel__body {
+  padding: 1rem 1.25rem 2rem;
+}
+
+.settings-panel__section {
+  margin-bottom: 1.5rem;
+}
+
+.settings-panel__section h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.35rem;
+}
+
+.settings-panel__radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+  cursor: pointer;
+}
+
+.settings-panel__code {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.settings-panel__danger {
+  background: var(--color-error-text);
+}
+
+.settings-panel__danger:hover:not(:disabled) {
+  background: #5a1818;
+}
+
+.settings-panel button[aria-label="Open settings"] {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+}

@@ -1,0 +1,141 @@
+"""backend/app/schemas/notebook_advanced.py
+─────────────────────────────────────────────
+Pydantic request/response shapes for Mode 2 Phase C: the 9 standalone
+Research Notebook advanced tools (``agents/notebook_advanced.py``) --
+Cross-document Summary, FAQ, Literature Review, Mind Map, Audio Summary,
+Compare Sources, Knowledge Graph, Citation Timeline, Study Comparison.
+
+Unlike Phase B's single 7-agent pipeline (one request/result shape), Phase C
+is 9 independent single-call tools, each with its own request shape but
+funneled through ONE shared job-status endpoint -- so ``AdvancedResult`` is a
+superset of every feature's output fields (mirrors ``PipelineResult``'s
+"every field of the state, only the relevant ones populated this run"
+convention from ``schemas/notebook_pipeline.py``), and each ``run_*``
+trigger endpoint returns the same ``JobCreated``/``AdvancedJobStatus`` pair.
+"""
+
+from __future__ import annotations
+
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+from .jobs import JobStatusBase
+
+TemperatureLevel = Literal["precise", "focused", "balanced", "creative"]
+
+
+class _BaseAdvancedRequest(BaseModel):
+    """Common settings overrides shared by every Phase C tool.
+
+    Mirrors ``PipelineRequest``'s "only override when given" fields, minus
+    ``top_k``/``embed_model`` -- none of ``notebook_advanced.py``'s functions
+    do hybrid-search retrieval (they dump source text directly, capped by
+    char count), so those two knobs would be unused here.
+    """
+
+    notebook_id: str = Field(..., description="Target notebook id, returned by /notebooks (POST).")
+    model: Optional[str] = Field(None, description="Ollama model override; omit to use the server's configured default.")
+    num_ctx: Optional[int] = Field(None, gt=0, description="Context window override (tokens).")
+    temperature_level: Optional[TemperatureLevel] = Field(
+        None, description="Response tuning level; omit to use the module default ('focused')."
+    )
+
+    @field_validator("notebook_id")
+    @classmethod
+    def notebook_id_must_not_be_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("notebook_id is required.")
+        return v
+
+
+class CrossDocumentSummaryRequest(_BaseAdvancedRequest):
+    pass
+
+
+class FaqRequest(_BaseAdvancedRequest):
+    n_questions: int = Field(8, gt=0, le=20, description="Number of FAQ items to generate.")
+
+
+class LiteratureReviewRequest(_BaseAdvancedRequest):
+    pass
+
+
+class MindmapRequest(_BaseAdvancedRequest):
+    pass
+
+
+class AudioSummaryRequest(_BaseAdvancedRequest):
+    pass
+
+
+class CompareSourcesRequest(_BaseAdvancedRequest):
+    doc_id_a: str = Field(..., description="First source's doc_id to compare.")
+    doc_id_b: str = Field(..., description="Second source's doc_id to compare.")
+
+
+class KnowledgeGraphRequest(_BaseAdvancedRequest):
+    pass
+
+
+class CitationTimelineRequest(_BaseAdvancedRequest):
+    enrich_with_abstracts: bool = Field(
+        False,
+        description="Look up each cited work on Semantic Scholar for a real abstract/TL;DR "
+        "gist instead of an LLM-guessed one (slower; falls back to the guess on lookup failure).",
+    )
+
+
+class StudyComparisonRequest(_BaseAdvancedRequest):
+    pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Result building blocks
+# ─────────────────────────────────────────────────────────────────────────────
+
+class FaqItem(BaseModel):
+    question: str = ""
+    answer: str = ""
+    sources: List[int] = Field(default_factory=list)
+
+
+class ReferenceItem(BaseModel):
+    """Mirrors ``notebook_advanced._build_references_list``'s per-reference dict."""
+
+    n: Optional[int] = None
+    doc_name: str = "unknown"
+    page: Optional[int] = None
+    snippet: str = ""
+    doc_id: str = ""
+
+
+class CitationTimelineItem(BaseModel):
+    year: str = "n.d."
+    title: str = ""
+    authors: str = ""
+    gist: str = ""
+    source: int = 0
+    url: str = ""
+
+
+class AdvancedResult(BaseModel):
+    """Superset of every Phase C tool's output -- one job only ever
+    populates the field(s) for the feature it ran; the rest keep their
+    defaults. Same convention as ``PipelineResult`` for Phase B."""
+
+    notebook_id: str = ""
+    summary: str = ""
+    faqs: List[FaqItem] = Field(default_factory=list)
+    review: str = ""
+    references: List[ReferenceItem] = Field(default_factory=list)
+    mindmap_dot: str = ""
+    audio_script: str = ""
+    comparison: str = ""
+    knowledge_graph_dot: str = ""
+    timeline: List[CitationTimelineItem] = Field(default_factory=list)
+    study_comparison: str = ""
+
+
+class AdvancedJobStatus(JobStatusBase):
+    result: Optional[AdvancedResult] = None
