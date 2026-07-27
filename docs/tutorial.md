@@ -182,7 +182,11 @@ BeeSearch understands both tables and figures inside your uploaded PDFs.
 
 **Tables** work automatically — Docling extracts each table as full Markdown (column headers, rows, alignment) and presents it to the LLM in that format so it can compare values and cite them correctly with a `[TABLE]` label.
 
-**Figures** require an optional Ollama vision model. To enable:
+**Figures** require an optional Ollama vision model.
+
+**Docker users** — `llava:7b` is pulled automatically on first `docker compose up --build` and `VISION_MODEL=llava:7b` is pre-set in the container. No manual steps needed.
+
+**Local (non-Docker) users** — pull the model and set it in `.env`:
 
 ```bash
 # 1. Pull a vision model
@@ -200,7 +204,7 @@ python main.py --notebook --notebook-name "My Research" \
   --files paper.pdf --vision-model llava:7b
 ```
 
-BeeSearch calls the vision model once per figure at upload time to generate a caption, which is indexed alongside text and retrieved normally. In Chat, captions appear with a `[FIGURE]` label. Leave `VISION_MODEL` blank (the default) to skip figure extraction with no overhead.
+BeeSearch calls the vision model once per figure at upload time to generate a caption, which is indexed alongside text and retrieved normally. In Chat, captions appear with a `[FIGURE]` label. Leave `VISION_MODEL` empty to skip figure extraction with no overhead.
 
 ### UI walkthrough
 

@@ -677,6 +677,15 @@ The `tools` package uses `__getattr__` for deferred loading. No submodule is imp
 
 Both Literature Review and the Explain tab once let the LLM cite freely (`[1]`, `[2]`, …) while writing its own References list from a prompt that only gave it one citable number per *document* — the two never matched. Both now follow the same fix as the Chat tab (`notebook_nodes.py::_build_context_block`): number every individual chunk (not document) with its real page tag, bake the tags directly into the persisted context string, and after generation regex-extract whichever numbers the LLM actually used to rebuild an accurate References list in code. The LLM's own References section is always discarded, never trusted. Out-of-range/hallucinated numbers are dropped silently rather than rendered with invented source details. The Explain tab additionally unifies two citation namespaces — `[n]` for document excerpts and `[Source n]` for online search results — into one rebuilt list.
 
+### Anti-AI Writing Style Enforcement (`tools/writing_style.py`)
+
+Two module-level string constants are injected into every prose-generating LLM prompt:
+
+- **`ANTI_AI_TELL_INSTRUCTION`** — strict variant for all formal prose (Chat, Summaries, Literature Review, SR synthesis, study guide, Research Report). Bans common AI vocabulary ("delve", "tapestry", "groundbreaking", "robust", "comprehensive", "multifaceted", "nuanced", "leveraging", etc.), forbids formulaic openers ("Certainly!", "Notably,", "It is worth noting that"), and bans hollow paragraph starters ("In conclusion,", "Furthermore,", "Moreover,") as section openers.
+- **`ANTI_AI_TELL_NARRATIVE_INSTRUCTION`** — lighter variant for audio and podcast scripts. Bans the same vocabulary but permits natural spoken transitions (First, Then, Finally) for audio flow.
+
+Applied in: `agents/notebook_nodes.py`, `agents/research_assistant.py`, `agents/notebook_advanced.py`, `agents/story_nodes.py`, `agents/systematic_review_nodes.py`, `agents/notebook_pipeline_nodes.py`. Deliberately **not** applied to JSON-output prompts (FAQ, mind map, knowledge graph, PICO extraction, RoB, GRADE, screening) — injecting style rules into those would corrupt structured output parsing. Both constants are re-exported via `tools/__init__.py`'s lazy-import `_EXPORTS` dict.
+
 ### Research-Domain Re-ranking (`tools/search_tools.py`)
 
 `WebSearcher` wraps plain DuckDuckGo search, which ranks for generic relevance/SEO signals rather than research value. `search()` now over-fetches (up to 3× `max_results`, capped at 20), deduplicates by URL and normalised title, and applies a *stable* sort keyed on `_research_rank_score()`: 0 for a recognised research domain or TLD (arxiv.org, PubMed, IEEE Xplore, Nature, ScienceDirect, `.edu`, `.gov`, …), 2 for a short list of low-signal domains (Pinterest, Quora), 1 for everything else. Ties keep DuckDuckGo's original relative order. Domain matching (`_matches_any_domain`) is dot-boundary-safe (`"fooarxiv.org"` must not match `"arxiv.org"`). Results are only ever reordered, never dropped, for being non-research — a borderline-but-relevant hit is never hidden.
@@ -832,6 +841,7 @@ BeeSearch/
 │   ├── export_tools.py         ← DOCX + PDF export
 │   ├── citation_tools.py       ← BibTeX + RIS export
 │   ├── clarifier.py            ← Socratic clarifying questions
+│   ├── writing_style.py        ← ANTI_AI_TELL_INSTRUCTION + ANTI_AI_TELL_NARRATIVE_INSTRUCTION constants; injected into every prose-generating prompt
 │   └── shutdown.py             ← Safe port release + ChromaDB flush
 │
 ├── config/
