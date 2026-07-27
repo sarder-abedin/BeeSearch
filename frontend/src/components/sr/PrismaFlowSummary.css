@@ -1,0 +1,26 @@
+.prisma-flow {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.prisma-flow__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+}
+
+.prisma-flow__label {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+.prisma-flow__value {
+  font-size: 1.4rem;
+  font-weight: 600;
+}

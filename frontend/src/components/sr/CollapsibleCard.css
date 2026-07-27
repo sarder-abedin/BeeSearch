@@ -1,0 +1,28 @@
+.collapsible-card {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  background: var(--color-surface);
+}
+
+.collapsible-card__toggle {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.6rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.collapsible-card__chevron {
+  color: var(--color-muted);
+}
+
+.collapsible-card__body {
+  padding: 0 0.9rem 0.8rem 2rem;
+}

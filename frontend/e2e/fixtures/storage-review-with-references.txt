@@ -1,0 +1,10 @@
+A recent technical review surveyed battery storage degradation studies published between 2017 and 2021, focusing on how cycling depth and ambient temperature interact to accelerate capacity fade in grid-scale lithium-ion installations. The review combined findings from independent laboratory testing with field data collected from several utility-scale pilot sites.
+
+Across the surveyed studies, moderate cycling depth combined with active thermal management consistently produced the slowest capacity fade, while deep daily cycling without cooling showed measurable degradation within the first eighteen months of operation. The review also noted growing interest in second-life applications for batteries that have fallen below 80 percent of original capacity.
+
+References
+
+[1] Smith, J. and Doe, A. (2020). A Study of Battery Degradation Patterns in Grid-Scale Storage. Journal of Energy Storage, 12(3), 45-67.
+[2] Lee, K. (2018). Grid-Scale Storage Economics: A Review of Recent Trends. Energy Policy Review, 8(1), 1-22.
+[3] Nguyen, T. and Patel, R. (2021). Thermal Management Strategies in Lithium-Ion Storage Systems. Applied Energy Letters, 5(2), 100-118.
+[4] Garcia, M. (2019). Second-Life Applications for Retired Electric Vehicle Batteries. Renewable Energy Systems Journal, 3(4), 211-230.
