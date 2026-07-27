@@ -63,3 +63,140 @@
 .advanced-tools-tab__audio-player audio {
   width: 100%;
 }
+
+/* ── Reviewer panel ─────────────────────────────────────────────────────────── */
+
+.reviewer-panel__review {
+  margin: 1rem 0;
+}
+
+.reviewer-panel__refs {
+  margin: 1.5rem 0;
+}
+
+.reviewer-panel__refs h4 {
+  margin-bottom: 0.25rem;
+}
+
+.reviewer-panel__ref-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.reviewer-panel__ref-card {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+}
+
+.reviewer-panel__ref-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.2rem;
+}
+
+.reviewer-panel__ref-title a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.reviewer-panel__ref-title a:hover {
+  text-decoration: underline;
+}
+
+.reviewer-panel__ref-meta {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #888);
+  margin-bottom: 0.2rem;
+}
+
+.reviewer-panel__ref-source {
+  font-style: italic;
+}
+
+.reviewer-panel__ref-abstract {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #888);
+  margin-top: 0.3rem;
+  line-height: 1.4;
+}
+
+.reviewer-panel__chat {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 1rem;
+}
+
+.reviewer-panel__chat h4 {
+  margin-bottom: 0.25rem;
+}
+
+.reviewer-panel__chat-history {
+  max-height: 360px;
+  overflow-y: auto;
+  margin: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.reviewer-panel__chat-msg {
+  padding: 0.55rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.reviewer-panel__chat-msg--user {
+  background: var(--color-accent, #3b82f6);
+  color: #fff;
+  align-self: flex-end;
+  max-width: 85%;
+}
+
+.reviewer-panel__chat-msg--assistant {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  align-self: flex-start;
+  max-width: 95%;
+}
+
+.reviewer-panel__chat-role {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  margin-bottom: 0.3rem;
+}
+
+.reviewer-panel__chat-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  margin-top: 0.5rem;
+}
+
+.reviewer-panel__chat-input {
+  flex: 1;
+  resize: vertical;
+  min-height: 3rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.reviewer-panel__chat-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}

@@ -34,6 +34,22 @@ export interface CitationTimelineRequest extends BaseAdvancedRequest {
 
 export type StudyComparisonRequest = BaseAdvancedRequest;
 
+export interface PaperReviewRequest extends BaseAdvancedRequest {
+  doc_id: string;
+}
+
+export interface ReviewChatItem {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ReviewChatRequest extends BaseAdvancedRequest {
+  doc_id: string;
+  review_text: string;
+  chat_history: ReviewChatItem[];
+  user_message: string;
+}
+
 export interface FaqItem {
   question: string;
   answer: string;
@@ -57,6 +73,15 @@ export interface CitationTimelineItem {
   url: string;
 }
 
+export interface ExternalReference {
+  title: string;
+  authors: string[];
+  year: number | null;
+  url: string;
+  source: string;
+  abstract_snippet: string;
+}
+
 export interface AdvancedResult {
   notebook_id: string;
   summary: string;
@@ -69,6 +94,9 @@ export interface AdvancedResult {
   knowledge_graph_dot: string;
   timeline: CitationTimelineItem[];
   study_comparison: string;
+  paper_review: string;
+  paper_review_refs: ExternalReference[];
+  reviewer_chat_response: string;
 }
 
 export interface AdvancedJobStatus {
