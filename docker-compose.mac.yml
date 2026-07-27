@@ -9,6 +9,7 @@
 #   1. Install Ollama: https://ollama.com/download (macOS .dmg)
 #   2. ollama pull llama3.2:3b
 #   3. ollama pull nomic-embed-text   (for Hybrid RAG)
+#   4. ollama pull llava:7b           (for figure captioning in PDFs)
 #   (Ollama starts automatically on login after installation)
 #
 # Starts one service:
@@ -44,6 +45,8 @@ services:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
       - NUM_CTX=${NUM_CTX:-32768}
+      # Vision model for figure captioning — pull with: ollama pull llava:7b
+      - VISION_MODEL=${VISION_MODEL:-llava:7b}
       - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
       - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
     volumes:
