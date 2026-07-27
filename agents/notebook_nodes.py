@@ -39,6 +39,7 @@ from config.settings import get_settings
 from tools.hybrid_store import get_or_create_store
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 from tools.text_parsing import extract_suggested_questions, format_page_label
+from tools.writing_style import ANTI_AI_TELL_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -407,9 +408,9 @@ def answer_node(state: NotebookState) -> Dict[str, Any]:
     context_block = _build_context_block(chunks)
     history_block = _format_history(state.get("conversation_history", []))
 
-    system = """You are a Research Notebook assistant. You answer questions using \
+    system = f"""You are a Research Notebook assistant. You answer questions using \
 ONLY the numbered source excerpts provided — never your own outside knowledge.
-
+{ANTI_AI_TELL_INSTRUCTION}
 STRICT RULES:
 1. Base every statement on the provided sources. Do NOT use prior knowledge.
 2. Cite each claim inline with the bracketed source number, e.g. "...reduces error [2]."
@@ -420,7 +421,7 @@ STRICT RULES:
 5. Quote short phrases verbatim when precision matters.
 6. Never cite a source number that was not provided.
 7. At the very end, append EXACTLY this JSON on its own line and nothing after it:
-   {"suggested_questions": ["Question 1?", "Question 2?", "Question 3?"]}
+   {{"suggested_questions": ["Question 1?", "Question 2?", "Question 3?"]}}
    The questions must be answerable from the same sources."""
 
     human = f"""SOURCE EXCERPTS:

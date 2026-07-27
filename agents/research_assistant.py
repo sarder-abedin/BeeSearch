@@ -33,6 +33,7 @@ from langchain_ollama import ChatOllama
 
 from config.settings import get_settings
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
+from tools.writing_style import ANTI_AI_TELL_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -271,7 +272,8 @@ def run_research_assistant(
             "- If the sources disagree, say so and cite both sides.\n"
             "- If the sources do not cover part of the question, say so plainly.\n"
             "- Do NOT write your own References, Sources, or Bibliography section — it is generated "
-            "separately from the numbers you cite."
+            "separately from the numbers you cite.\n"
+            + ANTI_AI_TELL_INSTRUCTION
         )
         human = f"QUESTION: {question}\n\nNUMBERED SOURCES:\n{context}"
     else:
@@ -279,7 +281,8 @@ def run_research_assistant(
             "You are a careful research assistant. No published sources could be retrieved for this "
             "question, so answer from general knowledge. Begin by stating clearly that the answer is "
             "not grounded in retrieved literature and should be verified. Do not fabricate citations "
-            "or a References section."
+            "or a References section.\n"
+            + ANTI_AI_TELL_INSTRUCTION
         )
         human = f"QUESTION: {question}"
 

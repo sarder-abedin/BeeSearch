@@ -45,7 +45,7 @@ services:
       retries: 15
       start_period: 60s
 
-  # ── Pull the default model on first start ───────────────────
+  # ── Pull the default LLM model on first start ──────────────
   # This service runs once, pulls the model, then exits.
   # If the model is already downloaded, the pull is a no-op.
   model-init:
@@ -60,6 +60,24 @@ services:
       - ollama_models:/root/.ollama
     entrypoint: ["ollama", "pull"]
     command: "${OLLAMA_MODEL:-llama3.2:3b}"
+    restart: "no"
+
+  # ── Pull the vision model for figure captioning ─────────────
+  # Enables automatic captioning of charts and diagrams in uploaded PDFs.
+  # llava:7b (~5 GB) is pulled once; subsequent starts are no-ops.
+  # To disable, set VISION_MODEL= in your .env file.
+  vision-init:
+    image: ollama/ollama:latest
+    container_name: beesearch-vision-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ollama_models:/root/.ollama
+    entrypoint: ["ollama", "pull"]
+    command: "${VISION_MODEL:-llava:7b}"
     restart: "no"
 
   # ── React/FastAPI web app ───────────────────────────────────
@@ -85,6 +103,8 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
       - NUM_CTX=${NUM_CTX:-32768}
+      # Vision model for figure captioning in uploaded PDFs (pulled by vision-init above)
+      - VISION_MODEL=${VISION_MODEL:-llava:7b}
       # Optional: Semantic Scholar API key for higher rate limits
       - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
       - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}

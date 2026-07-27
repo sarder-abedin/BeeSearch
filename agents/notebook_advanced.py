@@ -37,6 +37,7 @@ from config.settings import get_settings
 from tools.citation_network import get_paper_abstract
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 from tools.text_parsing import extract_references_section, format_page_label
+from tools.writing_style import ANTI_AI_TELL_INSTRUCTION, ANTI_AI_TELL_NARRATIVE_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -372,7 +373,8 @@ def generate_cross_document_summary(
         system = (
             "You are a research analyst. Summarize the key points, methodology, "
             "findings, and implications of the provided source. "
-            "Use clear markdown headings (##). Be thorough but concise."
+            "Use clear markdown headings (##). Be thorough but concise.\n"
+            + ANTI_AI_TELL_INSTRUCTION
         )
         human = f"SOURCE:\n{context}\n\nWrite a comprehensive summary in markdown."
     else:
@@ -385,7 +387,8 @@ def generate_cross_document_summary(
             "## Complementary Contributions\nHow the sources add to each other.\n"
             "## Contradictions & Gaps\nWhere sources disagree or leave open questions.\n"
             "## Key Takeaways\n3–5 bullet conclusions.\n\n"
-            "Attribute claims to specific sources by filename."
+            "Attribute claims to specific sources by filename.\n"
+            + ANTI_AI_TELL_INSTRUCTION
         )
         human = (
             f"SOURCES: {src_list}\n\n{context}\n\n"
@@ -505,7 +508,8 @@ def generate_literature_review(
         "- Never cite a number that was not provided in SOURCES.\n"
         "- Do NOT write your own References or Bibliography section — one is "
         "generated automatically from the excerpt numbers you cite.\n"
-        "Use formal academic tone."
+        "Use formal academic tone.\n"
+        + ANTI_AI_TELL_INSTRUCTION
     )
     human = (
         f"SOURCES: {source_names}\n\n{context}\n\n"
@@ -600,7 +604,8 @@ def generate_audio_summary(notebook_id: str, settings: dict) -> Tuple[str, str]:
         "- Approximately 280 to 320 words — about 2 minutes when read at a natural pace.\n"
         "- Start with an introduction (what this notebook covers).\n"
         "- End with a clear conclusion that ties everything together.\n"
-        "- Do not list source filenames — integrate the content naturally."
+        "- Do not list source filenames — integrate the content naturally.\n"
+        + ANTI_AI_TELL_NARRATIVE_INSTRUCTION
     )
     human = (
         f'Create an audio summary script for a notebook called "{nb_name}".\n\n'

@@ -39,6 +39,7 @@ from agents.story_state import StoryState
 from config.settings import get_settings
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 from tools.text_parsing import extract_suggested_questions, format_page_label
+from tools.writing_style import ANTI_AI_TELL_NARRATIVE_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -794,7 +795,7 @@ end with the suggested_questions JSON and nothing else."""
     )
     system = f"""You are a Research Partner — a gifted science communicator who excels at making
 complex research concepts genuinely understandable.{attribution_format}
-
+{ANTI_AI_TELL_NARRATIVE_INSTRUCTION}
 CORE RULES:
 1. Never use unexplained jargon relative to the target audience below — define any term that audience wouldn't already know.
 2. STYLE — {style_instruction}

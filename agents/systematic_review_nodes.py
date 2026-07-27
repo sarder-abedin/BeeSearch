@@ -30,6 +30,7 @@ from langchain_ollama import ChatOllama
 from agents.systematic_review_state import SystematicReviewState
 from config.settings import get_settings
 from tools.search_tools import AcademicSearcher
+from tools.writing_style import ANTI_AI_TELL_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -591,7 +592,7 @@ def synthesis_node(state: SystematicReviewState) -> Dict[str, Any]:
         llm,
         f"""You are writing the narrative synthesis section of a systematic review.
 Research question: {rq}
-
+{ANTI_AI_TELL_INSTRUCTION}
 Write a comprehensive narrative synthesis of the findings across the included papers.
 Be thorough and detailed — cover all major themes, convergences, contradictions, and evidence quality.
 Do not truncate your response; write until the synthesis is complete.

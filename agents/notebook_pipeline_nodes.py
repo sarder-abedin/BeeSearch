@@ -48,6 +48,7 @@ from agents.notebook_memory import NotebookMemory
 from agents.notebook_pipeline_state import NotebookPipelineState
 from config.settings import get_settings
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
+from tools.writing_style import ANTI_AI_TELL_INSTRUCTION, ANTI_AI_TELL_NARRATIVE_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -221,7 +222,8 @@ def summarization_node(state: NotebookPipelineState) -> Dict[str, Any]:
         system = (
             "You are a research analyst. Summarize this document in 3–4 paragraphs covering: "
             "main argument or purpose, methodology (if applicable), key findings or conclusions, "
-            "and implications. Be specific — refer to the document by name."
+            "and implications. Be specific — refer to the document by name.\n"
+            + ANTI_AI_TELL_INSTRUCTION
         )
         try:
             per_doc_summaries[name] = _invoke(llm, system, f"Document: {name}\n\n{text}")
@@ -253,7 +255,8 @@ def summarization_node(state: NotebookPipelineState) -> Dict[str, Any]:
             "**Complementary Contributions** — how sources build on each other\n"
             "**Contradictions / Tensions** — where sources diverge or conflict\n"
             "**Key Takeaways** — the most important insights across all sources\n\n"
-            "Cite source filenames when making specific claims."
+            "Cite source filenames when making specific claims.\n"
+            + ANTI_AI_TELL_INSTRUCTION
         )
         try:
             cross_summary = _invoke(llm, system, f"Sources:\n\n{context}")
@@ -597,7 +600,8 @@ def study_guide_node(state: NotebookPipelineState) -> Dict[str, Any]:
         "Write 6–8 questions with detailed answers grounded in the sources.\n"
         "Format each as:\n**Q:** ...\n**A:** ...\n\n"
         "## Quick Summary\n"
-        "2–3 paragraphs synthesising the most important insights across all sources."
+        "2–3 paragraphs synthesising the most important insights across all sources.\n"
+        + ANTI_AI_TELL_INSTRUCTION
     )
 
     study_guide = ""
@@ -676,7 +680,8 @@ def podcast_script_node(state: NotebookPipelineState) -> Dict[str, Any]:
         "• Cover: what these sources are about, the key findings, and why it matters\n"
         "• Open with a compelling hook from HOST that immediately draws the listener in\n"
         "• Close with HOST naming 2–3 concrete takeaways and signing off warmly\n"
-        "• Pure dialogue only — no stage directions, no music cues, no parentheticals"
+        "• Pure dialogue only — no stage directions, no music cues, no parentheticals\n"
+        + ANTI_AI_TELL_NARRATIVE_INSTRUCTION
     )
     human = (
         f"Create a podcast episode based on these research sources: {source_list}\n\n"
