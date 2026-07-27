@@ -446,6 +446,7 @@ Available from CLI flags and UI tab buttons.
 | Source comparison | Side-by-side Markdown table |
 | Citation timeline | Cited works by year, parsed from each source's bibliography, with one-line gists (optional Semantic Scholar abstract enrichment) |
 | Study comparison | Research method/sample/findings table |
+| **Reviewer** | IEEE-style peer review of one user-selected document. Two-LLM-call pipeline: (1) generate structured review (Summary / Strengths / Weaknesses / Detailed Critique / Recommendation); (2) extract 3 search queries from the critique, fan out to arXiv + Semantic Scholar, return up to 9 supporting papers. Detailed Critique explicitly evaluates mathematical correctness (equations, derivations, proofs), logical validity (circular reasoning, invalid inference, internal contradictions), misleading/incorrect claims (cherry-picking, overgeneralisation), and assumption justification. Recommendation is one of Accept / Minor Revision / Major Revision / Reject. Follow-up chat (`reviewer_chat`) is stateless — client sends full `chat_history` on each call, backed by a background job like all other advanced tools. Uses `ANTI_AI_TELL_REVIEWER_INSTRUCTION` (Wikipedia Signs of AI Writing variant). |
 
 ---
 

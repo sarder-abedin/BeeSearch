@@ -130,6 +130,7 @@ Click **Research Notebook** on the home page. Create a notebook, upload your sou
 | **Pipeline** | Runs a 7-step automated analysis (summary → knowledge graph → study guide → podcast script, etc.) |
 | **Research Report** | Structured report grounded in your documents, optionally enriched with web or arXiv sources |
 | **Explain** | Plain-language explanations of your sources; automatically adapts if you rephrase or say you don't understand |
+| **Reviewer** | IEEE-style peer review of a selected paper: Summary, Strengths, Weaknesses, detailed critique of Novelty, Technical Soundness (mathematical correctness, logical validity, misleading claims), Experiments, Related Work, Writing, and a final Recommendation (Accept / Minor / Major / Reject). Automatically searches arXiv and Semantic Scholar for supporting literature. Includes a follow-up chat for discussing critique points. |
 
 ### Mode 3 — AI Research Assistant
 
