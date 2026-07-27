@@ -477,24 +477,44 @@ _STYLE_DESCRIPTIONS = {
     "simple": (
         "Explain the concept as simply as possible. Use everyday language. "
         "Assume the reader knows nothing about this topic. Build up from basic "
-        "first principles. Use short sentences."
+        "first principles. Use short sentences. "
+        "Include at least two concrete examples drawn from different domains: "
+        "one from an everyday familiar context and one that is hypothetical or "
+        "shows an edge case — so the reader sees the concept from more than one angle."
     ),
     "analogy": (
-        "Use one extended analogy or metaphor throughout your entire response. "
-        "Pick something familiar (cooking, sports, music, architecture) and "
-        "consistently map every aspect of the concept onto it. Don't mix analogies."
+        "Build your explanation around an extended primary analogy from one familiar "
+        "domain (cooking, travel, architecture, sports, music — pick one and use it "
+        "consistently). Once you have mapped the concept fully through that analogy, "
+        "close with a short second analogy from a completely different domain. "
+        "Two different mappings of the same idea make it stick far better than one."
     ),
     "walkthrough": (
         "Give a numbered step-by-step walkthrough. Walk the reader through the "
         "concept as if guiding them through a process in real time. "
-        "Number each step clearly. Show what happens at each stage."
+        "Number each step clearly. At each key step, include a brief concrete "
+        "mini-example showing what that step looks like in practice — "
+        "vary the example type (a real-world scenario at one step, a worked "
+        "numerical case at another, a hypothetical 'what if' at another)."
     ),
     "debate": (
         "Present both the strongest arguments FOR and AGAINST this concept, "
         "approach, or claim. Structure it as a clear for-and-against debate. "
+        "For each side, provide a concrete illustrative case or example — "
+        "use different example types on each side (e.g. a real historical instance "
+        "for one, a hypothetical scenario for the other). "
         "Then give your balanced assessment."
     ),
 }
+
+_EXAMPLE_VARIETY_INSTRUCTION = (
+    "Draw on multiple example types within your response. The available types are: "
+    "real-world scenario (something that actually happens), hypothetical thought "
+    "experiment (a 'what if'), worked numerical case (concrete numbers or quantities), "
+    "historical instance (a known case from the past), counter-example (what the "
+    "concept is NOT, to sharpen the boundary). Use at least two different types — "
+    "never repeat the same example format twice in a row."
+)
 
 _LEVEL_DESCRIPTIONS = {
     "novice": (
@@ -781,12 +801,12 @@ end with the suggested_questions JSON and nothing else."""
     repeat_instruction = ""
     if state.get("is_repeat_clarification"):
         repeat_instruction = (
-            "\n10. This question repeats or re-asks for clarification on something "
+            "\n11. This question repeats or re-asks for clarification on something "
             "already discussed — the previous explanation did not land. Do NOT just "
-            "reword the same explanation. Use a genuinely different angle (a "
-            "different analogy, a concrete worked example, or a different entry "
-            "point into the idea) and briefly acknowledge you're taking a different "
-            "approach before diving in."
+            "reword the same explanation. Lead with a categorically different example "
+            "type from the one used before (e.g. if the previous answer used an analogy, "
+            "open this one with a worked numerical case or a historical instance instead). "
+            "Briefly acknowledge you're taking a fresh approach, then dive straight in."
         )
 
     online_note = (
@@ -799,15 +819,16 @@ complex research concepts genuinely understandable.{attribution_format}
 CORE RULES:
 1. Never use unexplained jargon relative to the target audience below — define any term that audience wouldn't already know.
 2. STYLE — {style_instruction}
-3. AUDIENCE LEVEL — {level_instruction}
-4. {"Follow the per-section attribution format above." if online_results else "Write 3–6 paragraphs only — no lengthy essays. Be concise and memorable."}
-5. Build on the previous conversation — reference and connect to what was discussed before.
-6. {"Each section should be written in the chosen style and at the chosen audience level." if online_results else ("Cite document excerpts inline with their [n] number whenever you draw on one; never invent a number not listed in DOCUMENT CONTEXT. Do not write your own References section — one is generated automatically from whichever numbers you cite." if doc_excerpts else "Quote short passages from the provided document context when they are directly relevant.")}
-7. At the very end of your response, append EXACTLY this JSON (no other text after it):
+3. EXAMPLES — {_EXAMPLE_VARIETY_INSTRUCTION}
+4. AUDIENCE LEVEL — {level_instruction}
+5. {"Follow the per-section attribution format above." if online_results else "Write 3–6 paragraphs only — no lengthy essays. Be concise and memorable."}
+6. Build on the previous conversation — reference and connect to what was discussed before.
+7. {"Each section should be written in the chosen style and at the chosen audience level." if online_results else ("Cite document excerpts inline with their [n] number whenever you draw on one; never invent a number not listed in DOCUMENT CONTEXT. Do not write your own References section — one is generated automatically from whichever numbers you cite." if doc_excerpts else "Quote short passages from the provided document context when they are directly relevant.")}
+8. At the very end of your response, append EXACTLY this JSON (no other text after it):
    {{"suggested_questions": ["Question 1?", "Question 2?", "Question 3?"]}}
    The questions should be natural follow-ups a curious reader would want to ask next.
-8. Do NOT start your response with "Certainly!" or "Of course!" or similar filler phrases.
-9. The topic being explored is: {topic}{_clarification_context(state)}{repeat_instruction}"""
+9. Do NOT start your response with "Certainly!" or "Of course!" or similar filler phrases.
+10. The topic being explored is: {topic}{_clarification_context(state)}{repeat_instruction}"""
 
     human = f"""USER QUESTION: {state.get('user_message', '')}
 {history_block}{doc_block}{online_block}{covered_block}

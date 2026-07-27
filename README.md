@@ -173,10 +173,10 @@ LARGE_DOC_PAGE_THRESHOLD=50
 TEMPERATURE_LEVEL=focused
 
 # Vision model for figure captioning in uploaded PDFs (optional)
-# Set to an Ollama vision model to caption charts and diagrams automatically.
-# Pull first: ollama pull llava:7b   |   then set: VISION_MODEL=llava:7b
-# Leave blank (default) to skip figure extraction entirely.
-VISION_MODEL=
+# Docker: llava:7b is pulled automatically on first start — no manual steps.
+# Local install: pull first (ollama pull llava:7b) then set the value below.
+# Leave empty to skip figure extraction entirely (no errors, no overhead).
+VISION_MODEL=llava:7b
 ```
 
 Optional settings for higher API rate limits (leave blank if you don't have these):

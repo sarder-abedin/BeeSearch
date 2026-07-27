@@ -189,6 +189,24 @@ Focused / Balanced / Creative). It's called from the `_llm`/`_make_llm` factorie
 faithfulness checks) are always forced to `0.0` regardless of level — this is
 deliberate, not a bug.
 
+### Anti-AI writing style enforcement
+
+`tools/writing_style.py` exports two constants injected into every prose-generating LLM
+prompt across all agents:
+
+- `ANTI_AI_TELL_INSTRUCTION` — strict variant (Chat, Summaries, Literature Review, SR
+  synthesis, study guide, Research Report). Bans generic AI vocabulary, formulaic openers,
+  and lazy paragraph starters.
+- `ANTI_AI_TELL_NARRATIVE_INSTRUCTION` — softer variant for audio/podcast content that
+  allows natural spoken transitions (First, Then, Finally) while still banning the
+  forbidden vocabulary.
+
+Both are injected via direct `from tools.writing_style import ...` imports (not through
+`tools/__init__.py`'s lazy `__getattr__`) and are also re-exported in `_EXPORTS` for any
+code that imports via the `tools` namespace. Do **not** inject these into JSON-output
+prompts (FAQ, mind map, knowledge graph, PICO extraction, RoB, GRADE, screening) — the
+style rules corrupt structured output parsing.
+
 ### Citation grounding
 
 Notebook Chat (`notebook_nodes.py::_build_context_block`), Literature Review

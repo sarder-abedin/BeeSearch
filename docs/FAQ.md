@@ -144,11 +144,13 @@ A: Yes. Tables and figures are handled at different levels:
 
 - **Tables** — when Docling parses a PDF, it extracts each table both as pipe-delimited plain text (used for keyword search and embeddings) and as a Markdown table (used when the table is retrieved as context). When a table chunk reaches the LLM in Chat, Literature Review, or Explain, it is presented in full Markdown format with a `[TABLE]` label so the model can reason about column structure, compare rows, and cite the source accurately.
 
-- **Figures** — automatic figure captioning requires a vision model. Set `VISION_MODEL` in your `.env` to an Ollama multimodal model (e.g. `VISION_MODEL=llava:7b`), then pull it:
+- **Figures** — automatic figure captioning requires an Ollama vision model. **Docker users:** `llava:7b` is pulled automatically on first `docker compose up --build` via the `vision-init` service and `VISION_MODEL=llava:7b` is pre-set in the container — no manual steps needed. **Local (non-Docker) users:** pull the model and set it in `.env`:
   ```bash
   ollama pull llava:7b
+  # then in .env:
+  VISION_MODEL=llava:7b
   ```
-  On the next document upload, BeeSearch calls the vision model once per figure to generate a concise caption (what type of figure, what it shows, visible labels and values). Captions are indexed alongside text chunks, so you can ask about a figure in Chat and get a cited answer. When the vision model is not set (the default), figures are silently skipped — no errors, no overhead.
+  On the next document upload, BeeSearch calls the vision model once per figure to generate a concise caption (what type of figure, what it shows, visible labels and values). Captions are indexed alongside text chunks, so you can ask about a figure in Chat and get a cited answer. When `VISION_MODEL` is empty, figures are silently skipped — no errors, no overhead.
 
   Recommended models (best quality → lightest):
   | Model | Size | Notes |
@@ -185,6 +187,11 @@ A: Yes — BeeSearch ships with optional Langfuse integration that instruments e
    LANGFUSE_HOST=http://localhost:3000
    ```
 The dashboard shows every prompt, completion, latency, and token count for each pipeline run. Alternatively, set `LANGFUSE_HOST=https://cloud.langfuse.com` to use Langfuse Cloud instead of self-hosting.
+
+---
+
+**Q: Does BeeSearch write in a natural style, or does it sound like a generic AI?**
+A: BeeSearch actively suppresses the writing patterns most commonly associated with AI-generated text. Every prose-generating prompt (Chat, Summaries, Literature Review, Systematic Review synthesis, Explain, Research Report, study guide, podcast script) injects a style instruction that bans common AI vocabulary ("delve", "tapestry", "groundbreaking", "robust", "comprehensive", "multifaceted", "leveraging", etc.) and forbids formulaic openers ("Certainly!", "Notably,", "It is worth noting that") and lazy paragraph starters ("In conclusion,", "Furthermore,", "Moreover,"). Structured-output nodes that produce JSON (FAQ, mind map, knowledge graph) are deliberately excluded — injecting style rules into those prompts would corrupt the output format. Audio and podcast scripts use a lighter variant that permits natural spoken transitions (First, Then, Finally) while still banning the forbidden vocabulary.
 
 ---
 
