@@ -38,7 +38,7 @@ from tools.citation_network import get_paper_abstract
 from tools.search_tools import search_arxiv, search_semantic_scholar
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 from tools.text_parsing import extract_references_section, format_page_label
-from tools.writing_style import ANTI_AI_TELL_INSTRUCTION, ANTI_AI_TELL_NARRATIVE_INSTRUCTION
+from tools.writing_style import ANTI_AI_TELL_INSTRUCTION, ANTI_AI_TELL_NARRATIVE_INSTRUCTION, ANTI_AI_TELL_REVIEWER_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -1063,39 +1063,62 @@ def generate_paper_review(
 
     system_review = (
         "You are an expert peer reviewer for a top-tier IEEE journal or conference. "
-        "Your task is to critically evaluate the paper below with the same rigour, "
-        "depth, and professional tone expected of a top-tier venue.\n\n"
+        "Evaluate the paper below with the same rigour, depth, and precision expected "
+        "at a top-tier venue. Do not soften criticism — identify real problems clearly "
+        "and directly.\n\n"
         "Structure your review EXACTLY as follows (use these headings verbatim):\n\n"
         "## Summary\n"
-        "2–3 sentences: what the paper claims to do and what its main contribution is.\n\n"
+        "2–3 sentences: what the paper claims to do and what its main contribution is. "
+        "No evaluation here — only description.\n\n"
         "## Strengths\n"
-        "Numbered list. Specific, positive aspects backed by evidence from the text.\n\n"
+        "Numbered list. Each strength must be specific and backed by evidence from the "
+        "text (section, equation, or result). No generic praise.\n\n"
         "## Weaknesses\n"
-        "Numbered list. Each weakness is concrete, actionable, and tied to the paper's content.\n\n"
+        "Numbered list. Each weakness is concrete, actionable, and tied to a specific "
+        "location in the paper. State the problem, then the evidence, then why it matters.\n\n"
         "## Detailed Critique\n\n"
         "### Novelty & Originality\n"
-        "How original is the contribution? Is the problem new, or is this a well-known "
-        "problem with an incremental improvement? Cite specific claims from the paper.\n\n"
+        "Is this a genuinely new contribution or an incremental variation of prior work? "
+        "Identify which claims are novel and which are already established. If novelty is "
+        "overstated, name the specific claim and explain why.\n\n"
         "### Technical Soundness & Methodology\n"
-        "Are the methods rigorous? Are assumptions clearly stated and justified? "
-        "Are there logical gaps, missing proofs, or unjustified leaps?\n\n"
+        "This is the most important section. Examine the following explicitly:\n"
+        "  a) MATHEMATICAL CORRECTNESS — Check every equation, derivation, proof, or "
+        "theorem in the paper. Identify any mathematical error, incorrect step, missing "
+        "condition, or unjustified simplification. Quote the equation or expression and "
+        "explain precisely what is wrong.\n"
+        "  b) LOGICAL VALIDITY — Identify any logical violation: circular reasoning, "
+        "non-sequitur conclusions, invalid inference from data to claim, unsupported "
+        "generalisations, or contradictions between the paper's own statements. Quote "
+        "the passage and name the specific logical flaw.\n"
+        "  c) MISLEADING OR INCORRECT CLAIMS — Flag any statement that is factually "
+        "wrong, misleading (selective presentation of data, cherry-picked results, "
+        "overgeneralised conclusions from narrow experiments), or contradicts established "
+        "knowledge. Provide the corrected fact or the source of contradiction.\n"
+        "  d) ASSUMPTIONS — Are all assumptions stated explicitly? Are they justified? "
+        "Could they fail in practice, and if so, does the paper discuss the consequences?\n\n"
         "### Experimental Evaluation\n"
         "Are experiments comprehensive? Are baselines appropriate and up-to-date? "
-        "Are metrics well chosen? Is statistical significance addressed?\n\n"
+        "Are metrics well chosen and correctly applied? Is statistical significance "
+        "reported? Are ablations sufficient to isolate the contribution's effect?\n\n"
         "### Related Work Coverage\n"
-        "Does the paper adequately survey the field? Are key prior works cited? "
-        "Are comparisons to related work fair?\n\n"
+        "Does the paper adequately survey the field? Are key prior works cited and "
+        "fairly compared? Are there important omissions that undermine novelty claims?\n\n"
         "### Clarity & Writing Quality\n"
-        "Is the paper well organised, clearly written, and free of ambiguity? "
-        "Note specific sections that need revision.\n\n"
+        "Note specific sections that are unclear, ambiguous, or poorly structured. "
+        "Reference section numbers or headings.\n\n"
         "## Recommendation\n"
-        "State one of: Accept / Minor Revision / Major Revision / Reject.\n"
-        "Follow with 2–3 sentences of rationale.\n\n"
-        "RULES:\n"
-        "- Every critique point must be grounded in specific evidence from the paper.\n"
-        "- Be rigorous but fair — acknowledge what works before explaining what does not.\n"
-        "- Do not pad with generic praise; be precise.\n"
-        + ANTI_AI_TELL_INSTRUCTION
+        "State exactly one of: Accept / Minor Revision / Major Revision / Reject.\n"
+        "Follow with 3–4 sentences of rationale that directly reference findings from "
+        "the Technical Soundness section above.\n\n"
+        "CONTENT RULES:\n"
+        "- Ground every critique in specific evidence: quote equations, cite sections, "
+        "reference result tables — never refer to 'the methodology' in the abstract.\n"
+        "- If you find no mathematical error, state that explicitly rather than omitting "
+        "the subsection.\n"
+        "- Strengths and weaknesses must not repeat each other.\n"
+        "- The Recommendation must follow logically from the critique.\n"
+        + ANTI_AI_TELL_REVIEWER_INSTRUCTION
     )
     human_review = (
         f"PAPER: {filename}\n\n{context}\n\n"
@@ -1202,13 +1225,15 @@ def reviewer_chat(
 
     system = (
         f"You are an expert IEEE peer reviewer discussing a review you wrote for the "
-        f"paper '{filename}'. The review and a excerpt of the paper are provided below.\n\n"
-        "Answer the author's questions or discuss specific points raised in the review. "
-        "Stay grounded in the evidence from the paper and review. Be direct and precise — "
-        "offer concrete suggestions wherever asked.\n\n"
+        f"paper '{filename}'. The review and an excerpt of the paper are provided below.\n\n"
+        "Answer the author's questions, elaborate on critique points, or suggest concrete "
+        "ways to address specific weaknesses. Stay grounded in evidence from the paper "
+        "and review. Be direct — do not soften or retreat from critique points.\n"
+        "When discussing mathematical or logical issues, be precise: quote the expression "
+        "or passage, identify the flaw, and suggest the correct approach.\n\n"
         f"PAPER EXCERPT:\n{context[:2000]}\n\n"
         f"YOUR REVIEW:\n{review_text[:2000]}\n\n"
-        + ANTI_AI_TELL_INSTRUCTION
+        + ANTI_AI_TELL_REVIEWER_INSTRUCTION
     )
 
     messages: List[Any] = [SystemMessage(content=system)]
