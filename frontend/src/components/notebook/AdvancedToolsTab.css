@@ -66,6 +66,22 @@
 
 /* ── Reviewer panel ─────────────────────────────────────────────────────────── */
 
+.reviewer-panel__saved-notice {
+  font-style: italic;
+  margin-bottom: 0.5rem;
+}
+
+.reviewer-panel__review-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.reviewer-panel__download-btn {
+  font-size: 0.82rem;
+  padding: 0.3rem 0.75rem;
+}
+
 .reviewer-panel__review {
   margin: 1rem 0;
 }

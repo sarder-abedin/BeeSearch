@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, Tuple
 
+from agents.notebook_memory import NotebookMemory
 from agents.notebook_advanced import (
     compare_sources,
     extract_citation_timeline,
@@ -178,6 +179,16 @@ def run_paper_review(req: PaperReviewRequest, stream_callback: StreamCallback) -
     review, refs, error = generate_paper_review(req.notebook_id, req.doc_id, build_settings(req))
     if error:
         raise RuntimeError(error)
+    if review:
+        mem = NotebookMemory()
+        nb = mem.load(req.notebook_id)
+        doc_filename = ""
+        if nb:
+            doc_filename = next(
+                (s.get("filename", "") for s in nb.get("sources", []) if s.get("doc_id") == req.doc_id),
+                "",
+            )
+        mem.save_review(req.notebook_id, req.doc_id, doc_filename, review, refs)
     return {"notebook_id": req.notebook_id, "paper_review": review, "paper_review_refs": refs}
 
 
