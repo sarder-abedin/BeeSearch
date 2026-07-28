@@ -191,20 +191,27 @@ The dashboard shows every prompt, completion, latency, and token count for each 
 ---
 
 **Q: What is the Reviewer tab in the Research Notebook?**
-A: The Reviewer is an IEEE-style peer review tool for uploaded papers (Mode 2 → Advanced Tools → Reviewer tab). Select one paper from a dropdown; BeeSearch generates a structured critique with these sections:
+A: The Reviewer is an IEEE-style peer review tool for uploaded papers (Mode 2 → Advanced Tools → Reviewer tab). Select one paper from a dropdown; BeeSearch generates a structured critique grounded in **both** the uploaded document and external scientific literature from arXiv and Semantic Scholar.
+
+**How the pipeline works:**
+1. BeeSearch scans the paper and extracts 3 search queries targeting the paper's core topic, methodology, and claimed novelty.
+2. It searches arXiv and Semantic Scholar and retrieves up to 9 relevant papers, labelled **[E1]–[E9]**.
+3. It generates the full review with both the paper text and the external paper abstracts available to the model, which is instructed to cite **[En]** inline wherever external evidence supports or contradicts a critique point — e.g. citing a missing baseline as [E2], identifying where a novelty claim overlaps with prior work as [E3], or citing a reference that states the correct mathematical form when an error is found.
+
+The review sections are:
 
 - **Summary** — what the paper claims to do (description only, no evaluation).
 - **Strengths** — specific positives backed by evidence from the text.
-- **Weaknesses** — concrete, actionable problems tied to specific locations in the paper.
+- **Weaknesses** — concrete, actionable problems tied to specific locations in the paper, with external citations [En] where relevant.
 - **Detailed Critique** — four mandatory sub-dimensions:
-  - *Novelty & Originality* — whether the contribution is genuinely new or incremental.
-  - *Technical Soundness & Methodology* — this is the most rigorous section: it explicitly checks (a) **mathematical correctness** (equations, derivations, proofs — errors are quoted and described precisely), (b) **logical validity** (circular reasoning, non-sequitur conclusions, invalid inferences, internal contradictions), (c) **misleading or incorrect claims** (cherry-picked results, overgeneralised conclusions, factually wrong statements), and (d) **assumptions** (whether they are stated, justified, and their failure consequences discussed). If no mathematical error is found, that is stated explicitly rather than omitting the sub-section.
-  - *Experimental Evaluation* — baselines, metrics, ablations, statistical significance.
-  - *Related Work Coverage* — survey completeness and fairness of comparisons.
+  - *Novelty & Originality* — whether the contribution is genuinely new or incremental; prior-work overlaps are cited as [En].
+  - *Technical Soundness & Methodology* — the most rigorous section: (a) **mathematical correctness** (equations, derivations, proofs — errors are quoted and explained precisely; the correct form is cited from external references [En] if found), (b) **logical validity** (circular reasoning, non-sequitur conclusions, invalid inferences, internal contradictions), (c) **misleading or incorrect claims** (cherry-picked results, overgeneralised conclusions, factually wrong statements — contradicting references cited as [En]), (d) **assumptions** (stated, justified, failure consequences — external evidence cited [En] where relevant). If no mathematical error is found, that is stated explicitly rather than omitting the sub-section.
+  - *Experimental Evaluation* — baselines, metrics, ablations, statistical significance; missing standard baselines cited from external references [En].
+  - *Related Work Coverage* — survey completeness and fairness of comparisons; missing key works cited as [En].
   - *Clarity & Writing Quality* — specific sections that need revision.
-- **Recommendation** — one of Accept / Minor Revision / Major Revision / Reject, with rationale tied to the Technical Soundness findings.
+- **Recommendation** — one of Accept / Minor Revision / Major Revision / Reject, with rationale tied to the Technical Soundness findings and citing at least one external reference [En] where relevant.
 
-After the review is displayed, BeeSearch automatically searches arXiv and Semantic Scholar using 3 queries extracted from the critique, and shows up to 9 supporting papers as a "Supporting Literature" card list. A follow-up chat thread below the review lets you discuss specific critique points or ask for concrete suggestions to address weaknesses.
+The **External References** card list below the review shows all [E1]–[E9] papers with their labels so you can cross-reference inline citations in the review text. A follow-up chat thread lets you discuss specific critique points or request concrete suggestions; the chat has access to the same [En] papers and can elaborate on why a particular external result matters.
 
 ---
 

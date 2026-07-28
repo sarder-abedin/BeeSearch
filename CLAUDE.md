@@ -210,6 +210,17 @@ prompts across all agents:
   uniform paragraph length. Requires specific evidence citation (equation numbers,
   section headings, quoted passages) — never abstract references to "the methodology".
 
+**Reviewer pipeline** — `generate_paper_review` runs in three steps so that both the
+uploaded paper and external literature ground the critique: (1) extract 3 search queries
+from the document (topic, methodology, claimed novelty); (2) search arXiv + Semantic
+Scholar, assign `[E1]`–`[E9]` reference numbers; (3) generate the full review with both
+the paper text and external abstracts in context — the LLM is instructed to cite `[En]`
+inline wherever external evidence supports or contradicts a critique point (missing
+baselines, novelty overlaps, mathematical errors, unjustified assumptions, incorrect
+claims). `_build_external_ref_block()` formats the numbered block for the prompt.
+`reviewer_chat` receives the same `external_refs` list so the follow-up chat can
+reference the same papers by `[En]` label.
+
 All three are injected via direct `from tools.writing_style import ...` imports (not
 through `tools/__init__.py`'s lazy `__getattr__`) and are also re-exported in `_EXPORTS`
 for any code that imports via the `tools` namespace. Do **not** inject these into

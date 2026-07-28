@@ -223,7 +223,7 @@ BeeSearch calls the vision model once per figure at upload time to generate a ca
    - **Citation Timeline** — cited works by year, with one-line gists (optional Semantic Scholar abstract enrichment)
    - **Study Table** — structured research comparison
    - **Pipeline** — run all 7 agents in sequence
-   - **Reviewer** — IEEE-style peer review of one selected paper (pick from dropdown), with follow-up chat
+   - **Reviewer** — IEEE-style peer review of one selected paper (pick from dropdown); critique is grounded in the document and backed by external literature (arXiv + Semantic Scholar, cited as [E1]–[E9] inline), with follow-up chat
 
 ### CLI walkthrough
 
