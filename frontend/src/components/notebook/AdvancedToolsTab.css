@@ -98,6 +98,18 @@
   font-weight: 600;
   font-size: 0.9rem;
   margin-bottom: 0.2rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.reviewer-panel__ref-label {
+  font-family: monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .reviewer-panel__ref-title a {
