@@ -39,21 +39,35 @@ def get_langfuse_callbacks() -> list[Any]:
 
     global _handler
     if _handler is None:
-        # SDK v2: langfuse.callback  |  SDK v3: langfuse.langchain
+        # SDK v2 (langfuse.callback): accepts public_key/secret_key/host as kwargs.
         try:
             from langfuse.callback import CallbackHandler  # type: ignore[import]
+            _handler = CallbackHandler(
+                public_key=cfg.langfuse_public_key,
+                secret_key=cfg.langfuse_secret_key,
+                host=cfg.langfuse_host,
+            )
+            return [_handler]
         except ImportError:
-            try:
-                from langfuse.langchain import CallbackHandler  # type: ignore[import]
-            except ImportError:
-                return []
+            pass  # fall through to SDK v3 path
+        except Exception:
+            return []
 
-        _handler = CallbackHandler(
-            public_key=cfg.langfuse_public_key,
-            secret_key=cfg.langfuse_secret_key,
-            host=cfg.langfuse_host,
-        )
-    return [_handler]
+        # SDK v3 (langfuse.langchain): reads credentials from env vars only.
+        # Propagate the settings values into os.environ so the handler picks
+        # them up even when pydantic-settings reads .env without touching os.environ.
+        try:
+            import os
+            from langfuse.langchain import CallbackHandler  # type: ignore[import]
+            os.environ.setdefault("LANGFUSE_PUBLIC_KEY", cfg.langfuse_public_key)
+            os.environ.setdefault("LANGFUSE_SECRET_KEY", cfg.langfuse_secret_key)
+            if cfg.langfuse_host:
+                os.environ.setdefault("LANGFUSE_HOST", cfg.langfuse_host)
+            _handler = CallbackHandler()
+        except Exception:
+            return []
+
+    return [_handler] if _handler is not None else []
 
 
 def flush_langfuse() -> None:
