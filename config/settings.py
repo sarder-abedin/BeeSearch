@@ -100,8 +100,8 @@ class Settings(BaseSettings):
     vision_model: str = Field("", alias="VISION_MODEL")
 
     # ── Langfuse Observability (optional) ────────────────────
-    langfuse_public_key: str = Field("", alias="LANGFUSE_PUBLIC_KEY")
-    langfuse_secret_key: str = Field("", alias="LANGFUSE_SECRET_KEY")
+    langfuse_public_key: str = Field("REDACTED-LEAKED-CREDENTIAL", alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: str = Field("REDACTED-LEAKED-CREDENTIAL", alias="LANGFUSE_SECRET_KEY")
     langfuse_host: str = Field("http://localhost:3000", alias="LANGFUSE_HOST")
 
     class Config:
