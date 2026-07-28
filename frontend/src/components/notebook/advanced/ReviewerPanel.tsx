@@ -112,9 +112,15 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
     <div className="advanced-tools-tab__panel">
       <h3>Reviewer</h3>
       <p>
-        Select a paper and generate a critical IEEE-style peer review. The critique is grounded
-        in the uploaded document <em>and</em> backed by evidence from arXiv and Semantic Scholar —
-        external papers are cited inline as [E1], [E2], … in the review text.
+        Select a paper and generate a critical IEEE-style peer review grounded in the uploaded
+        document <em>and</em> backed by evidence from arXiv and Semantic Scholar — external papers
+        are cited inline as [E1], [E2], … in the review text.
+      </p>
+      <p className="sr-caption">
+        After the review is generated, use the <strong>Critique Validation</strong> dialogue below
+        to act as the reviewer yourself. Propose critique points and the assistant will check
+        whether each is accurate, evidence-based, and justified — confirming what holds up and
+        pushing back on anything unsupported or overstated.
       </p>
 
       <div className="sr-field">
@@ -205,10 +211,12 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
           )}
 
           <div className="reviewer-panel__chat">
-            <h4>Follow-up Discussion</h4>
+            <h4>Critique Validation</h4>
             <p className="sr-caption">
-              Ask questions about specific critique points or request suggestions to address
-              weaknesses.
+              You are the reviewer. Propose your critique points about this paper and the
+              assistant will validate each one — confirming what is accurate and well-grounded,
+              challenging what is unsupported, and helping you sharpen weak points into precise,
+              evidence-based reviewer comments.
             </p>
 
             {chatHistory.length > 0 && (
@@ -223,15 +231,15 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
                     }
                   >
                     <span className="reviewer-panel__chat-role">
-                      {msg.role === "user" ? "You" : "Reviewer"}
+                      {msg.role === "user" ? "You (Reviewer)" : "Validator"}
                     </span>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   </div>
                 ))}
                 {chatLoading && (
                   <div className="reviewer-panel__chat-msg reviewer-panel__chat-msg--assistant">
-                    <span className="reviewer-panel__chat-role">Reviewer</span>
-                    <p className="sr-spinner-text">Responding…</p>
+                    <span className="reviewer-panel__chat-role">Validator</span>
+                    <p className="sr-spinner-text">Validating…</p>
                   </div>
                 )}
               </div>
@@ -242,7 +250,7 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
             <div className="reviewer-panel__chat-input-row">
               <textarea
                 className="reviewer-panel__chat-input"
-                placeholder="Ask about a critique point or request suggestions…"
+                placeholder="Propose a critique point — the validator will check whether it's accurate and evidence-based…"
                 rows={3}
                 value={chatInput}
                 disabled={chatLoading}
