@@ -583,7 +583,7 @@ export default function NotebookPage() {
               )}
 
               {activeTopTab === "advanced" && (
-                <AdvancedToolsTab notebookId={activeId} sources={detail.sources} savedReviews={detail.saved_reviews} />
+                <AdvancedToolsTab notebookId={activeId} sources={detail.sources} savedReviews={detail.saved_reviews} reviewerChats={detail.reviewer_chats} />
               )}
 
               {activeTopTab === "explain" && (
