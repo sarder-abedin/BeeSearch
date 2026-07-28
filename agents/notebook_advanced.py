@@ -27,7 +27,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
@@ -35,9 +35,10 @@ from langchain_ollama import ChatOllama
 from agents.notebook_memory import NotebookMemory
 from config.settings import get_settings
 from tools.citation_network import get_paper_abstract
+from tools.search_tools import search_arxiv, search_semantic_scholar
 from tools.temperature_levels import DEFAULT_TEMPERATURE_LEVEL, apply_temperature_level
 from tools.text_parsing import extract_references_section, format_page_label
-from tools.writing_style import ANTI_AI_TELL_INSTRUCTION, ANTI_AI_TELL_NARRATIVE_INSTRUCTION
+from tools.writing_style import ANTI_AI_TELL_INSTRUCTION, ANTI_AI_TELL_NARRATIVE_INSTRUCTION, ANTI_AI_TELL_REVIEWER_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 cfg = get_settings()
@@ -1004,3 +1005,321 @@ def generate_study_comparison(notebook_id: str, settings: dict) -> Tuple[str, st
     except Exception as e:
         logger.error("Study comparison table generation failed: %s", e)
         return "", f"Study comparison table generation failed: {e}"
+
+
+# ── Feature 10: IEEE-style paper reviewer ────────────────────────────────────
+
+_REVIEWER_SEARCH_MAX = 3   # papers returned per search query
+_REVIEWER_QUERIES = 3      # number of search queries generated from the critique
+
+
+def _build_single_doc_context(notebook: Dict[str, Any], doc_id: str) -> Tuple[str, str]:
+    """Return (context_text, filename) for one document from a loaded notebook."""
+    src_map = {s["doc_id"]: s for s in notebook.get("sources", [])}
+    src = src_map.get(doc_id)
+    if not src:
+        return "", ""
+    by_doc: Dict[str, List[str]] = {}
+    for ch in notebook.get("chunks", []):
+        content_type = ch.get("content_type", "text")
+        if content_type == "table" and ch.get("table_md"):
+            body = "[TABLE]\n" + ch["table_md"].strip()
+        elif content_type == "figure":
+            body = "[FIGURE]\n" + ch.get("text", "")
+        else:
+            body = ch.get("text", "")
+        by_doc.setdefault(ch["doc_id"], []).append(body)
+    combined = " ".join(by_doc.get(doc_id, []))
+    excerpt = combined[:_MAX_CHARS_PER_DOC] + ("…" if len(combined) > _MAX_CHARS_PER_DOC else "")
+    return excerpt, src["filename"]
+
+
+def generate_paper_review(
+    notebook_id: str,
+    doc_id: str,
+    settings: dict,
+) -> Tuple[str, List[Dict[str, Any]], str]:
+    """
+    Generate an IEEE-style peer review of a single uploaded paper.
+
+    Steps:
+    1. Loads the specified document's chunks from the notebook.
+    2. Extracts 3 search queries from the document (topic, methodology, claimed contributions).
+    3. Searches arXiv + Semantic Scholar; assigns [E1]–[En] reference numbers.
+    4. Generates a structured critique grounded in BOTH the paper text AND the external
+       paper abstracts — the LLM cites [En] inline wherever external evidence supports or
+       contradicts a critique point.
+
+    Returns (review_markdown, external_refs_list, error_string).
+    Each external_ref dict: {ref_num, title, authors, year, url, source, abstract_snippet}.
+    """
+    mem = NotebookMemory()
+    notebook = mem.load(notebook_id)
+    if not notebook:
+        return "", [], f"Notebook '{notebook_id}' not found."
+
+    context, filename = _build_single_doc_context(notebook, doc_id)
+    if not context:
+        return "", [], f"Document '{doc_id}' not found in this notebook."
+
+    # Step 1: Extract search queries from the document before writing the review.
+    system_queries = (
+        "You are a literature search assistant helping a peer reviewer prepare for critique.\n"
+        "Read the paper below and identify the 3 most important topics where published "
+        "literature can substantiate or challenge a rigorous critique — e.g. the core "
+        "methodology or algorithm, the claimed contribution or novelty, and the key "
+        "experimental baselines or assumptions.\n"
+        "For each topic, write ONE short academic search query (5–10 words) suitable for "
+        "arXiv and Semantic Scholar.\n"
+        "Output ONLY a JSON array of 3 query strings, no code fences:\n"
+        '["query 1", "query 2", "query 3"]'
+    )
+    human_queries = (
+        f"PAPER: {filename}\n\n{context[:4000]}\n\n"
+        "Output the JSON array of 3 search queries."
+    )
+
+    search_queries: List[str] = []
+    try:
+        raw_q = _invoke(_make_llm(settings, temperature=0.0, num_predict=256), system_queries, human_queries)
+        parsed = _parse_json_from_llm(raw_q)
+        if isinstance(parsed, list):
+            search_queries = [str(q).strip() for q in parsed if q][:_REVIEWER_QUERIES]
+    except Exception as e:
+        logger.debug("Search query extraction failed: %s", e)
+
+    # Step 2: Search arXiv + Semantic Scholar; assign [E1]–[E9] reference numbers.
+    seen_titles: set = set()
+    external_refs: List[Dict[str, Any]] = []
+
+    for query in search_queries:
+        for paper in search_arxiv(query, max_results=_REVIEWER_SEARCH_MAX):
+            key = paper.title.lower()[:60]
+            if key not in seen_titles:
+                seen_titles.add(key)
+                external_refs.append({
+                    "title": paper.title,
+                    "authors": paper.authors[:3],
+                    "year": paper.year,
+                    "url": paper.url,
+                    "source": "arXiv",
+                    "abstract_snippet": paper.abstract[:300] if paper.abstract else "",
+                })
+        for paper in search_semantic_scholar(query, max_results=_REVIEWER_SEARCH_MAX):
+            key = paper.title.lower()[:60]
+            if key not in seen_titles:
+                seen_titles.add(key)
+                external_refs.append({
+                    "title": paper.title,
+                    "authors": paper.authors[:3],
+                    "year": paper.year,
+                    "url": paper.url,
+                    "source": "Semantic Scholar",
+                    "abstract_snippet": paper.abstract[:300] if paper.abstract else "",
+                })
+        if len(external_refs) >= 9:
+            break
+
+    external_refs = external_refs[:9]
+    for i, ref in enumerate(external_refs):
+        ref["ref_num"] = f"E{i + 1}"
+
+    # Build the external reference block that goes into the review prompt.
+    ext_block = _build_external_ref_block(external_refs)
+
+    # Step 3: Generate the full review with both doc text and external abstracts.
+    n_refs = len(external_refs)
+    ref_range = f"[E1]–[E{n_refs}]" if n_refs > 1 else "[E1]" if n_refs == 1 else ""
+    cite_rule = (
+        f"- When citing external references use only {ref_range} as defined above. "
+        "Cite inline immediately after the claim, e.g. [E2].\n"
+        if n_refs else ""
+    )
+    system_review = (
+        "You are an expert peer reviewer for a top-tier IEEE journal or conference. "
+        "Evaluate the paper below with the same rigour, depth, and precision expected "
+        "at a top-tier venue. Do not soften criticism — identify real problems clearly "
+        "and directly.\n\n"
+        + (
+            "You have been given the paper text AND a set of external reference papers "
+            f"{ref_range} retrieved from arXiv and Semantic Scholar.\n"
+            "Use those external references to ground your critique:\n"
+            "- If a methodology is non-standard, cite the correct established approach [En].\n"
+            "- If a baseline is missing or outdated, name it and cite where it is used [En].\n"
+            "- If a novelty claim overlaps with prior work, cite that prior work [En].\n"
+            "- If an assumption is unjustified, cite literature that demonstrates its limits [En].\n"
+            "- If a mathematical form is wrong, cite the reference that states the correct form [En].\n"
+            "Only cite an external reference when it directly and specifically supports the point.\n\n"
+            if n_refs else ""
+        )
+        + "Structure your review EXACTLY as follows (use these headings verbatim):\n\n"
+        "## Summary\n"
+        "2–3 sentences: what the paper claims to do and what its main contribution is. "
+        "No evaluation here — only description.\n\n"
+        "## Strengths\n"
+        "Numbered list. Each strength must be specific and backed by evidence from the "
+        "text (section, equation, or result). No generic praise.\n\n"
+        "## Weaknesses\n"
+        "Numbered list. Each weakness is concrete, actionable, and tied to a specific "
+        "location in the paper. State the problem, then the evidence, then why it matters. "
+        "Cite external references [En] where they support the weakness.\n\n"
+        "## Detailed Critique\n\n"
+        "### Novelty & Originality\n"
+        "Is this a genuinely new contribution or an incremental variation of prior work? "
+        "Identify which claims are novel and which are already established. If novelty is "
+        "overstated, name the specific claim and cite the prior work that pre-empts it [En].\n\n"
+        "### Technical Soundness & Methodology\n"
+        "This is the most important section. Examine the following explicitly:\n"
+        "  a) MATHEMATICAL CORRECTNESS — Check every equation, derivation, proof, or "
+        "theorem in the paper. Identify any mathematical error, incorrect step, missing "
+        "condition, or unjustified simplification. Quote the equation or expression and "
+        "explain precisely what is wrong. Cite external references that give the correct form [En].\n"
+        "  b) LOGICAL VALIDITY — Identify any logical violation: circular reasoning, "
+        "non-sequitur conclusions, invalid inference from data to claim, unsupported "
+        "generalisations, or contradictions between the paper's own statements. Quote "
+        "the passage and name the specific logical flaw.\n"
+        "  c) MISLEADING OR INCORRECT CLAIMS — Flag any statement that is factually "
+        "wrong, misleading (selective presentation of data, cherry-picked results, "
+        "overgeneralised conclusions from narrow experiments), or contradicts established "
+        "knowledge. Provide the corrected fact or cite the source of contradiction [En].\n"
+        "  d) ASSUMPTIONS — Are all assumptions stated explicitly? Are they justified? "
+        "Could they fail in practice? Cite external references that demonstrate the "
+        "limits or validity of key assumptions [En].\n\n"
+        "### Experimental Evaluation\n"
+        "Are experiments comprehensive? Are baselines appropriate and up-to-date — "
+        "cite important baselines from the external references that should have been "
+        "included [En]. Are metrics well chosen and correctly applied? Is statistical "
+        "significance reported? Are ablations sufficient to isolate the contribution?\n\n"
+        "### Related Work Coverage\n"
+        "Does the paper adequately survey the field? Are key prior works cited and "
+        "fairly compared? Cite missing key works from the external references [En].\n\n"
+        "### Clarity & Writing Quality\n"
+        "Note specific sections that are unclear, ambiguous, or poorly structured. "
+        "Reference section numbers or headings.\n\n"
+        "## Recommendation\n"
+        "State exactly one of: Accept / Minor Revision / Major Revision / Reject.\n"
+        "Follow with 3–4 sentences of rationale that directly reference findings from "
+        "the Technical Soundness section above"
+        + (" and cite at least one external reference [En] where relevant." if n_refs else ".")
+        + "\n\n"
+        "CONTENT RULES:\n"
+        "- Ground every critique in specific evidence: quote equations, cite sections, "
+        "reference result tables — never refer to 'the methodology' in the abstract.\n"
+        + cite_rule
+        + "- If you find no mathematical error, state that explicitly rather than omitting "
+        "the subsection.\n"
+        "- Strengths and weaknesses must not repeat each other.\n"
+        "- The Recommendation must follow logically from the critique.\n"
+        + ANTI_AI_TELL_REVIEWER_INSTRUCTION
+    )
+    human_review = (
+        f"PAPER: {filename}\n\n"
+        f"PAPER TEXT:\n{context}\n\n"
+        + (f"{ext_block}\n\n" if ext_block else "")
+        + "Write the full peer review now"
+        + (f", citing {ref_range} inline where external references support the critique." if n_refs else ".")
+    )
+
+    try:
+        review_text = _invoke(
+            _make_llm(settings, temperature=0.2, num_predict=_max_predict(settings)),
+            system_review,
+            human_review,
+        )
+    except Exception as e:
+        logger.error("Paper review generation failed: %s", e)
+        return "", [], f"Paper review generation failed: {e}"
+
+    return review_text, external_refs, ""
+
+
+def _build_external_ref_block(external_refs: List[Dict[str, Any]]) -> str:
+    """Format external references as a numbered block for LLM prompts."""
+    if not external_refs:
+        return ""
+    lines = [
+        "EXTERNAL REFERENCES "
+        "(cite as [E1], [E2], … where they support or contradict a critique point):\n"
+    ]
+    for ref in external_refs:
+        authors_str = ", ".join(ref.get("authors", [])[:3]) or "Unknown"
+        year_str = f" ({ref['year']})" if ref.get("year") else ""
+        snippet = ref.get("abstract_snippet", "")
+        lines.append(
+            f"[{ref['ref_num']}] {ref['title']}{year_str}. {authors_str}. "
+            f"Source: {ref['source']}.\n"
+            f"  Abstract: {snippet}\n"
+        )
+    return "\n".join(lines)
+
+
+def reviewer_chat(
+    notebook_id: str,
+    doc_id: str,
+    review_text: str,
+    chat_history: List[Dict[str, str]],
+    user_message: str,
+    settings: dict,
+    external_refs: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[str, str]:
+    """
+    Follow-up chat within the Reviewer tab.
+
+    The review, document context, and external reference papers are injected as
+    system context so the user can probe critique points, ask for clarifications,
+    or request suggestions for addressing specific weaknesses.  External refs are
+    the same [E1]–[En] papers used when generating the review, so the chat can
+    discuss them by citation label.
+
+    chat_history is a list of {"role": "user"|"assistant", "content": "..."} dicts
+    (client-side history; stateless — full history sent on every call).
+
+    Returns (response_text, error_string).
+    """
+    from langchain_core.messages import AIMessage
+
+    mem = NotebookMemory()
+    notebook = mem.load(notebook_id)
+    if not notebook:
+        return "", f"Notebook '{notebook_id}' not found."
+
+    context, filename = _build_single_doc_context(notebook, doc_id)
+    if not context:
+        return "", f"Document '{doc_id}' not found in this notebook."
+
+    ext_block = _build_external_ref_block(external_refs or [])
+
+    system = (
+        f"You are an expert IEEE peer reviewer discussing a review you wrote for the "
+        f"paper '{filename}'. The review, an excerpt of the paper, and the external "
+        f"reference papers used to ground the critique are provided below.\n\n"
+        "Answer the author's questions, elaborate on critique points, or suggest concrete "
+        "ways to address specific weaknesses. Stay grounded in evidence from the paper, "
+        "the review, and the external references. Be direct — do not soften or retreat "
+        "from critique points.\n"
+        "When discussing mathematical or logical issues, be precise: quote the expression "
+        "or passage, identify the flaw, and suggest the correct approach.\n"
+        "When referring to an external reference, use its [En] label.\n\n"
+        f"PAPER EXCERPT:\n{context[:2000]}\n\n"
+        f"YOUR REVIEW:\n{review_text[:2000]}\n\n"
+        + (f"{ext_block}\n\n" if ext_block else "")
+        + ANTI_AI_TELL_REVIEWER_INSTRUCTION
+    )
+
+    messages: List[Any] = [SystemMessage(content=system)]
+    for turn in chat_history:
+        role = turn.get("role", "user")
+        content = turn.get("content", "")
+        if role == "assistant":
+            messages.append(AIMessage(content=content))
+        else:
+            messages.append(HumanMessage(content=content))
+    messages.append(HumanMessage(content=user_message))
+
+    try:
+        llm = _make_llm(settings, temperature=0.3, num_predict=2048)
+        resp = llm.invoke(messages)
+        return resp.content.strip(), ""
+    except Exception as e:
+        logger.error("Reviewer chat failed: %s", e)
+        return "", f"Reviewer chat failed: {e}"

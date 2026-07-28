@@ -83,8 +83,9 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "flush_chromadb":          ("tools.shutdown",        "flush_chromadb"),
     "load_url_as_document":    ("tools.web_loader",      "load_url_as_document"),
     # ── Writing style ────────────────────────────────────────────────────────
-    "ANTI_AI_TELL_INSTRUCTION":          ("tools.writing_style", "ANTI_AI_TELL_INSTRUCTION"),
+    "ANTI_AI_TELL_INSTRUCTION":           ("tools.writing_style", "ANTI_AI_TELL_INSTRUCTION"),
     "ANTI_AI_TELL_NARRATIVE_INSTRUCTION": ("tools.writing_style", "ANTI_AI_TELL_NARRATIVE_INSTRUCTION"),
+    "ANTI_AI_TELL_REVIEWER_INSTRUCTION":  ("tools.writing_style", "ANTI_AI_TELL_REVIEWER_INSTRUCTION"),
 }
 
 __all__ = list(_EXPORTS)

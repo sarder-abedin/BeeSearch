@@ -39,6 +39,8 @@ from ..schemas.notebook_advanced import (
     KnowledgeGraphRequest,
     LiteratureReviewRequest,
     MindmapRequest,
+    PaperReviewRequest,
+    ReviewChatRequest,
     StudyComparisonRequest,
 )
 from ..services import notebook_advanced_service as service
@@ -176,6 +178,22 @@ def run_study_comparison(req: StudyComparisonRequest) -> JobCreated:
     _require_notebook(req.notebook_id)
     job = jobs.create_job()
     jobs.run_in_background(job, lambda cb: service.run_study_comparison(req, cb))
+    return JobCreated(job_id=job.id)
+
+
+@router.post("/paper-review", response_model=JobCreated, status_code=202)
+def run_paper_review(req: PaperReviewRequest) -> JobCreated:
+    _require_notebook(req.notebook_id)
+    job = jobs.create_job()
+    jobs.run_in_background(job, lambda cb: service.run_paper_review(req, cb))
+    return JobCreated(job_id=job.id)
+
+
+@router.post("/reviewer-chat", response_model=JobCreated, status_code=202)
+def run_reviewer_chat(req: ReviewChatRequest) -> JobCreated:
+    _require_notebook(req.notebook_id)
+    job = jobs.create_job()
+    jobs.run_in_background(job, lambda cb: service.run_reviewer_chat(req, cb))
     return JobCreated(job_id=job.id)
 
 

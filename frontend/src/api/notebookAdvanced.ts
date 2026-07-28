@@ -14,6 +14,8 @@ import type {
   KnowledgeGraphRequest,
   LiteratureReviewRequest,
   MindmapRequest,
+  PaperReviewRequest,
+  ReviewChatRequest,
   StudyComparisonRequest,
   TextArtifact,
 } from "./notebookAdvancedTypes";
@@ -96,6 +98,14 @@ export function runCitationTimeline(req: CitationTimelineRequest): Promise<JobCr
 
 export function runStudyComparison(req: StudyComparisonRequest): Promise<JobCreated> {
   return apiFetch<JobCreated>(`${BASE}/study-comparison`, { method: "POST", body: JSON.stringify(req) });
+}
+
+export function runPaperReview(req: PaperReviewRequest): Promise<JobCreated> {
+  return apiFetch<JobCreated>(`${BASE}/paper-review`, { method: "POST", body: JSON.stringify(req) });
+}
+
+export function runReviewerChat(req: ReviewChatRequest): Promise<JobCreated> {
+  return apiFetch<JobCreated>(`${BASE}/reviewer-chat`, { method: "POST", body: JSON.stringify(req) });
 }
 
 export function getAdvancedJobStatus(jobId: string): Promise<AdvancedJobStatus> {
