@@ -207,6 +207,15 @@ def run_reviewer_chat(req: ReviewChatRequest, stream_callback: StreamCallback) -
     )
     if error:
         raise RuntimeError(error)
+    # Persist the full updated conversation so the panel can restore it on reload.
+    updated_history = history + [
+        {"role": "user", "content": req.user_message},
+        {"role": "assistant", "content": response},
+    ]
+    try:
+        NotebookMemory().save_reviewer_chat(req.notebook_id, req.doc_id, updated_history)
+    except Exception as exc:
+        logger.warning("Could not persist reviewer chat: %s", exc)
     return {"notebook_id": req.notebook_id, "reviewer_chat_response": response}
 
 

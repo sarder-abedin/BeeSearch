@@ -72,6 +72,7 @@ export interface NotebookDetail {
   created_at: string;
   last_modified: string;
   saved_reviews?: Record<string, SavedReview>;
+  reviewer_chats?: Record<string, Array<{ role: string; content: string }>>;
 }
 
 export interface UploadSourceResult {

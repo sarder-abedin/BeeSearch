@@ -11,19 +11,30 @@ interface ReviewerPanelProps {
   notebookId: string;
   sources: SourceMeta[];
   savedReviews?: Record<string, SavedReview>;
+  reviewerChats?: Record<string, Array<{ role: string; content: string }>>;
 }
 
-function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps) {
+function ReviewerPanel({ notebookId, sources, savedReviews, reviewerChats }: ReviewerPanelProps) {
   const job = useAdvancedToolJob();
   const overrides = useModelOverrides();
   const { state, result, error } = job;
 
   const [docId, setDocId] = useState(sources[0]?.doc_id ?? "");
-  const [chatHistory, setChatHistory] = useState<ReviewChatItem[]>([]);
+  const [chatHistory, setChatHistory] = useState<ReviewChatItem[]>(() =>
+    (reviewerChats?.[sources[0]?.doc_id ?? ""] ?? []) as ReviewChatItem[]
+  );
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
+
+  // Per-session cache of chat histories keyed by doc_id — seeded from persisted memory
+  // so the user can continue the expert discussion after a page reload.
+  const chatsByDocRef = useRef<Record<string, ReviewChatItem[]>>(
+    Object.fromEntries(
+      Object.entries(reviewerChats ?? {}).map(([k, v]) => [k, v as ReviewChatItem[]])
+    )
+  );
 
   // Fresh job result takes precedence; fall back to persisted review.
   const freshReview = state === "done" ? (result?.paper_review ?? "") : "";
@@ -36,17 +47,19 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
   const isShowingReview = reviewText.length > 0;
   const isFromMemory = !freshReview && !!saved?.review_text;
 
-  // Reset chat when a new review is generated.
+  // When a new review is generated, clear the chat for this doc — fresh review, fresh discussion.
   useEffect(() => {
     if (state === "done") {
       setChatHistory([]);
+      chatsByDocRef.current[docId] = [];
       setChatError(null);
     }
-  }, [state]);
+  }, [state, docId]);
 
-  // Reset chat when doc changes so old conversation doesn't bleed through.
+  // When doc changes, restore persisted chat history for the new doc (within-session cache
+  // or server-persisted history loaded at notebook open).
   useEffect(() => {
-    setChatHistory([]);
+    setChatHistory(chatsByDocRef.current[docId] ?? []);
     setChatError(null);
   }, [docId]);
 
@@ -95,7 +108,9 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
           role: "assistant",
           content: final.result.reviewer_chat_response,
         };
-        setChatHistory([...nextHistory, assistantItem]);
+        const updatedHistory = [...nextHistory, assistantItem];
+        setChatHistory(updatedHistory);
+        chatsByDocRef.current[docId] = updatedHistory;
       } else {
         setChatError(final.error ?? "No response received.");
         setChatHistory(chatHistory);
@@ -114,13 +129,15 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
       <p>
         Select a paper and generate a critical IEEE-style peer review grounded in the uploaded
         document <em>and</em> backed by evidence from arXiv and Semantic Scholar — external papers
-        are cited inline as [E1], [E2], … in the review text.
+        are cited inline as [E1], [E2], … in the review text. The review includes specific
+        questions for the authors wherever clarification is needed.
       </p>
       <p className="sr-caption">
-        After the review is generated, use the <strong>Critique Validation</strong> dialogue below
-        to act as the reviewer yourself. Propose critique points and the assistant will check
-        whether each is accurate, evidence-based, and justified — confirming what holds up and
-        pushing back on anything unsupported or overstated.
+        After the review is generated, continue in the <strong>Expert Discussion</strong> below —
+        a peer-level exchange between two subject-matter experts. Both you and the assistant
+        contribute independent analysis, debate claims, probe each other&apos;s reasoning, and
+        draw on the paper text and external references to reach well-grounded conclusions.
+        The conversation is saved to notebook memory so you can pick it up across sessions.
       </p>
 
       <div className="sr-field">
@@ -211,12 +228,12 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
           )}
 
           <div className="reviewer-panel__chat">
-            <h4>Critique Validation</h4>
+            <h4>Expert Discussion</h4>
             <p className="sr-caption">
-              You are the reviewer. Propose your critique points about this paper and the
-              assistant will validate each one — confirming what is accurate and well-grounded,
-              challenging what is unsupported, and helping you sharpen weak points into precise,
-              evidence-based reviewer comments.
+              A peer-level exchange between two subject-matter experts. Raise a point, question
+              a finding, or explore a claim — the assistant contributes as an equal colleague,
+              drawing on the paper and the external references. Either party can introduce new
+              angles. The conversation is saved across sessions.
             </p>
 
             {chatHistory.length > 0 && (
@@ -231,15 +248,15 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
                     }
                   >
                     <span className="reviewer-panel__chat-role">
-                      {msg.role === "user" ? "You (Reviewer)" : "Validator"}
+                      {msg.role === "user" ? "You" : "Co-Reviewer"}
                     </span>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   </div>
                 ))}
                 {chatLoading && (
                   <div className="reviewer-panel__chat-msg reviewer-panel__chat-msg--assistant">
-                    <span className="reviewer-panel__chat-role">Validator</span>
-                    <p className="sr-spinner-text">Validating…</p>
+                    <span className="reviewer-panel__chat-role">Co-Reviewer</span>
+                    <p className="sr-spinner-text">Thinking…</p>
                   </div>
                 )}
               </div>
@@ -250,7 +267,7 @@ function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps
             <div className="reviewer-panel__chat-input-row">
               <textarea
                 className="reviewer-panel__chat-input"
-                placeholder="Propose a critique point — the validator will check whether it's accurate and evidence-based…"
+                placeholder="Raise a point, question a finding, or introduce a new angle — this is a peer expert discussion…"
                 rows={3}
                 value={chatInput}
                 disabled={chatLoading}

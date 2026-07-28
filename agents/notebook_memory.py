@@ -415,6 +415,44 @@ class NotebookMemory:
         meta = unpack(row["meta_json"])
         return meta.get("reviews", {}).get(doc_id)
 
+    # ── Reviewer critique-validation chat ─────────────────────
+
+    def save_reviewer_chat(
+        self,
+        notebook_id: str,
+        doc_id: str,
+        chat_history: List[Dict[str, Any]],
+    ) -> bool:
+        """Persist the full critique-validation chat history for a given doc."""
+        with _tx(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT meta_json FROM notebooks WHERE notebook_id=?",
+                (notebook_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            meta = unpack(row["meta_json"])
+            meta.setdefault("reviewer_chats", {})[doc_id] = chat_history
+            now = _now()
+            meta["last_modified"] = now
+            conn.execute(
+                "UPDATE notebooks SET updated_at=?, meta_json=? WHERE notebook_id=?",
+                (now, pack(meta), notebook_id),
+            )
+        return True
+
+    def get_reviewer_chat(self, notebook_id: str, doc_id: str) -> List[Dict[str, Any]]:
+        """Return the stored critique-validation chat history for a given doc, or []."""
+        with _tx(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT meta_json FROM notebooks WHERE notebook_id=?",
+                (notebook_id,),
+            ).fetchone()
+        if row is None:
+            return []
+        meta = unpack(row["meta_json"])
+        return meta.get("reviewer_chats", {}).get(doc_id, [])
+
     # ── Cross-notebook search ─────────────────────────────────
 
     def search_all_notebooks(
