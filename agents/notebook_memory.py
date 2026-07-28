@@ -369,6 +369,52 @@ class NotebookMemory:
         meta = unpack(row["meta_json"])
         return meta.get("conversation", [])[-max_turns:]
 
+    # ── Paper reviews ─────────────────────────────────────────
+
+    def save_review(
+        self,
+        notebook_id: str,
+        doc_id: str,
+        doc_filename: str,
+        review_text: str,
+        external_refs: List[Dict[str, Any]],
+    ) -> bool:
+        """Persist a generated paper review in the notebook's meta_json under reviews[doc_id]."""
+        with _tx(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT meta_json FROM notebooks WHERE notebook_id=?",
+                (notebook_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            meta = unpack(row["meta_json"])
+            meta.setdefault("reviews", {})[doc_id] = {
+                "doc_id": doc_id,
+                "doc_filename": doc_filename,
+                "review_text": review_text,
+                "external_refs": external_refs,
+                "generated_at": _now(),
+            }
+            now = _now()
+            meta["last_modified"] = now
+            conn.execute(
+                "UPDATE notebooks SET updated_at=?, meta_json=? WHERE notebook_id=?",
+                (now, pack(meta), notebook_id),
+            )
+        return True
+
+    def get_review(self, notebook_id: str, doc_id: str) -> Optional[Dict[str, Any]]:
+        """Return the stored review for a given doc, or None if none was saved."""
+        with _tx(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT meta_json FROM notebooks WHERE notebook_id=?",
+                (notebook_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        meta = unpack(row["meta_json"])
+        return meta.get("reviews", {}).get(doc_id)
+
     # ── Cross-notebook search ─────────────────────────────────
 
     def search_all_notebooks(

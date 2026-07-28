@@ -76,6 +76,14 @@ class ConversationTurn(BaseModel):
     suggested_questions: Optional[List[str]] = None
 
 
+class SavedReview(BaseModel):
+    doc_id: str = ""
+    doc_filename: str = ""
+    review_text: str = ""
+    external_refs: List[Dict[str, Any]] = Field(default_factory=list)
+    generated_at: str = ""
+
+
 class NotebookDetail(BaseModel):
     notebook_id: str
     name: str
@@ -85,6 +93,7 @@ class NotebookDetail(BaseModel):
     conversation: List[ConversationTurn] = Field(default_factory=list)
     created_at: str
     last_modified: str
+    saved_reviews: Dict[str, SavedReview] = Field(default_factory=dict)
 
 
 class UploadSourceResult(BaseModel):

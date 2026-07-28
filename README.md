@@ -241,6 +241,38 @@ python -m uvicorn backend.app.main:app --reload --port 8000
 > [Graphviz Windows installer](https://graphviz.org/download/).
 > Docker users get this automatically — it's already in the image.
 
+### Using vision models for figure captioning
+
+BeeSearch can caption figures (charts, diagrams, photographs) extracted from uploaded PDFs using a multimodal Ollama model. Captions are indexed as `[FIGURE]` text chunks and cited in answers like any other chunk.
+
+**Docker** — no manual steps needed. The `vision-init` service pulls `llava:7b` automatically on first start, and `VISION_MODEL=llava:7b` is pre-set in the container:
+
+```bash
+docker compose up --build   # llava:7b is pulled automatically
+```
+
+**Local install** — pull a vision model first, then set `VISION_MODEL` in your `.env`:
+
+```bash
+# Recommended: llava:7b (~4 GB, works on 8 GB RAM)
+ollama pull llava:7b
+
+# Alternatives (larger models give better captions)
+ollama pull llava:13b            # ~8 GB
+ollama pull llama3.2-vision:11b  # ~7 GB, Meta's vision model
+```
+
+Then in `.env`:
+```env
+VISION_MODEL=llava:7b
+```
+
+**Opting out** — leave `VISION_MODEL` empty (the default) to skip figure extraction entirely. No errors, no overhead. Text and table extraction are unaffected.
+
+**Supported model families** — any Ollama model that accepts image input works: `llava` (7b, 13b, 34b), `llama3.2-vision`, `llava-llama3`, `moondream`, `bakllava`. Run `ollama list` to see what you have installed.
+
+---
+
 ### Web interface — manual startup
 
 ```bash
