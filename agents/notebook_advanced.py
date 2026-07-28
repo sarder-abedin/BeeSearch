@@ -1093,30 +1093,36 @@ def generate_paper_review(
     external_refs: List[Dict[str, Any]] = []
 
     for query in search_queries:
-        for paper in search_arxiv(query, max_results=_REVIEWER_SEARCH_MAX):
-            key = paper.title.lower()[:60]
-            if key not in seen_titles:
-                seen_titles.add(key)
-                external_refs.append({
-                    "title": paper.title,
-                    "authors": paper.authors[:3],
-                    "year": paper.year,
-                    "url": paper.url,
-                    "source": "arXiv",
-                    "abstract_snippet": paper.abstract[:300] if paper.abstract else "",
-                })
-        for paper in search_semantic_scholar(query, max_results=_REVIEWER_SEARCH_MAX):
-            key = paper.title.lower()[:60]
-            if key not in seen_titles:
-                seen_titles.add(key)
-                external_refs.append({
-                    "title": paper.title,
-                    "authors": paper.authors[:3],
-                    "year": paper.year,
-                    "url": paper.url,
-                    "source": "Semantic Scholar",
-                    "abstract_snippet": paper.abstract[:300] if paper.abstract else "",
-                })
+        try:
+            for paper in search_arxiv(query, max_results=_REVIEWER_SEARCH_MAX):
+                key = paper.title.lower()[:60]
+                if key not in seen_titles:
+                    seen_titles.add(key)
+                    external_refs.append({
+                        "title": paper.title,
+                        "authors": paper.authors[:3],
+                        "year": paper.year,
+                        "url": paper.url,
+                        "source": "arXiv",
+                        "abstract_snippet": paper.abstract[:300] if paper.abstract else "",
+                    })
+        except Exception:
+            pass
+        try:
+            for paper in search_semantic_scholar(query, max_results=_REVIEWER_SEARCH_MAX):
+                key = paper.title.lower()[:60]
+                if key not in seen_titles:
+                    seen_titles.add(key)
+                    external_refs.append({
+                        "title": paper.title,
+                        "authors": paper.authors[:3],
+                        "year": paper.year,
+                        "url": paper.url,
+                        "source": "Semantic Scholar",
+                        "abstract_snippet": paper.abstract[:300] if paper.abstract else "",
+                    })
+        except Exception:
+            pass
         if len(external_refs) >= 9:
             break
 
