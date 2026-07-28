@@ -15,6 +15,8 @@ const runCompareSourcesMock = vi.fn();
 const runKnowledgeGraphMock = vi.fn();
 const runCitationTimelineMock = vi.fn();
 const runStudyComparisonMock = vi.fn();
+const runPaperReviewMock = vi.fn();
+const runReviewerChatMock = vi.fn();
 const pollAdvancedJobMock = vi.fn();
 const exportTextMock = vi.fn();
 const exportDocumentMock = vi.fn();
@@ -31,6 +33,8 @@ vi.mock("../../api/notebookAdvanced", () => ({
   runKnowledgeGraph: (...args: unknown[]) => runKnowledgeGraphMock(...args),
   runCitationTimeline: (...args: unknown[]) => runCitationTimelineMock(...args),
   runStudyComparison: (...args: unknown[]) => runStudyComparisonMock(...args),
+  runPaperReview: (...args: unknown[]) => runPaperReviewMock(...args),
+  runReviewerChat: (...args: unknown[]) => runReviewerChatMock(...args),
   pollAdvancedJob: (...args: unknown[]) => pollAdvancedJobMock(...args),
   exportText: (...args: unknown[]) => exportTextMock(...args),
   exportDocument: (...args: unknown[]) => exportDocumentMock(...args),
@@ -95,6 +99,9 @@ function makeAdvancedResult(overrides: Partial<AdvancedResult> = {}): AdvancedRe
     knowledge_graph_dot: "",
     timeline: [],
     study_comparison: "",
+    paper_review: "",
+    paper_review_refs: [],
+    reviewer_chat_response: "",
     ...overrides,
   };
 }
@@ -135,6 +142,8 @@ function resetAllMocks() {
   runKnowledgeGraphMock.mockReset();
   runCitationTimelineMock.mockReset();
   runStudyComparisonMock.mockReset();
+  runPaperReviewMock.mockReset();
+  runReviewerChatMock.mockReset();
   pollAdvancedJobMock.mockReset();
   exportTextMock.mockReset();
   exportDocumentMock.mockReset();
