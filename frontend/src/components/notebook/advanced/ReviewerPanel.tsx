@@ -3,16 +3,17 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { runPaperReview, runReviewerChat } from "../../../api/notebookAdvanced";
 import type { ExternalReference, ReviewChatItem } from "../../../api/notebookAdvancedTypes";
-import type { SourceMeta } from "../../../api/notebookTypes";
+import type { SavedReview, SourceMeta } from "../../../api/notebookTypes";
 import { RunControls } from "./shared";
 import { useAdvancedToolJob, useModelOverrides } from "./useAdvancedToolJob";
 
 interface ReviewerPanelProps {
   notebookId: string;
   sources: SourceMeta[];
+  savedReviews?: Record<string, SavedReview>;
 }
 
-function ReviewerPanel({ notebookId, sources }: ReviewerPanelProps) {
+function ReviewerPanel({ notebookId, sources, savedReviews }: ReviewerPanelProps) {
   const job = useAdvancedToolJob();
   const overrides = useModelOverrides();
   const { state, result, error } = job;
@@ -24,8 +25,16 @@ function ReviewerPanel({ notebookId, sources }: ReviewerPanelProps) {
   const [chatError, setChatError] = useState<string | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
-  const reviewText = result?.paper_review ?? "";
-  const extRefs = result?.paper_review_refs ?? [];
+  // Fresh job result takes precedence; fall back to persisted review.
+  const freshReview = state === "done" ? (result?.paper_review ?? "") : "";
+  const freshRefs = state === "done" ? (result?.paper_review_refs ?? []) : [];
+  const saved = savedReviews?.[docId];
+  const reviewText = freshReview || (state === "idle" ? (saved?.review_text ?? "") : "");
+  const extRefs: ExternalReference[] = freshRefs.length > 0
+    ? freshRefs
+    : (state === "idle" ? ((saved?.external_refs ?? []) as ExternalReference[]) : []);
+  const isShowingReview = reviewText.length > 0;
+  const isFromMemory = !freshReview && !!saved?.review_text;
 
   // Reset chat when a new review is generated.
   useEffect(() => {
@@ -34,6 +43,12 @@ function ReviewerPanel({ notebookId, sources }: ReviewerPanelProps) {
       setChatError(null);
     }
   }, [state]);
+
+  // Reset chat when doc changes so old conversation doesn't bleed through.
+  useEffect(() => {
+    setChatHistory([]);
+    setChatError(null);
+  }, [docId]);
 
   // Scroll chat to bottom after each new message.
   useEffect(() => {
@@ -123,7 +138,7 @@ function ReviewerPanel({ notebookId, sources }: ReviewerPanelProps) {
 
       <RunControls
         state={state}
-        runLabel="Generate Review"
+        runLabel={isFromMemory ? "Regenerate Review" : "Generate Review"}
         rerunLabel="Regenerate Review"
         spinnerText="Reviewing paper — this may take a minute…"
         error={error}
@@ -136,8 +151,36 @@ function ReviewerPanel({ notebookId, sources }: ReviewerPanelProps) {
         onClear={job.clear}
       />
 
-      {state === "done" && result && (
+      {isShowingReview && (
         <>
+          {isFromMemory && saved && (
+            <p className="sr-caption reviewer-panel__saved-notice">
+              Loaded from memory — generated {new Date(saved.generated_at).toLocaleString()}.
+              Click "Regenerate Review" to refresh.
+            </p>
+          )}
+          <div className="reviewer-panel__review-header">
+            <button
+              type="button"
+              className="sr-button reviewer-panel__download-btn"
+              title="Download review as Markdown"
+              onClick={() => {
+                const docName = sources.find((s) => s.doc_id === docId)?.filename ?? "review";
+                const filename = docName.replace(/\.[^.]+$/, "_review.md");
+                const blob = new Blob([reviewText], { type: "text/markdown" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+            >
+              ⬇ Download (.md)
+            </button>
+          </div>
           {reviewText ? (
             <div className="reviewer-panel__review">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{reviewText}</ReactMarkdown>

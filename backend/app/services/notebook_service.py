@@ -49,6 +49,7 @@ from ..schemas.notebook import (
     CreateNotebookRequest,
     NotebookDetail,
     NotebookSummary,
+    SavedReview,
     SourceMeta,
     UploadSourceResult,
 )
@@ -118,6 +119,12 @@ def get_notebook_detail(notebook_id: str) -> Optional[NotebookDetail]:
     nb = _get_memory().load(notebook_id)
     if nb is None:
         return None
+    saved_reviews: dict = {}
+    for doc_id, rv in nb.get("reviews", {}).items():
+        try:
+            saved_reviews[doc_id] = SavedReview(**rv)
+        except Exception:
+            pass
     return NotebookDetail(
         notebook_id=nb["notebook_id"],
         name=nb.get("name") or "Untitled",
@@ -130,6 +137,7 @@ def get_notebook_detail(notebook_id: str) -> Optional[NotebookDetail]:
         ],
         created_at=nb.get("created_at", ""),
         last_modified=nb.get("last_modified", ""),
+        saved_reviews=saved_reviews,
     )
 
 
