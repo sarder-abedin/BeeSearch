@@ -11,7 +11,8 @@
 #   → add the keys to your .env file:
 #       LANGFUSE_PUBLIC_KEY=pk-lf-...
 #       LANGFUSE_SECRET_KEY=sk-lf-...
-#       LANGFUSE_HOST=http://localhost:3000
+#       LANGFUSE_HOST=http://beesearch-langfuse:3000   ← use this in Docker
+#                     (http://localhost:3000 is correct only for local dev)
 #
 # Stop:
 #   docker compose -f docker-compose.langfuse.yml down
@@ -55,3 +56,12 @@ services:
 
 volumes:
   langfuse_db:
+
+# Join the main BeeSearch compose network so beesearch-web can reach
+# beesearch-langfuse by container name (http://beesearch-langfuse:3000).
+# Set LANGFUSE_HOST=http://beesearch-langfuse:3000 in .env when using Docker.
+# For local dev (no Docker) keep LANGFUSE_HOST=http://localhost:3000.
+networks:
+  default:
+    name: beesearch_default
+    external: true
