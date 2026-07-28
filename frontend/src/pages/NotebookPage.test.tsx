@@ -221,7 +221,7 @@ describe("NotebookPage", () => {
     const file = new File(["content"], "paper.pdf", { type: "application/pdf" });
     await user.upload(screen.getByLabelText("Upload sources"), file);
 
-    expect(uploadSourceMock).toHaveBeenCalledWith("nb-1", file, 800, 150, true, false, 50);
+    expect(uploadSourceMock).toHaveBeenCalledWith("nb-1", file, 800, 150, true, false, 50, undefined);
     expect(await screen.findByText("paper.pdf")).toBeInTheDocument();
     expect(screen.getByText("(12 chunks)")).toBeInTheDocument();
   });
