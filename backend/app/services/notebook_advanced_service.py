@@ -184,6 +184,7 @@ def run_paper_review(req: PaperReviewRequest, stream_callback: StreamCallback) -
 def run_reviewer_chat(req: ReviewChatRequest, stream_callback: StreamCallback) -> Dict[str, Any]:
     _tick(stream_callback, "reviewer_chat")
     history = [{"role": item.role, "content": item.content} for item in req.chat_history]
+    refs = [r.model_dump() for r in req.external_refs]
     response, error = reviewer_chat(
         req.notebook_id,
         req.doc_id,
@@ -191,6 +192,7 @@ def run_reviewer_chat(req: ReviewChatRequest, stream_callback: StreamCallback) -
         history,
         req.user_message,
         build_settings(req),
+        external_refs=refs,
     )
     if error:
         raise RuntimeError(error)

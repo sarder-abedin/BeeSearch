@@ -48,6 +48,7 @@ export interface ReviewChatRequest extends BaseAdvancedRequest {
   review_text: string;
   chat_history: ReviewChatItem[];
   user_message: string;
+  external_refs: ExternalReference[];
 }
 
 export interface FaqItem {
@@ -74,6 +75,7 @@ export interface CitationTimelineItem {
 }
 
 export interface ExternalReference {
+  ref_num: string;
   title: string;
   authors: string[];
   year: number | null;

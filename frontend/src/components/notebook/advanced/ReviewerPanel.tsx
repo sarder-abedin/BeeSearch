@@ -69,6 +69,7 @@ function ReviewerPanel({ notebookId, sources }: ReviewerPanelProps) {
         review_text: reviewText,
         chat_history: chatHistory,
         user_message: userMessage,
+        external_refs: extRefs,
         ...overrides,
       });
 
@@ -96,8 +97,9 @@ function ReviewerPanel({ notebookId, sources }: ReviewerPanelProps) {
     <div className="advanced-tools-tab__panel">
       <h3>Reviewer</h3>
       <p>
-        Select a paper and generate a critical IEEE-style peer review grounded in the uploaded
-        document. Supporting literature from arXiv and Semantic Scholar is sourced automatically.
+        Select a paper and generate a critical IEEE-style peer review. The critique is grounded
+        in the uploaded document <em>and</em> backed by evidence from arXiv and Semantic Scholar —
+        external papers are cited inline as [E1], [E2], … in the review text.
       </p>
 
       <div className="sr-field">
@@ -146,9 +148,10 @@ function ReviewerPanel({ notebookId, sources }: ReviewerPanelProps) {
 
           {extRefs.length > 0 && (
             <div className="reviewer-panel__refs">
-              <h4>Supporting Literature</h4>
+              <h4>External References</h4>
               <p className="sr-caption">
-                Papers found via arXiv and Semantic Scholar based on critique points in this review.
+                Papers retrieved from arXiv and Semantic Scholar before the review was written.
+                Each is cited inline in the review text as [E1], [E2], …
               </p>
               <ul className="reviewer-panel__ref-list">
                 {extRefs.map((ref, i) => (
@@ -234,6 +237,9 @@ function ExternalRefCard({ ref_ }: { ref_: ExternalReference }) {
   return (
     <li className="reviewer-panel__ref-card">
       <div className="reviewer-panel__ref-title">
+        {ref_.ref_num && (
+          <span className="reviewer-panel__ref-label">[{ref_.ref_num}]</span>
+        )}
         {ref_.url ? (
           <a href={ref_.url} target="_blank" rel="noopener noreferrer">
             {ref_.title || "Untitled"}
