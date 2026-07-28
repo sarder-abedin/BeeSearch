@@ -138,6 +138,7 @@ def get_notebook_detail(notebook_id: str) -> Optional[NotebookDetail]:
         created_at=nb.get("created_at", ""),
         last_modified=nb.get("last_modified", ""),
         saved_reviews=saved_reviews,
+        reviewer_chats=nb.get("reviewer_chats", {}),
     )
 
 

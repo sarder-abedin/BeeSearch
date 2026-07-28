@@ -17,6 +17,7 @@ interface AdvancedToolsTabProps {
   notebookId: string;
   sources: SourceMeta[];
   savedReviews?: Record<string, SavedReview>;
+  reviewerChats?: Record<string, Array<{ role: string; content: string }>>;
 }
 
 type AdvancedTool =
@@ -52,15 +53,15 @@ const ADVANCED_TOOLS: { key: AdvancedTool; label: string }[] = [
  * each of the 9 panels' independent useAdvancedToolJob state resets together
  * without each panel needing its own "did the notebook change" effect --
  * mirrors PipelineTab.tsx's own `key={jobId}` remount trick one level up. */
-function AdvancedToolsTab({ notebookId, sources, savedReviews }: AdvancedToolsTabProps) {
+function AdvancedToolsTab({ notebookId, sources, savedReviews, reviewerChats }: AdvancedToolsTabProps) {
   return (
     <div className="advanced-tools-tab" key={notebookId}>
-      <AdvancedToolsToolSwitcher notebookId={notebookId} sources={sources} savedReviews={savedReviews} />
+      <AdvancedToolsToolSwitcher notebookId={notebookId} sources={sources} savedReviews={savedReviews} reviewerChats={reviewerChats} />
     </div>
   );
 }
 
-function AdvancedToolsToolSwitcher({ notebookId, sources, savedReviews }: AdvancedToolsTabProps) {
+function AdvancedToolsToolSwitcher({ notebookId, sources, savedReviews, reviewerChats }: AdvancedToolsTabProps) {
   const [choice, setChoice] = useState<AdvancedTool>("cross-document-summary");
   const sourceNames = sources.map((s) => s.filename);
 
@@ -100,7 +101,7 @@ function AdvancedToolsToolSwitcher({ notebookId, sources, savedReviews }: Advanc
       {choice === "knowledge-graph" && <KnowledgeGraphPanel notebookId={notebookId} />}
       {choice === "citation-timeline" && <CitationTimelinePanel notebookId={notebookId} sourceNames={sourceNames} />}
       {choice === "study-comparison" && <StudyComparisonPanel notebookId={notebookId} />}
-      {choice === "reviewer" && <ReviewerPanel notebookId={notebookId} sources={sources} savedReviews={savedReviews} />}
+      {choice === "reviewer" && <ReviewerPanel notebookId={notebookId} sources={sources} savedReviews={savedReviews} reviewerChats={reviewerChats} />}
     </>
   );
 }

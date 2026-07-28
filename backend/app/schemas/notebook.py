@@ -94,6 +94,7 @@ class NotebookDetail(BaseModel):
     created_at: str
     last_modified: str
     saved_reviews: Dict[str, SavedReview] = Field(default_factory=dict)
+    reviewer_chats: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
 
 
 class UploadSourceResult(BaseModel):
