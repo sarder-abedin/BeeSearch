@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { SourceMeta } from "../../api/notebookTypes";
+import type { SavedReview, SourceMeta } from "../../api/notebookTypes";
 import AudioSummaryPanel from "./advanced/AudioSummaryPanel";
 import CitationTimelinePanel from "./advanced/CitationTimelinePanel";
 import CompareSourcesPanel from "./advanced/CompareSourcesPanel";
@@ -16,6 +16,7 @@ import "./AdvancedToolsTab.css";
 interface AdvancedToolsTabProps {
   notebookId: string;
   sources: SourceMeta[];
+  savedReviews?: Record<string, SavedReview>;
 }
 
 type AdvancedTool =
@@ -51,15 +52,15 @@ const ADVANCED_TOOLS: { key: AdvancedTool; label: string }[] = [
  * each of the 9 panels' independent useAdvancedToolJob state resets together
  * without each panel needing its own "did the notebook change" effect --
  * mirrors PipelineTab.tsx's own `key={jobId}` remount trick one level up. */
-function AdvancedToolsTab({ notebookId, sources }: AdvancedToolsTabProps) {
+function AdvancedToolsTab({ notebookId, sources, savedReviews }: AdvancedToolsTabProps) {
   return (
     <div className="advanced-tools-tab" key={notebookId}>
-      <AdvancedToolsToolSwitcher notebookId={notebookId} sources={sources} />
+      <AdvancedToolsToolSwitcher notebookId={notebookId} sources={sources} savedReviews={savedReviews} />
     </div>
   );
 }
 
-function AdvancedToolsToolSwitcher({ notebookId, sources }: AdvancedToolsTabProps) {
+function AdvancedToolsToolSwitcher({ notebookId, sources, savedReviews }: AdvancedToolsTabProps) {
   const [choice, setChoice] = useState<AdvancedTool>("cross-document-summary");
   const sourceNames = sources.map((s) => s.filename);
 
@@ -99,7 +100,7 @@ function AdvancedToolsToolSwitcher({ notebookId, sources }: AdvancedToolsTabProp
       {choice === "knowledge-graph" && <KnowledgeGraphPanel notebookId={notebookId} />}
       {choice === "citation-timeline" && <CitationTimelinePanel notebookId={notebookId} sourceNames={sourceNames} />}
       {choice === "study-comparison" && <StudyComparisonPanel notebookId={notebookId} />}
-      {choice === "reviewer" && <ReviewerPanel notebookId={notebookId} sources={sources} />}
+      {choice === "reviewer" && <ReviewerPanel notebookId={notebookId} sources={sources} savedReviews={savedReviews} />}
     </>
   );
 }

@@ -44,6 +44,24 @@ export interface ConversationTurn {
   suggested_questions: string[] | null;
 }
 
+export interface SavedReview {
+  doc_id: string;
+  doc_filename: string;
+  review_text: string;
+  external_refs: ExternalRef[];
+  generated_at: string;
+}
+
+export interface ExternalRef {
+  ref_num?: string;
+  title?: string;
+  authors?: string[];
+  year?: number | null;
+  url?: string;
+  source?: string;
+  abstract_snippet?: string;
+}
+
 export interface NotebookDetail {
   notebook_id: string;
   name: string;
@@ -53,6 +71,7 @@ export interface NotebookDetail {
   conversation: ConversationTurn[];
   created_at: string;
   last_modified: string;
+  saved_reviews?: Record<string, SavedReview>;
 }
 
 export interface UploadSourceResult {
