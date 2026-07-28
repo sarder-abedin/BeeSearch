@@ -63,7 +63,8 @@ ddgs>=9.0.0               # duckduckgo-search's renamed successor package —
                           # `duckduckgo_search` import path is unavailable
 
 # ── LLM Observability (optional — requires LANGFUSE_PUBLIC_KEY in .env) ──────
-langfuse>=2.0.0           # Prompt/completion tracing dashboard (MIT)
+langfuse>=2.0.0           # Prompt/completion tracing dashboard (MIT); SDK v3+ moves the
+                          # LangChain callback to langfuse.langchain — observability.py handles both
 
 # ── MCP Server (optional — Claude Code / Claude Desktop integration) ──
 mcp>=1.0.0                # Model Context Protocol SDK for mcp_servers/research_tools_server.py (MIT)

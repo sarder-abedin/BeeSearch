@@ -39,7 +39,14 @@ def get_langfuse_callbacks() -> list[Any]:
 
     global _handler
     if _handler is None:
-        from langfuse.callback import CallbackHandler  # type: ignore[import]
+        # SDK v2: langfuse.callback  |  SDK v3: langfuse.langchain
+        try:
+            from langfuse.callback import CallbackHandler  # type: ignore[import]
+        except ImportError:
+            try:
+                from langfuse.langchain import CallbackHandler  # type: ignore[import]
+            except ImportError:
+                return []
 
         _handler = CallbackHandler(
             public_key=cfg.langfuse_public_key,
