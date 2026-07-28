@@ -8,6 +8,7 @@ import FaqPanel from "./advanced/FaqPanel";
 import KnowledgeGraphPanel from "./advanced/KnowledgeGraphPanel";
 import LiteratureReviewPanel from "./advanced/LiteratureReviewPanel";
 import MindmapPanel from "./advanced/MindmapPanel";
+import ReviewerPanel from "./advanced/ReviewerPanel";
 import StudyComparisonPanel from "./advanced/StudyComparisonPanel";
 import "../sr/sr-common.css";
 import "./AdvancedToolsTab.css";
@@ -26,7 +27,8 @@ type AdvancedTool =
   | "compare-sources"
   | "knowledge-graph"
   | "citation-timeline"
-  | "study-comparison";
+  | "study-comparison"
+  | "reviewer";
 
 /** Order mirrors ui/tabs/notebook.py's tab_summary..tab_study Streamlit tabs
  * (Tab 2 through Tab 10 of its 13-tab st.tabs(...) call). */
@@ -40,6 +42,7 @@ const ADVANCED_TOOLS: { key: AdvancedTool; label: string }[] = [
   { key: "knowledge-graph", label: "Graph" },
   { key: "citation-timeline", label: "Citation Timeline" },
   { key: "study-comparison", label: "Study Table" },
+  { key: "reviewer", label: "Reviewer" },
 ];
 
 /** Mirrors ExploreTab.tsx's radiogroup-of-tools pattern, adapted for Phase
@@ -96,6 +99,7 @@ function AdvancedToolsToolSwitcher({ notebookId, sources }: AdvancedToolsTabProp
       {choice === "knowledge-graph" && <KnowledgeGraphPanel notebookId={notebookId} />}
       {choice === "citation-timeline" && <CitationTimelinePanel notebookId={notebookId} sourceNames={sourceNames} />}
       {choice === "study-comparison" && <StudyComparisonPanel notebookId={notebookId} />}
+      {choice === "reviewer" && <ReviewerPanel notebookId={notebookId} sources={sources} />}
     </>
   );
 }

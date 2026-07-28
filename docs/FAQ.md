@@ -190,8 +190,35 @@ The dashboard shows every prompt, completion, latency, and token count for each 
 
 ---
 
+**Q: What is the Reviewer tab in the Research Notebook?**
+A: The Reviewer is an IEEE-style peer review tool for uploaded papers (Mode 2 → Advanced Tools → Reviewer tab). Select one paper from a dropdown; BeeSearch generates a structured critique grounded in **both** the uploaded document and external scientific literature from arXiv and Semantic Scholar.
+
+**How the pipeline works:**
+1. BeeSearch scans the paper and extracts 3 search queries targeting the paper's core topic, methodology, and claimed novelty.
+2. It searches arXiv and Semantic Scholar and retrieves up to 9 relevant papers, labelled **[E1]–[E9]**.
+3. It generates the full review with both the paper text and the external paper abstracts available to the model, which is instructed to cite **[En]** inline wherever external evidence supports or contradicts a critique point — e.g. citing a missing baseline as [E2], identifying where a novelty claim overlaps with prior work as [E3], or citing a reference that states the correct mathematical form when an error is found.
+
+The review sections are:
+
+- **Summary** — what the paper claims to do (description only, no evaluation).
+- **Strengths** — specific positives backed by evidence from the text.
+- **Weaknesses** — concrete, actionable problems tied to specific locations in the paper, with external citations [En] where relevant.
+- **Detailed Critique** — four mandatory sub-dimensions:
+  - *Novelty & Originality* — whether the contribution is genuinely new or incremental; prior-work overlaps are cited as [En].
+  - *Technical Soundness & Methodology* — the most rigorous section: (a) **mathematical correctness** (equations, derivations, proofs — errors are quoted and explained precisely; the correct form is cited from external references [En] if found), (b) **logical validity** (circular reasoning, non-sequitur conclusions, invalid inferences, internal contradictions), (c) **misleading or incorrect claims** (cherry-picked results, overgeneralised conclusions, factually wrong statements — contradicting references cited as [En]), (d) **assumptions** (stated, justified, failure consequences — external evidence cited [En] where relevant). If no mathematical error is found, that is stated explicitly rather than omitting the sub-section.
+  - *Experimental Evaluation* — baselines, metrics, ablations, statistical significance; missing standard baselines cited from external references [En].
+  - *Related Work Coverage* — survey completeness and fairness of comparisons; missing key works cited as [En].
+  - *Clarity & Writing Quality* — specific sections that need revision.
+- **Recommendation** — one of Accept / Minor Revision / Major Revision / Reject, with rationale tied to the Technical Soundness findings and citing at least one external reference [En] where relevant.
+
+The **External References** card list below the review shows all [E1]–[E9] papers with their labels so you can cross-reference inline citations in the review text. A follow-up chat thread lets you discuss specific critique points or request concrete suggestions; the chat has access to the same [En] papers and can elaborate on why a particular external result matters.
+
+---
+
 **Q: Does BeeSearch write in a natural style, or does it sound like a generic AI?**
 A: BeeSearch actively suppresses the writing patterns most commonly associated with AI-generated text. Every prose-generating prompt (Chat, Summaries, Literature Review, Systematic Review synthesis, Explain, Research Report, study guide, podcast script) injects a style instruction that bans common AI vocabulary ("delve", "tapestry", "groundbreaking", "robust", "comprehensive", "multifaceted", "leveraging", etc.) and forbids formulaic openers ("Certainly!", "Notably,", "It is worth noting that") and lazy paragraph starters ("In conclusion,", "Furthermore,", "Moreover,"). Structured-output nodes that produce JSON (FAQ, mind map, knowledge graph) are deliberately excluded — injecting style rules into those prompts would corrupt the output format. Audio and podcast scripts use a lighter variant that permits natural spoken transitions (First, Then, Finally) while still banning the forbidden vocabulary.
+
+The Reviewer tool uses a stricter variant (`ANTI_AI_TELL_REVIEWER_INSTRUCTION`) drawn from the Wikipedia *Signs of AI Writing* guidelines. In addition to the standard vocabulary bans it adds: "underscore", "crucial", "enhance", "landscape", "realm", "interplay", "garnered", "bolstered", "impactful", "innovative", and "key" (as a vague adjective). It also prohibits structural AI habits documented by Wikipedia editors: the **compliment sandwich** (positive → criticism → positive wrapping), the **hourglass structure** (generic synthesis open and close), the **"not X but Y"** manufactured-contrast formula, the **"faces challenges / despite these challenges"** conclusion pattern, artificial **rule-of-three** grouping, and **uniform paragraph length** (identical paragraph sizes signal AI generation). Reviewer prompts are also required to cite specific evidence — equation numbers, section headings, quoted passages — rather than referring to "the methodology" in the abstract.
 
 ---
 

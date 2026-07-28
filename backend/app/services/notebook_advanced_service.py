@@ -32,7 +32,9 @@ from agents.notebook_advanced import (
     generate_faq,
     generate_literature_review,
     generate_mindmap,
+    generate_paper_review,
     generate_study_comparison,
+    reviewer_chat,
 )
 from config.settings import get_settings
 
@@ -45,6 +47,8 @@ from ..schemas.notebook_advanced import (
     KnowledgeGraphRequest,
     LiteratureReviewRequest,
     MindmapRequest,
+    PaperReviewRequest,
+    ReviewChatRequest,
     StudyComparisonRequest,
 )
 
@@ -66,6 +70,8 @@ _RUNNING_LABELS: Dict[str, str] = {
     "knowledge_graph": "Extracting knowledge graph",
     "citation_timeline": "Building citation timeline",
     "study_comparison": "Generating study comparison table",
+    "paper_review": "Generating paper review",
+    "reviewer_chat": "Generating reviewer response",
 }
 
 
@@ -165,6 +171,32 @@ def run_study_comparison(req: StudyComparisonRequest, stream_callback: StreamCal
     if error:
         raise RuntimeError(error)
     return {"notebook_id": req.notebook_id, "study_comparison": comparison}
+
+
+def run_paper_review(req: PaperReviewRequest, stream_callback: StreamCallback) -> Dict[str, Any]:
+    _tick(stream_callback, "paper_review")
+    review, refs, error = generate_paper_review(req.notebook_id, req.doc_id, build_settings(req))
+    if error:
+        raise RuntimeError(error)
+    return {"notebook_id": req.notebook_id, "paper_review": review, "paper_review_refs": refs}
+
+
+def run_reviewer_chat(req: ReviewChatRequest, stream_callback: StreamCallback) -> Dict[str, Any]:
+    _tick(stream_callback, "reviewer_chat")
+    history = [{"role": item.role, "content": item.content} for item in req.chat_history]
+    refs = [r.model_dump() for r in req.external_refs]
+    response, error = reviewer_chat(
+        req.notebook_id,
+        req.doc_id,
+        req.review_text,
+        history,
+        req.user_message,
+        build_settings(req),
+        external_refs=refs,
+    )
+    if error:
+        raise RuntimeError(error)
+    return {"notebook_id": req.notebook_id, "reviewer_chat_response": response}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

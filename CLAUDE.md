@@ -191,8 +191,8 @@ deliberate, not a bug.
 
 ### Anti-AI writing style enforcement
 
-`tools/writing_style.py` exports two constants injected into every prose-generating LLM
-prompt across all agents:
+`tools/writing_style.py` exports three constants injected into prose-generating LLM
+prompts across all agents:
 
 - `ANTI_AI_TELL_INSTRUCTION` — strict variant (Chat, Summaries, Literature Review, SR
   synthesis, study guide, Research Report). Bans generic AI vocabulary, formulaic openers,
@@ -200,12 +200,32 @@ prompt across all agents:
 - `ANTI_AI_TELL_NARRATIVE_INSTRUCTION` — softer variant for audio/podcast content that
   allows natural spoken transitions (First, Then, Finally) while still banning the
   forbidden vocabulary.
+- `ANTI_AI_TELL_REVIEWER_INSTRUCTION` — strictest variant for the Reviewer tool
+  (`generate_paper_review` / `reviewer_chat` in `agents/notebook_advanced.py`). Drawn
+  from the Wikipedia *Signs of AI Writing* guidelines. Extends the vocabulary ban
+  (adds: underscore, crucial, enhance, landscape, realm, interplay, garnered, bolstered,
+  impactful, innovative, key-as-adjective) and additionally bans AI structural habits:
+  compliment sandwich, hourglass structure, "not X but Y" manufactured contrast,
+  "faces challenges / despite these challenges" formula, rule-of-three padding, and
+  uniform paragraph length. Requires specific evidence citation (equation numbers,
+  section headings, quoted passages) — never abstract references to "the methodology".
 
-Both are injected via direct `from tools.writing_style import ...` imports (not through
-`tools/__init__.py`'s lazy `__getattr__`) and are also re-exported in `_EXPORTS` for any
-code that imports via the `tools` namespace. Do **not** inject these into JSON-output
-prompts (FAQ, mind map, knowledge graph, PICO extraction, RoB, GRADE, screening) — the
-style rules corrupt structured output parsing.
+**Reviewer pipeline** — `generate_paper_review` runs in three steps so that both the
+uploaded paper and external literature ground the critique: (1) extract 3 search queries
+from the document (topic, methodology, claimed novelty); (2) search arXiv + Semantic
+Scholar, assign `[E1]`–`[E9]` reference numbers; (3) generate the full review with both
+the paper text and external abstracts in context — the LLM is instructed to cite `[En]`
+inline wherever external evidence supports or contradicts a critique point (missing
+baselines, novelty overlaps, mathematical errors, unjustified assumptions, incorrect
+claims). `_build_external_ref_block()` formats the numbered block for the prompt.
+`reviewer_chat` receives the same `external_refs` list so the follow-up chat can
+reference the same papers by `[En]` label.
+
+All three are injected via direct `from tools.writing_style import ...` imports (not
+through `tools/__init__.py`'s lazy `__getattr__`) and are also re-exported in `_EXPORTS`
+for any code that imports via the `tools` namespace. Do **not** inject these into
+JSON-output prompts (FAQ, mind map, knowledge graph, PICO extraction, RoB, GRADE,
+screening) — the style rules corrupt structured output parsing.
 
 ### Citation grounding
 
