@@ -44,12 +44,16 @@ services:
       test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/version 2>/dev/null || wget -qO- http://localhost:11434/api/version 2>/dev/null || exit 1"]
       interval: 15s
       timeout: 10s
-      retries: 15
-      start_period: 60s
+      retries: 20
+      start_period: 300s
 
   # ── Pull the default LLM model on first start ──────────────
   # This service runs once, pulls the model, then exits.
   # If the model is already downloaded, the pull is a no-op.
+  # NOTE: For large models (>10 GB, e.g. nemotron3:33b), keep OLLAMA_MODEL
+  # set to a small model (e.g. llama3.2:3b) for startup, then pull the large
+  # model manually after Docker is healthy:
+  #   docker compose exec ollama ollama pull nemotron3:33b
   model-init:
     image: ollama/ollama:latest
     container_name: beesearch-model-init
