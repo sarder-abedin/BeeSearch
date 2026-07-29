@@ -48,6 +48,8 @@ services:
     ports:
       - "${PORT:-8000}:8000"
     environment:
+      # Tell BeeSearch the host GPU type — the container can't probe it directly.
+      - GPU_TYPE=amd
       # host.docker.internal resolves to the Docker Desktop host machine
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
