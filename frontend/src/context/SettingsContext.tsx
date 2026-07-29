@@ -68,6 +68,7 @@ export interface SettingsContextValue extends PersistedSettings {
 
   applyRecommended: (modelName?: string, numCtxOverride?: number) => void;
   applyAllRecommended: () => void;
+  applyModelSuggestion: (modelName: string) => void;
 
   shuttingDown: boolean;
   shutdownError: string | null;
@@ -165,6 +166,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }));
   }, [status]);
 
+  const applyModelSuggestion = useCallback(
+    (modelName: string) => {
+      const suggestion = status?.model_suggestions?.[modelName];
+      if (suggestion) {
+        setSettings((prev) => ({
+          ...prev,
+          model: modelName,
+          numCtx: suggestion.num_ctx,
+          chunkSize: suggestion.chunk_size,
+          chunkOverlap: suggestion.chunk_overlap,
+        }));
+      } else {
+        setSettings((prev) => ({ ...prev, model: modelName }));
+      }
+    },
+    [status],
+  );
+
   const requestShutdown = useCallback(async () => {
     setShuttingDown(true);
     setShutdownError(null);
@@ -181,6 +200,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     () => ({
       ...settings,
       setModel: (model) => setSettings((p) => ({ ...p, model })),
+      applyModelSuggestion,
       setNumCtx: (numCtx) => setSettings((p) => ({ ...p, numCtx })),
       setTemperatureLevel: (temperatureLevel) => setSettings((p) => ({ ...p, temperatureLevel })),
       setEmbedModel: (embedModel) => setSettings((p) => ({ ...p, embedModel })),
@@ -203,7 +223,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       shutdownError,
       requestShutdown,
     }),
-    [settings, status, statusLoading, statusError, refresh, applyRecommended, applyAllRecommended, shuttingDown, shutdownError, requestShutdown],
+    [settings, status, statusLoading, statusError, refresh, applyRecommended, applyAllRecommended, applyModelSuggestion, shuttingDown, shutdownError, requestShutdown],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

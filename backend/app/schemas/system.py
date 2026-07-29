@@ -13,7 +13,7 @@ so the service layer can pass those dicts straight into these models.
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -61,10 +61,21 @@ class ModelRecommendation(BaseModel):
 
 class EmbedModelInfo(BaseModel):
     name: str
-    dim: int
-    size_gb: float
-    note: str
+    dim: int = 0
+    size_gb: float = 0.0
+    note: str = ""
     pulled: bool
+
+
+class ModelSuggestion(BaseModel):
+    name: str
+    num_ctx: int
+    chunk_size: int
+    chunk_overlap: int
+    ram_gb: float
+    label: str
+    note: str
+    quality: int
 
 
 class TemperatureLevelOption(BaseModel):
@@ -79,6 +90,7 @@ class SystemStatusResponse(BaseModel):
     recommendation: ModelRecommendation
     available_models: List[str] = Field(default_factory=list)
     embed_models: List[EmbedModelInfo] = Field(default_factory=list)
+    model_suggestions: Dict[str, ModelSuggestion] = Field(default_factory=dict)
     temperature_levels: List[TemperatureLevelOption] = Field(default_factory=list)
     default_temperature_level: TemperatureLevel
     context_window_options: List[int] = Field(default_factory=list)
