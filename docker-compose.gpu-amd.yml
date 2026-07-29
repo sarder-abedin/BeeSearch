@@ -39,6 +39,13 @@
 # ─────────────────────────────────────────────────────────────
 
 services:
+  # Tell the web container what GPU type the host has so the hardware panel
+  # shows "AMD Radeon (ROCm)" instead of "CPU only". The web service cannot
+  # access /dev/kfd or /dev/dri directly, so auto-detection falls back to cpu.
+  web:
+    environment:
+      - GPU_TYPE=amd
+
   ollama:
     image: ollama/ollama:rocm    # ROCm-enabled image; replaces ollama/ollama:latest
     devices:
