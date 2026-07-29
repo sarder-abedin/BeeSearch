@@ -94,6 +94,15 @@ def get_recommended_tier(hw: Dict) -> Dict:
 
 
 KNOWN_MODELS: List[Dict] = [
+    # ── Quality 5 — large / reasoning ────────────────────────────────────────
+    {
+        "name": "qwq:32b",
+        "ram_gb": 20,
+        "num_ctx": 32768,
+        "quality": 5,
+        "label": "Alibaba QwQ 32B",
+        "note": "Deep reasoning model — best for complex analysis",
+    },
     {
         "name": "phi4:14b",
         "ram_gb": 14,
@@ -103,12 +112,46 @@ KNOWN_MODELS: List[Dict] = [
         "note": "Highest reasoning quality",
     },
     {
+        "name": "qwen3:32b",
+        "ram_gb": 20,
+        "num_ctx": 32768,
+        "quality": 5,
+        "label": "Alibaba Qwen 3 32B",
+        "note": "Top-tier quality with hybrid thinking mode",
+    },
+    # ── Quality 4 — high quality ──────────────────────────────────────────────
+    {
+        "name": "qwen3:14b",
+        "ram_gb": 9,
+        "num_ctx": 32768,
+        "quality": 4,
+        "label": "Alibaba Qwen 3 14B",
+        "note": "Excellent quality, fits in 16 GB RAM",
+    },
+    {
         "name": "mistral-nemo:12b",
         "ram_gb": 12,
         "num_ctx": 131072,
         "quality": 4,
         "label": "Mistral NeMo 12B",
         "note": "Best context window (128k tokens)",
+    },
+    {
+        "name": "qwen2.5:14b",
+        "ram_gb": 9,
+        "num_ctx": 32768,
+        "quality": 4,
+        "label": "Alibaba Qwen 2.5 14B",
+        "note": "Strong multilingual, solid reasoning",
+    },
+    # ── Quality 3 — standard ──────────────────────────────────────────────────
+    {
+        "name": "qwen3:8b",
+        "ram_gb": 6,
+        "num_ctx": 32768,
+        "quality": 3,
+        "label": "Alibaba Qwen 3 8B",
+        "note": "Strong all-rounder with thinking mode",
     },
     {
         "name": "gemma2:9b",
@@ -126,6 +169,15 @@ KNOWN_MODELS: List[Dict] = [
         "label": "Meta Llama 3.1 8B",
         "note": "Reliable all-rounder",
     },
+    # ── Quality 2 — efficient ─────────────────────────────────────────────────
+    {
+        "name": "qwen3:4b",
+        "ram_gb": 3,
+        "num_ctx": 32768,
+        "quality": 2,
+        "label": "Alibaba Qwen 3 4B",
+        "note": "Surprisingly capable for its size",
+    },
     {
         "name": "qwen2.5:7b",
         "ram_gb": 7,
@@ -133,6 +185,15 @@ KNOWN_MODELS: List[Dict] = [
         "quality": 2,
         "label": "Alibaba Qwen 2.5 7B",
         "note": "Efficient, good multilingual support",
+    },
+    # ── Quality 1 — minimal ───────────────────────────────────────────────────
+    {
+        "name": "qwen3:1.7b",
+        "ram_gb": 1.5,
+        "num_ctx": 32768,
+        "quality": 1,
+        "label": "Alibaba Qwen 3 1.7B",
+        "note": "Tiny footprint, usable on very low RAM",
     },
     {
         "name": "llama3.2:3b",
@@ -186,6 +247,7 @@ def detect_hardware() -> Dict:
 _EMBED_PREFIXES = (
     "nomic-embed", "mxbai-embed", "bge-m3", "all-minilm",
     "text-embedding", "embed-", "snowflake-arctic-embed",
+    "qwen3-embed",          # qwen3-embedding:0.6b / 4b / 8b
 )
 
 
@@ -224,6 +286,24 @@ KNOWN_EMBED_MODELS: List[Dict] = [
         "dim": 1024,
         "size_gb": 1.2,
         "note": "Multilingual, best for non-English documents",
+    },
+    {
+        "name": "qwen3-embedding:0.6b",
+        "dim": 1024,
+        "size_gb": 0.5,
+        "note": "Qwen3 embedding — strong multilingual, 32k context",
+    },
+    {
+        "name": "qwen3-embedding:4b",
+        "dim": 2560,
+        "size_gb": 2.6,
+        "note": "Qwen3 embedding — higher accuracy, 32k context",
+    },
+    {
+        "name": "qwen3-embedding:8b",
+        "dim": 4096,
+        "size_gb": 5.2,
+        "note": "Qwen3 embedding — best accuracy, 32k context",
     },
     {
         "name": "all-minilm",
