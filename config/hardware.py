@@ -211,11 +211,17 @@ def detect_hardware() -> Dict:
 
     Returns:
         Dict with keys: `os`, `arch`, `cpu`, `ram_gb`, `gpu_type`
-        (`"apple_silicon"` | `"nvidia"` | `"cpu"`), `is_apple_silicon`,
-        `in_docker`, `is_docker_on_apple_silicon`. Consumed by
-        `recommend_config()`, `get_recommended_tier()`, and
+        (`"apple_silicon"` | `"nvidia"` | `"amd"` | `"cpu"`),
+        `is_apple_silicon`, `in_docker`, `is_docker_on_apple_silicon`.
+        Consumed by `recommend_config()`, `get_recommended_tier()`, and
         `ui/sidebar.py::render_sidebar()`'s Hardware panel.
+
+    GPU detection note: inside a Docker container the GPU devices are not
+    accessible to the web service, so auto-detection always returns "cpu".
+    Set the ``GPU_TYPE`` environment variable (``nvidia`` / ``amd``) in
+    your compose file's web service to override this.
     """
+    import os as _os
     in_docker = _is_docker()
     os_name = platform.system()
     arch = platform.machine()
@@ -240,7 +246,16 @@ def detect_hardware() -> Dict:
 
     hw["is_apple_silicon"] = native_apple or docker_apple
     hw["is_docker_on_apple_silicon"] = docker_apple
-    hw["gpu_type"] = _get_gpu_type(hw["is_apple_silicon"])
+
+    # Allow Docker web containers (which can't access GPU devices) to report
+    # the correct accelerator via the GPU_TYPE environment variable.
+    gpu_override = _os.environ.get("GPU_TYPE", "").lower().strip()
+    if gpu_override in ("nvidia", "amd", "apple_silicon", "cpu"):
+        hw["gpu_type"] = gpu_override
+        if gpu_override == "apple_silicon":
+            hw["is_apple_silicon"] = True
+    else:
+        hw["gpu_type"] = _get_gpu_type(hw["is_apple_silicon"])
     return hw
 
 

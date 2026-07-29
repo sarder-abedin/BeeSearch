@@ -15,6 +15,12 @@
 # ─────────────────────────────────────────────────────────────
 
 services:
+  # Tell the web container what GPU type the host has — nvidia-smi is not
+  # installed inside the web container, so auto-detection falls back to cpu.
+  web:
+    environment:
+      - GPU_TYPE=nvidia
+
   ollama:
     deploy:
       resources:
