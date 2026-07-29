@@ -425,6 +425,7 @@ def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) 
     gpu_labels = {
         "apple_silicon": "Apple Silicon (Metal GPU)",
         "nvidia": "NVIDIA GPU (CUDA)",
+        "amd": "AMD Radeon GPU (ROCm)",
         "cpu": "CPU only",
     }
 
