@@ -203,7 +203,7 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <select
                       id="settings-model"
                       value={s.model ?? status.available_models[0]}
-                      onChange={(e) => s.setModel(e.target.value)}
+                      onChange={(e) => s.applyModelSuggestion(e.target.value)}
                     >
                       {status.available_models.map((m) => (
                         <option key={m} value={m}>
@@ -211,6 +211,18 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                         </option>
                       ))}
                     </select>
+                    {(() => {
+                      const activeModel = s.model ?? status.available_models[0];
+                      const suggestion = status.model_suggestions?.[activeModel];
+                      if (!suggestion) return null;
+                      return (
+                        <p className="sr-caption" style={{ marginTop: "0.35rem" }}>
+                          {suggestion.label} — {suggestion.note}
+                          <br />
+                          RAM: {suggestion.ram_gb} GB · Context: {suggestion.num_ctx.toLocaleString()} tokens
+                        </p>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="sr-field">
@@ -277,7 +289,9 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   >
                     {status.embed_models.map((m) => (
                       <option key={m.name} value={m.name}>
-                        {m.name} ({m.dim}d, {m.size_gb} GB){m.pulled ? "" : " — not pulled"}
+                        {m.dim > 0
+                          ? `${m.name} (${m.dim}d, ${m.size_gb} GB)${m.pulled ? "" : " — not pulled"}`
+                          : `${m.name}${m.pulled ? " (pulled)" : " — not pulled"}`}
                       </option>
                     ))}
                   </select>
