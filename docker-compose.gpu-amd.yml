@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────
+# GPU override — AMD Radeon (ROCm) with automatic GPU+RAM load sharing
+#
+# Merge with the base compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up --build
+#
+# Requirements:
+#   • AMD Radeon GPU with ROCm support (RX 5000 series / RDNA or newer recommended)
+#   • ROCm drivers installed on the host (Linux only):
+#     https://rocm.docs.amd.com/projects/install-on-linux/en/latest/
+#   • Add your user to the video and render groups, then log out and back in:
+#     sudo usermod -aG video,render $USER
+#
+# Verify your setup:
+#   docker run --rm --device /dev/kfd --device /dev/dri \
+#     --group-add video --group-add render \
+#     ollama/ollama:rocm rocminfo
+#
+# ── GPU + RAM load sharing ────────────────────────────────────
+# Ollama automatically splits the model between GPU VRAM and system RAM:
+# it loads as many transformer layers as fit in VRAM onto the GPU and
+# runs the remainder on CPU+RAM. OLLAMA_NUM_GPU=999 tells Ollama to
+# maximise GPU layers rather than use a fixed count.
+#
+# To reserve VRAM headroom for the desktop / OS (so the card stays
+# responsive), set OLLAMA_GPU_OVERHEAD in your .env:
+#   OLLAMA_GPU_OVERHEAD=1073741824   # reserve 1 GB
+#   OLLAMA_GPU_OVERHEAD=2147483648   # reserve 2 GB
+# Leave it unset (the default) to let Ollama use all available VRAM.
+#
+# ── Older AMD cards (Polaris / Vega / gfx803 / gfx906) ───────
+# Some pre-RDNA cards need a GFX version hint.  Uncomment the line
+# below and set it to your card's version (check with: rocminfo | grep gfx):
+#   - HSA_OVERRIDE_GFX_VERSION=10.3.0   # RX 5700 XT example
+# ─────────────────────────────────────────────────────────────
+
+services:
+  ollama:
+    image: ollama/ollama:rocm    # ROCm-enabled image; replaces ollama/ollama:latest
+    devices:
+      - /dev/kfd                 # AMD compute kernel device (HSA runtime)
+      - /dev/dri                 # Direct Rendering Infrastructure (GPU render nodes)
+    group_add:
+      - video                    # grants access to DRI nodes
+      - render                   # grants access to renderD* nodes (kernel 5.6+)
+    environment:
+      # Maximise GPU layer offload; remaining layers run transparently on CPU+RAM.
+      - OLLAMA_NUM_GPU=999
+      # Reserve VRAM headroom (bytes). Unset = use all available VRAM.
+      - OLLAMA_GPU_OVERHEAD=${OLLAMA_GPU_OVERHEAD:-0}
+      # Uncomment for older AMD cards that require a GFX version override:
+      # - HSA_OVERRIDE_GFX_VERSION=10.3.0
