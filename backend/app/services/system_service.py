@@ -21,9 +21,12 @@ from typing import Optional
 
 from config.hardware import (
     KNOWN_EMBED_MODELS,
+    KNOWN_MODELS,
     detect_hardware,
+    get_all_pulled_embed_models,
     get_available_embed_models,
     get_available_models,
+    get_model_suggestion,
     get_recommended_tier,
     recommend_config,
 )
@@ -35,6 +38,7 @@ from ..schemas.system import (
     EmbedModelInfo,
     HardwareInfo,
     ModelRecommendation,
+    ModelSuggestion,
     SafeAlternative,
     ShutdownResult,
     SystemStatusResponse,
@@ -55,10 +59,26 @@ def get_system_status(ram_override_gb: Optional[float] = None) -> SystemStatusRe
 
     available_models = get_available_models(cfg.ollama_base_url)
     available_embed = get_available_embed_models(cfg.ollama_base_url)
+    all_pulled_embed = get_all_pulled_embed_models(cfg.ollama_base_url)
     rec = recommend_config(hw, available_models)
     tier = get_recommended_tier(hw)
 
     safe_alt = rec.get("safe_alternative")
+
+    # Known embed models with pulled flag
+    known_embed_names = {m["name"] for m in KNOWN_EMBED_MODELS}
+    embed_models = [EmbedModelInfo(**m, pulled=m["name"] in available_embed) for m in KNOWN_EMBED_MODELS]
+    # Append unknown pulled embed models not already in the known list
+    for name in all_pulled_embed:
+        if name not in known_embed_names:
+            embed_models.append(EmbedModelInfo(name=name, pulled=True))
+
+    # Per-model config suggestions for all pulled chat models
+    model_suggestions = {}
+    for model_name in available_models:
+        suggestion = get_model_suggestion(model_name)
+        if suggestion:
+            model_suggestions[model_name] = ModelSuggestion(**suggestion)
 
     return SystemStatusResponse(
         hardware=HardwareInfo(**hw),
@@ -74,9 +94,8 @@ def get_system_status(ram_override_gb: Optional[float] = None) -> SystemStatusRe
             safe_alternative=SafeAlternative(name=safe_alt["name"], ram_gb=safe_alt["ram_gb"]) if safe_alt else None,
         ),
         available_models=available_models,
-        embed_models=[
-            EmbedModelInfo(**m, pulled=m["name"] in available_embed) for m in KNOWN_EMBED_MODELS
-        ],
+        embed_models=embed_models,
+        model_suggestions=model_suggestions,
         temperature_levels=[
             TemperatureLevelOption(key=key, label=label, description=desc)
             for key, label, desc in temperature_level_options()
