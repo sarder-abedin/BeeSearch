@@ -106,25 +106,21 @@ docker info | grep Context
 
 **Docker Engine** (native Linux daemon):
 
-Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `video` group:
+Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `video` and `render` groups:
 
 ```bash
-sudo usermod -aG video $USER          # log out and back in after this
+sudo usermod -aG video $USER
+sudo usermod -aG render $USER         # render group is created by a full ROCm install
+# log out and back in, then:
 docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up --build
-```
-
-If your system has a `render` group (created by a full ROCm install), add yourself to it and uncomment `- render` in `docker-compose.gpu-amd.yml`:
-
-```bash
-getent group render && sudo usermod -aG render $USER
 ```
 
 **Docker Desktop on Linux** (runs in a VM — GPU passthrough not supported):
 
-Docker Desktop cannot access `/dev/kfd` from inside its Linuxkit VM. Instead, install Ollama natively (it auto-detects ROCm), then run only the web container:
+Docker Desktop cannot access `/dev/kfd` from inside its Linuxkit VM. Instead, install Ollama natively (ROCm drivers must already be installed — Ollama auto-detects them), then run only the web container:
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh   # installs with ROCm support
+curl -fsSL https://ollama.com/install.sh | sh   # installs Ollama binary only
 ollama pull llama3.2:3b && ollama pull nomic-embed-text && ollama pull llava:7b
 docker compose -f docker-compose.amd-native.yml up --build
 ```
