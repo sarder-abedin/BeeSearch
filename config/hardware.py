@@ -96,6 +96,14 @@ def get_recommended_tier(hw: Dict) -> Dict:
 KNOWN_MODELS: List[Dict] = [
     # ── Quality 5 — large / reasoning ────────────────────────────────────────
     {
+        "name": "nemotron3:33b",
+        "ram_gb": 20,
+        "num_ctx": 4096,
+        "quality": 5,
+        "label": "NVIDIA Nemotron-3 33B",
+        "note": "NVIDIA large model — strong instruction following",
+    },
+    {
         "name": "qwq:32b",
         "ram_gb": 20,
         "num_ctx": 32768,
