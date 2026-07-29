@@ -106,9 +106,10 @@ docker info | grep Context
 
 **Docker Engine** (native Linux daemon):
 
-Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `video` and `render` groups:
+Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `docker`, `video`, and `render` groups:
 
 ```bash
+sudo usermod -aG docker $USER
 sudo usermod -aG video $USER
 sudo usermod -aG render $USER         # render group is created by a full ROCm install
 # log out and back in, then:
