@@ -58,7 +58,7 @@ services:
       - /dev/dri                 # Direct Rendering Infrastructure (GPU render nodes)
     group_add:
       - video                    # grants access to /dev/kfd and /dev/dri nodes
-      - render                   # renderD* nodes (kernel 5.6+); created by a full ROCm install
+      # render group is not present in the ollama/ollama:rocm image — omitted intentionally.
     shm_size: '8gb'              # ROCm uses shared memory for multi-process GPU communication
     environment:
       # Maximise GPU layer offload; remaining layers run transparently on CPU+RAM.
