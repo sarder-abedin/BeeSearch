@@ -15,6 +15,7 @@
 - [The three modes](#the-three-modes)
 - [Get started in 3 steps](#get-started-in-3-steps)
 - [GPU acceleration](#gpu-acceleration)
+- [Managing Docker](#managing-docker)
 - [Choosing an AI model](#choosing-an-ai-model)
 - [Using the web interface](#using-the-web-interface)
 - [Adjusting AI responses](#adjusting-ai-responses)
@@ -156,6 +157,89 @@ GPU work happens inside native Ollama on the host — BeeSearch's web container 
 ```env
 OLLAMA_GPU_OVERHEAD=2147483648   # reserve 2 GB for the OS/desktop
 ```
+
+---
+
+## Managing Docker
+
+### Check container status
+
+```bash
+docker compose ps
+```
+
+Watch it update in real time (refreshes every 2 seconds):
+
+```bash
+watch docker compose ps
+```
+
+The `STATUS` column shows each container's state:
+
+| Status | Meaning |
+|--------|---------|
+| `starting` | Health check hasn't passed yet — normal during the first ~30 seconds |
+| `healthy` | Container is ready |
+| `unhealthy` | Health check failed — check logs (see below) |
+
+### View logs
+
+Stream live logs from all containers:
+
+```bash
+docker compose logs -f
+```
+
+Stream logs from a single container:
+
+```bash
+docker compose logs -f ollama    # Ollama AI server
+docker compose logs -f web       # BeeSearch web app
+```
+
+### Inspect a failing health check
+
+If the ollama container is stuck on `unhealthy`, check the health check log directly:
+
+```bash
+docker inspect beesearch-ollama --format='{{json .State.Health}}' | python3 -m json.tool
+```
+
+This shows the last 5 health check attempts with exit codes and output, making it easy to see what's failing.
+
+### Pull models manually
+
+After the stack is healthy, pull any model into the running Ollama container:
+
+```bash
+docker compose exec ollama ollama pull nemotron3:33b
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+Models are stored in `~/.ollama` on the host (bind-mounted into the container), so they survive restarts and are available to native Ollama as well.
+
+### List available models
+
+```bash
+docker compose exec ollama ollama list
+```
+
+### Check model storage
+
+Models persist in your home directory:
+
+```bash
+ls ~/.ollama/models/manifests/registry.ollama.ai/library/
+```
+
+### Stop and restart
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml down   # stop
+docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up -d  # start in background
+```
+
+`down` does **not** delete your models — they are in `~/.ollama` on the host.
 
 ---
 
