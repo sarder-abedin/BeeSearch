@@ -5,6 +5,7 @@ import "./SettingsPanel.css";
 const GPU_LABELS: Record<string, string> = {
   apple_silicon: "Apple Silicon (Metal)",
   nvidia: "NVIDIA (CUDA)",
+  amd: "AMD Radeon (ROCm)",
   cpu: "CPU only",
 };
 
