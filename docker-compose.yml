@@ -42,7 +42,7 @@ services:
       - "11434:11434"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "ollama", "list"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/11434' 2>/dev/null"]
       interval: 10s
       timeout: 15s
       retries: 30
