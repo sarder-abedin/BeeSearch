@@ -34,8 +34,9 @@ services:
     image: ollama/ollama:latest
     container_name: beesearch-ollama
     volumes:
-      # Model weights persist across restarts — avoids re-downloading
-      - ollama_models:/root/.ollama
+      # Bind-mount the host's ~/.ollama so models pulled on the host are
+      # immediately available in the container — no re-downloading needed.
+      - ${HOME}/.ollama:/root/.ollama
     ports:
       # Expose so you can also run `ollama` CLI from the host
       - "11434:11434"
@@ -63,7 +64,7 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
     volumes:
-      - ollama_models:/root/.ollama
+      - ${HOME}/.ollama:/root/.ollama
     entrypoint: ["ollama", "pull"]
     command: "${OLLAMA_MODEL:-llama3.2:3b}"
     restart: "no"
@@ -81,7 +82,7 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
     volumes:
-      - ollama_models:/root/.ollama
+      - ${HOME}/.ollama:/root/.ollama
     entrypoint: ["ollama", "pull"]
     command: "${VISION_MODEL:-llava:7b}"
     restart: "no"
@@ -128,8 +129,5 @@ services:
       retries: 8
       start_period: 120s
 
-# ── Named volumes ───────────────────────────────────────────
-volumes:
-  # Ollama model weights — stored in Docker-managed volume so they
-  # survive `docker compose down` (only removed with --volumes flag)
-  ollama_models:
+# Note: model storage uses a bind mount (${HOME}/.ollama) so models pulled
+# on the host are shared with the container — no named volume needed.
