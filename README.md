@@ -100,59 +100,109 @@ First check which Docker you are running — this determines which command to us
 
 ```bash
 docker info | grep Context
-# default       → Docker Engine  (full GPU passthrough)
-# desktop-linux → Docker Desktop (see note below)
+# default       → Docker Engine  (full GPU passthrough — use steps below)
+# desktop-linux → Docker Desktop (runs in a VM — see Docker Desktop section)
 ```
 
-**Docker Engine** (native Linux daemon):
+**Docker Engine** (native Linux — `Context: default`):
 
 Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `docker` and `video` groups:
 
 ```bash
 sudo usermod -aG docker $USER
 sudo usermod -aG video $USER
-# log out and back in, then:
+```
+
+Log out and back in for the group changes to take effect, or activate them in the current shell without logging out:
+
+```bash
+newgrp docker
+```
+
+Then start BeeSearch with ROCm GPU support:
+
+```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up --build
 ```
 
-**Docker Desktop on Linux** (runs in a VM — GPU passthrough not supported):
-
-Docker Desktop cannot access `/dev/kfd` from inside its Linuxkit VM. Instead, install Ollama natively (ROCm drivers must already be installed — Ollama auto-detects them), then run only the web container:
+After the Ollama container is healthy, pull your models (one-time; stored in the `ollama_models` Docker volume):
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh   # installs Ollama binary only
-ollama pull llama3.2:3b && ollama pull nomic-embed-text && ollama pull llava:7b
+docker compose exec ollama ollama pull llama3.2:3b
+docker compose exec ollama ollama pull nomic-embed-text
+docker compose exec ollama ollama pull llava:7b   # optional — figure captioning in PDFs
+```
+
+> **Integrated GPU warning** — if you see `dropping ROCm device — no rocblas support for gfx target` in the logs, that is your CPU's integrated graphics being skipped. It is harmless; Ollama uses your discrete Radeon card automatically.
+
+> **Older AMD cards (Polaris / Vega / pre-RDNA)** — some cards need a GFX version hint. Check your card with `rocminfo | grep gfx`, then uncomment `HSA_OVERRIDE_GFX_VERSION` in `docker-compose.gpu-amd.yml`.
+
+**Docker Desktop on Linux** (`Context: desktop-linux`):
+
+Docker Desktop runs inside a Linuxkit VM and cannot pass through `/dev/kfd`. Instead, install Ollama natively on the host (ROCm is auto-detected if drivers are already installed), then run only the BeeSearch web container:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh   # installs Ollama binary; ROCm auto-detected
+ollama pull llama3.2:3b
+ollama pull nomic-embed-text
+ollama pull llava:7b   # optional
 docker compose -f docker-compose.amd-native.yml up --build
 ```
 
-**GPU + RAM sharing** — Ollama maximises the number of layers placed in VRAM and runs the remainder on CPU+RAM automatically (`OLLAMA_NUM_GPU=999` is set by default in the AMD compose override). To reserve VRAM headroom for your desktop, set `OLLAMA_GPU_OVERHEAD` (in bytes) in your `.env`:
+GPU work happens inside native Ollama on the host — BeeSearch's web container just calls its API. Performance is identical to the Docker Engine approach.
+
+**GPU + RAM sharing** — Ollama automatically fits as many model layers as possible into VRAM and runs the rest on CPU+RAM. No manual tuning is needed. To reserve VRAM headroom for your desktop, set `OLLAMA_GPU_OVERHEAD` (bytes) in your `.env`:
 
 ```env
 OLLAMA_GPU_OVERHEAD=2147483648   # reserve 2 GB for the OS/desktop
 ```
 
-**Older AMD cards (Polaris / Vega)** — some pre-RDNA cards need a GFX version hint. Check your card's version with `rocminfo | grep gfx`, then uncomment `HSA_OVERRIDE_GFX_VERSION` in `docker-compose.gpu-amd.yml`.
-
 ---
 
 ## Choosing an AI model
 
-BeeSearch automatically picks the best model for your computer based on available RAM. You can always change it in the **Settings** panel (⚙ button in the top bar).
-
-| RAM | Default model | What to expect |
-|-----|--------------|----------------|
-| Less than 8 GB | `llama3.2:3b` | Fast responses, works on most laptops |
-| 8–16 GB | `llama3.1:8b` | Good quality, recommended for most users |
-| 16 GB or more | `mistral-nemo:12b` | Best quality, 128k context window |
-
-To use a different model, pull it with Ollama first:
+BeeSearch automatically picks the best model for your computer based on available RAM. You can view what's recommended for your hardware with:
 
 ```bash
-# While Docker is running:
+python main.py --check-system        # hardware summary + recommended model
+python main.py --list-models         # table of all pulled models with RAM and context info
+```
+
+Or change it at any time in the **Settings panel (⚙)** → **LLM Model** dropdown. BeeSearch shows every pulled model and automatically adjusts context size and chunk settings when you pick one.
+
+**Recommended models by RAM:**
+
+| RAM | Model | Context | Notes |
+|-----|-------|---------|-------|
+| 4 GB+ | `llama3.2:3b` | 32k | Fastest, lowest memory use |
+| 8 GB+ | `llama3.1:8b` | 32k | Reliable all-rounder |
+| 12 GB+ | `mistral-nemo:12b` | 128k | Best context window |
+| 16 GB+ | `qwen3:14b` | 32k | Excellent quality |
+| 20 GB+ | `nemotron3:33b` | 4k | NVIDIA large model |
+| 20 GB+ | `qwq:32b` | 32k | Deep reasoning |
+| 20 GB+ | `qwen3:32b` | 32k | Top-tier quality |
+
+To pull a model (Docker):
+
+```bash
 docker compose exec ollama ollama pull mistral-nemo:12b
 ```
 
-Then select it in Settings → LLM Model.
+To pull a model (local install / native Ollama):
+
+```bash
+ollama pull mistral-nemo:12b
+```
+
+Then select it in **Settings → LLM Model** — no restart needed.
+
+**Embedding model** — used for document search in Research Notebook. `nomic-embed-text` is the default and works well for most use cases. To switch, pull an alternative and select it in **Settings → Embedding Model**:
+
+```bash
+docker compose exec ollama ollama pull mxbai-embed-large    # highest accuracy
+docker compose exec ollama ollama pull bge-m3               # best for non-English docs
+docker compose exec ollama ollama pull qwen3-embedding:0.6b # compact multilingual
+```
 
 ---
 
@@ -218,8 +268,8 @@ OLLAMA_BASE_URL=http://localhost:11434
 # Which AI model to use (BeeSearch auto-selects based on your RAM if not set)
 OLLAMA_MODEL=llama3.1:8b
 
-# Model used for document search and retrieval
-EMBEDDING_MODEL=nomic-embed-text
+# Embedding model for document search in Research Notebook
+EMBED_MODEL=nomic-embed-text
 
 # How many pages before switching to a lighter PDF parser (lower on machines with < 8 GB RAM)
 LARGE_DOC_PAGE_THRESHOLD=50
@@ -232,6 +282,12 @@ TEMPERATURE_LEVEL=focused
 # Local install: pull first (ollama pull llava:7b) then set the value below.
 # Leave empty to skip figure extraction entirely (no errors, no overhead).
 VISION_MODEL=llava:7b
+
+# GPU type hint — set this when running in Docker so the Settings panel shows
+# the correct accelerator instead of "CPU only". Set automatically by the GPU
+# compose files; only needed if you run a custom setup.
+# Values: nvidia | amd | apple_silicon | cpu
+# GPU_TYPE=amd
 ```
 
 Optional settings for higher API rate limits (leave blank if you don't have these):
@@ -366,6 +422,13 @@ npm run e2e        # Playwright E2E — auto-starts a mock backend and preview s
 ```
 
 ### CLI reference
+
+#### System and model info
+
+```bash
+python main.py --check-system    # hardware summary + recommended model
+python main.py --list-models     # table of all pulled models with RAM, context, and quality
+```
 
 #### Systematic Literature Review
 
