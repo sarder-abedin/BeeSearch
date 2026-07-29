@@ -405,6 +405,11 @@ def recommend_config(hw: Dict, available_models: List[str]) -> Dict:
         )
     elif hw["gpu_type"] == "nvidia":
         hardware_note = "NVIDIA GPU (CUDA) — model weights will run on the GPU."
+    elif hw["gpu_type"] == "amd":
+        hardware_note = (
+            "AMD Radeon GPU (ROCm) — Ollama will offload model layers to the GPU. "
+            "Ensure ROCm drivers are installed and Ollama was started with ROCm support."
+        )
     else:
         hardware_note = (
             "CPU-only — inference will be slower. "
@@ -581,13 +586,16 @@ def _get_ram_gb() -> float:
 
 
 def _get_gpu_type(is_apple_silicon: bool) -> str:
-    """Classify the accelerator as `"apple_silicon"`, `"nvidia"`, or `"cpu"`.
+    """Classify the accelerator as ``"apple_silicon"``, ``"nvidia"``, ``"amd"``, or ``"cpu"``.
 
-    NVIDIA detection shells out to `nvidia-smi`; any failure (not installed,
-    no GPU, timeout) is treated as `"cpu"`.
+    Detection order: Apple Silicon → NVIDIA (nvidia-smi) → AMD (rocm-smi,
+    then /sys/class/drm vendor IDs, then lspci).  Any unrecognised GPU
+    falls back to ``"cpu"`` so callers always get a valid string.
     """
     if is_apple_silicon:
         return "apple_silicon"
+
+    # ── NVIDIA ────────────────────────────────────────────────────────────────
     try:
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
@@ -597,6 +605,44 @@ def _get_gpu_type(is_apple_silicon: bool) -> str:
             return "nvidia"
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
+
+    # ── AMD ───────────────────────────────────────────────────────────────────
+    # 1. rocm-smi — only present when ROCm drivers are installed
+    try:
+        r = subprocess.run(
+            ["rocm-smi", "--showid"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return "amd"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # 2. /sys/class/drm — AMD vendor ID 0x1002; works with stock amdgpu driver
+    try:
+        import glob
+        for vendor_path in glob.glob("/sys/class/drm/card*/device/vendor"):
+            with open(vendor_path) as f:
+                if f.read().strip().lower() == "0x1002":
+                    return "amd"
+    except Exception:
+        pass
+
+    # 3. lspci fallback (covers systems where DRM sysfs isn't mounted)
+    try:
+        r = subprocess.run(
+            ["lspci", "-mm"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                lower = line.lower()
+                if "display" in lower or "vga" in lower or "3d" in lower:
+                    if "amd" in lower or "ati" in lower or "radeon" in lower:
+                        return "amd"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
     return "cpu"
 
 
@@ -605,6 +651,6 @@ def _usable_ram(hw: Dict) -> float:
     ram = hw["ram_gb"]
     if hw["is_apple_silicon"]:
         return ram * 0.75   # leave 25% for macOS + active apps
-    if hw["gpu_type"] == "nvidia":
-        return ram * 0.80
+    if hw["gpu_type"] in ("nvidia", "amd"):
+        return ram * 0.80   # GPU offload — less RAM pressure from OS
     return max(0.0, ram - 4.0)  # CPU-only: reserve ~4 GB for OS
