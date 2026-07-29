@@ -21,8 +21,10 @@
 #     (https://ollama.com/download), pull your model, then use:
 #   docker compose -f docker-compose.mac.yml up --build
 #
-# For GPU support use:
+# For NVIDIA GPU support:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+# For AMD Radeon GPU + RAM sharing:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up --build
 # ─────────────────────────────────────────────────────────────
 
 services:

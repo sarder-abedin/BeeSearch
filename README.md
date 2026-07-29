@@ -14,6 +14,7 @@
 - [What is BeeSearch?](#what-is-beesearch)
 - [The three modes](#the-three-modes)
 - [Get started in 3 steps](#get-started-in-3-steps)
+- [GPU acceleration](#gpu-acceleration)
 - [Choosing an AI model](#choosing-an-ai-model)
 - [Using the web interface](#using-the-web-interface)
 - [Adjusting AI responses](#adjusting-ai-responses)
@@ -78,6 +79,37 @@ The first run downloads the AI model (~2 GB) and builds the app — this takes 5
 > `docker compose -f docker-compose.mac.yml up web --build`
 
 > **No Docker?** See [Local install (no Docker)](#local-install-no-docker) in the For developers section.
+
+---
+
+## GPU acceleration
+
+BeeSearch runs on CPU by default. Adding a GPU lets Ollama offload model layers to VRAM, making responses significantly faster. If the model doesn't fully fit in VRAM, Ollama automatically splits it — GPU layers run on the card, the rest run on CPU+RAM, with no manual configuration required.
+
+### NVIDIA GPU
+
+Requires [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+### AMD Radeon GPU (ROCm)
+
+Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `video` and `render` groups:
+
+```bash
+sudo usermod -aG video,render $USER   # log out and back in after this
+docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up --build
+```
+
+**GPU + RAM sharing** — Ollama maximises the number of layers placed in VRAM and runs the remainder on CPU+RAM automatically (`OLLAMA_NUM_GPU=999` is set by default in the AMD compose override). To reserve VRAM headroom for your desktop, set `OLLAMA_GPU_OVERHEAD` (in bytes) in your `.env`:
+
+```env
+OLLAMA_GPU_OVERHEAD=2147483648   # reserve 2 GB for the OS/desktop
+```
+
+**Older AMD cards (Polaris / Vega)** — some pre-RDNA cards need a GFX version hint. Check your card's version with `rocminfo | grep gfx`, then uncomment `HSA_OVERRIDE_GFX_VERSION` in `docker-compose.gpu-amd.yml`.
 
 ---
 
