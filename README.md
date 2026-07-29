@@ -96,12 +96,20 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
 ### AMD Radeon GPU (ROCm)
 
-Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `video` and `render` groups:
+Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `video` group:
 
 ```bash
-sudo usermod -aG video,render $USER   # log out and back in after this
+sudo usermod -aG video $USER          # log out and back in after this
 docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up --build
 ```
+
+If your system has a `render` group (created by a full ROCm install), add yourself to it too for access to renderD* nodes:
+
+```bash
+getent group render && sudo usermod -aG render $USER
+```
+
+Then uncomment `- render` under `group_add` in `docker-compose.gpu-amd.yml`.
 
 **GPU + RAM sharing** — Ollama maximises the number of layers placed in VRAM and runs the remainder on CPU+RAM automatically (`OLLAMA_NUM_GPU=999` is set by default in the AMD compose override). To reserve VRAM headroom for your desktop, set `OLLAMA_GPU_OVERHEAD` (in bytes) in your `.env`:
 
