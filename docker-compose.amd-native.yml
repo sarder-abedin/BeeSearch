@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────
+# AMD Radeon — native Ollama + Docker Desktop (Linux)
+#
+# Docker Desktop for Linux runs inside a Linuxkit VM and cannot
+# pass through host GPU devices (/dev/kfd, /dev/dri). This file
+# works around that by using a natively-installed Ollama (with ROCm)
+# on the host, while still running the BeeSearch web app in Docker.
+#
+# Use this file INSTEAD of docker-compose.gpu-amd.yml when you are
+# running Docker Desktop (not Docker Engine).
+# Check which you have:  docker info | grep Context
+#   desktop-linux → use this file
+#   default       → use docker-compose.gpu-amd.yml
+#
+# Prerequisites:
+#   1. Install Ollama with ROCm support:
+#      curl -fsSL https://ollama.com/install.sh | sh
+#      (Ollama auto-detects ROCm if the amdgpu drivers are loaded)
+#   2. Pull your models (Ollama must be running):
+#      ollama pull llama3.2:3b
+#      ollama pull nomic-embed-text   # for Hybrid RAG
+#      ollama pull llava:7b           # for figure captioning in PDFs
+#   3. Start BeeSearch (web container only — no Ollama container):
+#      docker compose -f docker-compose.amd-native.yml up --build
+#
+# Verify Ollama is using the GPU:
+#   ollama run llama3.2:3b "Hello"   # then check: rocm-smi
+#
+# Usage:
+#   docker compose -f docker-compose.amd-native.yml up --build
+#   docker compose -f docker-compose.amd-native.yml down --remove-orphans
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  # ── React/FastAPI web app ───────────────────────────────────
+  # Talks to native Ollama running on the host (with AMD ROCm GPU support).
+  # No ollama container — GPU access goes through the native Ollama process.
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: beesearch-web
+    command: >
+      python -m uvicorn backend.app.main:app
+      --host 0.0.0.0
+      --port 8000
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # host.docker.internal resolves to the Docker Desktop host machine
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - NUM_CTX=${NUM_CTX:-32768}
+      - VISION_MODEL=${VISION_MODEL:-llava:7b}
+      - SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_API_KEY:-}
+      - CROSSREF_EMAIL=${CROSSREF_EMAIL:-researcher@example.com}
+    volumes:
+      - ./outputs:/app/outputs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 120s
