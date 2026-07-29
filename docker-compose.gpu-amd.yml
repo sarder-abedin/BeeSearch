@@ -8,12 +8,10 @@
 #   • AMD Radeon GPU with ROCm support (RX 5000 series / RDNA or newer recommended)
 #   • ROCm drivers installed on the host (Linux only):
 #     https://rocm.docs.amd.com/projects/install-on-linux/en/latest/
-#   • Add your user to the video group, then log out and back in:
+#   • Add your user to the video and render groups, then log out and back in:
 #     sudo usermod -aG video $USER
-#
-# If your system also has a render group (present after a full ROCm install),
-# add yourself to it too — it grants access to renderD* nodes on kernel 5.6+:
-#     getent group render && sudo usermod -aG render $USER
+#     sudo usermod -aG render $USER
+#     (render group is created by a full ROCm install; check with: getent group render)
 #
 # Verify your setup:
 #   docker run --rm --device /dev/kfd --device /dev/dri \
@@ -46,6 +44,13 @@ services:
     environment:
       - GPU_TYPE=amd
 
+  # Use the ROCm image for init containers so the Ollama CLI version matches the server.
+  model-init:
+    image: ollama/ollama:rocm
+
+  vision-init:
+    image: ollama/ollama:rocm
+
   ollama:
     image: ollama/ollama:rocm    # ROCm-enabled image; replaces ollama/ollama:latest
     devices:
@@ -53,9 +58,8 @@ services:
       - /dev/dri                 # Direct Rendering Infrastructure (GPU render nodes)
     group_add:
       - video                    # grants access to /dev/kfd and /dev/dri nodes
-      # render group (renderD* nodes, kernel 5.6+) is created by a full ROCm install.
-      # If present on your system, add it here:
-      # - render
+      - render                   # renderD* nodes (kernel 5.6+); created by a full ROCm install
+    shm_size: '8gb'              # ROCm uses shared memory for multi-process GPU communication
     environment:
       # Maximise GPU layer offload; remaining layers run transparently on CPU+RAM.
       - OLLAMA_NUM_GPU=999
