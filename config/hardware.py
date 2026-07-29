@@ -315,16 +315,73 @@ KNOWN_EMBED_MODELS: List[Dict] = [
 
 
 def get_available_embed_models(ollama_base_url: str) -> List[str]:
-    """Return embedding model names that are already pulled in Ollama."""
-    known_names = {m["name"] for m in KNOWN_EMBED_MODELS}
+    """Return known embedding model names that are already pulled in Ollama.
+
+    For models with an explicit tag (e.g. qwen3-embedding:8b) requires an
+    exact name match. For tag-less entries (e.g. nomic-embed-text) matches
+    any pulled variant (e.g. nomic-embed-text:latest).
+    """
     try:
         resp = requests.get(f"{ollama_base_url}/api/tags", timeout=5)
         if resp.status_code == 200:
-            pulled = {m["name"].split(":")[0] for m in resp.json().get("models", [])}
-            return [n for n in [m["name"] for m in KNOWN_EMBED_MODELS] if n in pulled]
+            pulled_full = {m["name"] for m in resp.json().get("models", [])}
+            result = []
+            for m in KNOWN_EMBED_MODELS:
+                n = m["name"]
+                if ":" in n:
+                    if n in pulled_full:
+                        result.append(n)
+                else:
+                    if any(p.split(":")[0] == n for p in pulled_full):
+                        result.append(n)
+            return result
     except Exception:
         pass
     return []
+
+
+def get_all_pulled_embed_models(ollama_base_url: str) -> List[str]:
+    """Return all pulled embedding model names, including models not in KNOWN_EMBED_MODELS."""
+    try:
+        resp = requests.get(f"{ollama_base_url}/api/tags", timeout=5)
+        if resp.status_code == 200:
+            return [
+                m["name"]
+                for m in resp.json().get("models", [])
+                if any(m["name"].lower().startswith(p) for p in _EMBED_PREFIXES)
+            ]
+    except Exception:
+        pass
+    return []
+
+
+def get_model_suggestion(model_name: str) -> Optional[Dict]:
+    """Return suggested settings for a known model, or None if unrecognised."""
+    for m in KNOWN_MODELS:
+        if m["name"] == model_name or m["name"].split(":")[0] == model_name.split(":")[0]:
+            chunk_size, chunk_overlap = _chunk_settings_for_num_ctx(m["num_ctx"])
+            return {
+                "name": m["name"],
+                "num_ctx": m["num_ctx"],
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "ram_gb": m["ram_gb"],
+                "label": m["label"],
+                "note": m["note"],
+                "quality": m["quality"],
+            }
+    return None
+
+
+def _chunk_settings_for_num_ctx(num_ctx: int):
+    """Return (chunk_size, chunk_overlap) scaled to the model's context window."""
+    if num_ctx >= 65536:
+        return 1200, 250
+    if num_ctx >= 32768:
+        return 1000, 200
+    if num_ctx >= 16384:
+        return 800, 150
+    return 600, 100
 
 
 def recommend_config(hw: Dict, available_models: List[str]) -> Dict:

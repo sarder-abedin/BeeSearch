@@ -114,7 +114,7 @@ console = Console()
 # not consulted by argparse itself for parsing.
 _KNOWN_FLAGS = [
     "--goal", "--files", "--model", "--output",
-    "--num-ctx", "--embed-model", "--top-k", "--check-system", "--verbose",
+    "--num-ctx", "--embed-model", "--top-k", "--check-system", "--list-models", "--verbose",
     "--shutdown",
     "--systematic-review", "--sr", "--inclusion", "--exclusion",
     "--sr-docx", "--sr-pdf", "--sr-plain-language", "--sr-trends",
@@ -205,6 +205,8 @@ def _parse_args():
                         help="Output path for the Markdown report")
     parser.add_argument("--check-system", action="store_true",
                         help="Print hardware info and Ollama model recommendations, then exit")
+    parser.add_argument("--list-models", action="store_true",
+                        help="List all pulled Ollama models (chat + embedding) and exit")
     parser.add_argument("--shutdown", action="store_true",
                         help="Free all stale ports and flush ChromaDB, then exit")
     parser.add_argument("-v", "--verbose", action="store_true",
@@ -410,10 +412,14 @@ def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) 
     interactively (only if `sys.stdin.isatty()`) to choose between the
     higher-capability model and a safer, lower-RAM alternative.
     """
-    from config.hardware import detect_hardware, get_available_models, recommend_config
+    from config.hardware import (
+        detect_hardware, get_available_models, get_all_pulled_embed_models,
+        get_model_suggestion, recommend_config,
+    )
 
     hw = detect_hardware()
     available = get_available_models(ollama_base_url)
+    embed_pulled = get_all_pulled_embed_models(ollama_base_url)
     rec = recommend_config(hw, available)
 
     gpu_labels = {
@@ -432,15 +438,32 @@ def _print_hardware_banner(ollama_base_url: str, user_model: str | None = None) 
     console.print(hw_table)
 
     if available:
-        m_table = Table(title=f"Pulled Ollama Models ({len(available)})", border_style="green")
+        m_table = Table(title=f"Chat Models ({len(available)} pulled)", border_style="green")
         m_table.add_column("Model", style="cyan")
+        m_table.add_column("Context", style="dim")
         m_table.add_column("Status")
         for m in available:
-            tag = "recommended" if m == rec.get("model") else ""
-            m_table.add_row(m, tag)
+            suggestion = get_model_suggestion(m)
+            ctx_str = f"{suggestion['num_ctx']:,}" if suggestion else "—"
+            tag = "[bold green]recommended[/bold green]" if m == rec.get("model") else ""
+            m_table.add_row(m, ctx_str, tag)
         console.print(m_table)
     else:
-        console.print("[yellow]No models found in Ollama (is it running?).[/yellow]")
+        console.print("[yellow]No chat models found in Ollama (is it running?).[/yellow]")
+
+    if embed_pulled:
+        e_table = Table(title=f"Embedding Models ({len(embed_pulled)} pulled)", border_style="blue")
+        e_table.add_column("Model", style="cyan")
+        e_table.add_column("Note", style="dim")
+        from config.hardware import KNOWN_EMBED_MODELS
+        known_embed_map = {m["name"]: m for m in KNOWN_EMBED_MODELS}
+        for name in embed_pulled:
+            info = known_embed_map.get(name)
+            note = info["note"] if info else "pulled"
+            e_table.add_row(name, note)
+        console.print(e_table)
+    else:
+        console.print("[dim]No embedding models pulled. Run: ollama pull nomic-embed-text[/dim]")
 
     if rec["can_run"]:
         console.print(Panel(
@@ -1802,6 +1825,9 @@ def main():
         args.model = rec["model"]
 
     if args.check_system:
+        return
+
+    if args.list_models:
         return
 
     # ── Mode dispatch ──────────────────────────────────────────────────────────

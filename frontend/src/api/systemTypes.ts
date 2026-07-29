@@ -52,6 +52,17 @@ export interface EmbedModelInfo {
   pulled: boolean;
 }
 
+export interface ModelSuggestion {
+  name: string;
+  num_ctx: number;
+  chunk_size: number;
+  chunk_overlap: number;
+  ram_gb: number;
+  label: string;
+  note: string;
+  quality: number;
+}
+
 export interface TemperatureLevelOption {
   key: TemperatureLevel;
   label: string;
@@ -64,6 +75,7 @@ export interface SystemStatusResponse {
   recommendation: ModelRecommendation;
   available_models: string[];
   embed_models: EmbedModelInfo[];
+  model_suggestions: Record<string, ModelSuggestion>;
   temperature_levels: TemperatureLevelOption[];
   default_temperature_level: TemperatureLevel;
   context_window_options: number[];
