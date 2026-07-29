@@ -96,6 +96,16 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 
 ### AMD Radeon GPU (ROCm)
 
+First check which Docker you are running — this determines which command to use:
+
+```bash
+docker info | grep Context
+# default       → Docker Engine  (full GPU passthrough)
+# desktop-linux → Docker Desktop (see note below)
+```
+
+**Docker Engine** (native Linux daemon):
+
 Requires [ROCm drivers](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/) and your user in the `video` group:
 
 ```bash
@@ -103,13 +113,21 @@ sudo usermod -aG video $USER          # log out and back in after this
 docker compose -f docker-compose.yml -f docker-compose.gpu-amd.yml up --build
 ```
 
-If your system has a `render` group (created by a full ROCm install), add yourself to it too for access to renderD* nodes:
+If your system has a `render` group (created by a full ROCm install), add yourself to it and uncomment `- render` in `docker-compose.gpu-amd.yml`:
 
 ```bash
 getent group render && sudo usermod -aG render $USER
 ```
 
-Then uncomment `- render` under `group_add` in `docker-compose.gpu-amd.yml`.
+**Docker Desktop on Linux** (runs in a VM — GPU passthrough not supported):
+
+Docker Desktop cannot access `/dev/kfd` from inside its Linuxkit VM. Instead, install Ollama natively (it auto-detects ROCm), then run only the web container:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh   # installs with ROCm support
+ollama pull llama3.2:3b && ollama pull nomic-embed-text && ollama pull llava:7b
+docker compose -f docker-compose.amd-native.yml up --build
+```
 
 **GPU + RAM sharing** — Ollama maximises the number of layers placed in VRAM and runs the remainder on CPU+RAM automatically (`OLLAMA_NUM_GPU=999` is set by default in the AMD compose override). To reserve VRAM headroom for your desktop, set `OLLAMA_GPU_OVERHEAD` (in bytes) in your `.env`:
 
