@@ -565,14 +565,12 @@ def generate_mindmap(notebook_id: str, settings: dict) -> Tuple[str, str]:
 
     system = (
         "You are a knowledge analyst. Extract key concepts from the sources.\n"
-        "Output ONLY valid JSON — no code fences, no other text:\n"
-        '{"central": "Main Topic", "branches": [\n'
-        '  {"concept": "Branch", "sub_concepts": ["Sub1", "Sub2"]}\n'
-        "]}\n\n"
+        "Output ONLY minified single-line JSON (no newlines, no extra spaces) — no code fences, no other text.\n"
+        'Example: {"central":"Main Topic","branches":[{"concept":"Branch","sub_concepts":["Sub1","Sub2"]}]}\n\n'
         "Rules:\n"
-        "- Maximum 6 branches; maximum 4 sub-concepts per branch.\n"
-        "- Labels: 2–5 words, no special characters.\n"
-        "- Output ONLY the JSON object."
+        "- Maximum 5 branches; maximum 3 sub-concepts per branch.\n"
+        "- Labels: 2–4 words, no special characters.\n"
+        "- Output ONLY the minified JSON object on a single line."
     )
     human = f"SOURCES:\n{context}\n\nExtract the mind map JSON."
 
@@ -723,19 +721,14 @@ def extract_knowledge_graph(notebook_id: str, settings: dict) -> Tuple[str, str]
 
     system = (
         "You are a knowledge graph extractor.\n"
-        "Output ONLY valid JSON — no code fences, no other text:\n"
-        '{\n  "nodes": [\n'
-        '    {"id": "n1", "label": "Entity", "type": "concept"}\n'
-        "  ],\n"
-        '  "edges": [\n'
-        '    {"from": "n1", "to": "n2", "label": "relationship"}\n'
-        "  ]\n}\n\n"
+        "Output ONLY minified single-line JSON (no newlines, no extra spaces) — no code fences, no other text.\n"
+        'Example: {"nodes":[{"id":"n1","label":"Entity","type":"concept"}],"edges":[{"from":"n1","to":"n2","label":"uses"}]}\n\n'
         "Rules:\n"
-        "- Maximum 20 nodes, maximum 25 edges.\n"
+        "- Maximum 10 nodes, maximum 12 edges.\n"
         "- Node types: concept, method, dataset, author, institution.\n"
-        "- Label: 2–5 words. No special characters.\n"
-        "- Edge labels: short verb phrases (uses, builds on, contradicts, etc.).\n"
-        "- Output ONLY the JSON object."
+        "- Label: 2–4 words. No special characters.\n"
+        "- Edge labels: 1–3 word verb phrases (uses, builds on, contradicts).\n"
+        "- Output ONLY the minified JSON object on a single line."
     )
     human = f"SOURCES:\n{context}\n\nExtract the knowledge graph JSON."
 
