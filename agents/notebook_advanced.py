@@ -81,11 +81,12 @@ def _invoke(llm: ChatOllama, system: str, human: str) -> str:
 def _sources_context(
     notebook: Dict[str, Any],
     max_chars_per_doc: int = _MAX_CHARS_PER_DOC,
+    max_total_chars: int = _MAX_TOTAL_CHARS,
 ) -> str:
     """
     Build a numbered source block from all stored chunks.  Each source is
     capped at *max_chars_per_doc* and the whole block is capped at
-    *_MAX_TOTAL_CHARS* so we never blow the LLM context window.
+    *max_total_chars* so we never blow the LLM context window.
     """
     sources = notebook.get("sources", [])
     chunks = notebook.get("chunks", [])
@@ -104,7 +105,7 @@ def _sources_context(
     parts: List[str] = []
     total_chars = 0
     for i, src in enumerate(sources, 1):
-        remaining = _MAX_TOTAL_CHARS - total_chars
+        remaining = max_total_chars - total_chars
         if remaining <= 0:
             break
         cap = min(max_chars_per_doc, remaining)
@@ -114,6 +115,18 @@ def _sources_context(
         total_chars += len(excerpt)
 
     return "\n\n".join(parts)
+
+
+def _src_char_budget(settings: dict, reserved_output_tokens: int, reserved_prompt_chars: int = 1200) -> int:
+    """Compute safe source-context char budget given the model's context window.
+
+    Uses ~4 chars/token. Reserves space for output and prompt overhead so the
+    combined input never overflows a small context window (e.g. 4 096 tokens
+    for nemotron3:33b on 16 GB VRAM).
+    """
+    num_ctx = settings.get("num_ctx", cfg.num_ctx)
+    available_tokens = max(0, num_ctx - reserved_output_tokens) - reserved_prompt_chars // 4
+    return max(1500, min(_MAX_TOTAL_CHARS, available_tokens * 4))
 
 
 def _build_numbered_excerpts(
@@ -545,7 +558,10 @@ def generate_mindmap(notebook_id: str, settings: dict) -> Tuple[str, str]:
         return "", "No sources in this notebook."
 
     # Use a smaller context for concept extraction — we need breadth, not depth.
-    context = _sources_context(notebook, max_chars_per_doc=1_500)
+    context = _sources_context(
+        notebook, max_chars_per_doc=1_500,
+        max_total_chars=_src_char_budget(settings, reserved_output_tokens=1024),
+    )
 
     system = (
         "You are a knowledge analyst. Extract key concepts from the sources.\n"
@@ -700,7 +716,10 @@ def extract_knowledge_graph(notebook_id: str, settings: dict) -> Tuple[str, str]
     if not notebook.get("sources"):
         return "", "No sources in this notebook."
 
-    context = _sources_context(notebook, max_chars_per_doc=1_500)
+    context = _sources_context(
+        notebook, max_chars_per_doc=1_500,
+        max_total_chars=_src_char_budget(settings, reserved_output_tokens=1024),
+    )
 
     system = (
         "You are a knowledge graph extractor.\n"
@@ -722,7 +741,7 @@ def extract_knowledge_graph(notebook_id: str, settings: dict) -> Tuple[str, str]
 
     raw = ""
     try:
-        raw = _invoke(_make_llm(settings, temperature=0.2, num_predict=2048), system, human)
+        raw = _invoke(_make_llm(settings, temperature=0.2, num_predict=1024), system, human)
         data = _parse_json_object_from_llm(raw)
         dot = _knowledge_graph_to_dot(data)
         return dot, ""
