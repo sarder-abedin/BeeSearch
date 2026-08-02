@@ -12,7 +12,7 @@
 ## Table of contents
 
 - [What is BeeSearch?](#what-is-beesearch)
-- [The three modes](#the-three-modes)
+- [The four modes](#the-four-modes)
 - [Get started in 3 steps](#get-started-in-3-steps)
 - [GPU acceleration](#gpu-acceleration)
 - [Managing Docker](#managing-docker)
@@ -35,13 +35,14 @@ Everything runs locally via [Ollama](https://ollama.ai), an open-source tool tha
 
 ---
 
-## The three modes
+## The four modes
 
 | Mode | What it does |
 |------|-------------|
 | **1 — Systematic Review** | Searches Google Scholar, arXiv, Semantic Scholar, and CrossRef for papers on your topic; screens them; and produces a formatted review report (Word/PDF) with risk-of-bias ratings, contradiction summaries, citation graphs, trend analysis, and plain-language summaries. |
 | **2 — Research Notebook** | Upload your own PDFs, Word docs, or web pages and chat with them. Get cross-document summaries, Q&A, mind maps, knowledge graphs, audio scripts, and more — all grounded in your documents with cited page references. |
 | **3 — AI Research Assistant** | Ask a research question in plain English and get a cited answer drawn from published papers — no files to upload, no formal review workflow. |
+| **4 — Paper Discovery** | Explore the academic neighborhood of any paper. **Similarity Graph** builds a Connected Papers–style force-directed map using bibliographic coupling and co-citation. **Discovery Network** grows a persistent collection incrementally via references, citations, recommendations, and author networks. (Web interface only; no Ollama required.) |
 
 ---
 
@@ -323,6 +324,29 @@ Click **Research Notebook** on the home page. Create a notebook, upload your sou
 ### Mode 3 — AI Research Assistant
 
 Click **AI Research Assistant** on the home page. Type your question and click **Ask**. BeeSearch searches Google Scholar, arXiv, and Semantic Scholar, reads the results, and writes a cited answer.
+
+### Mode 4 — Paper Discovery
+
+Click **Paper Discovery** on the home page. No Ollama model is required — this mode queries the [Semantic Scholar Academic Graph API](https://api.semanticscholar.org/) directly.
+
+**Similarity Graph** tab — enter a Semantic Scholar paper ID or title and click **Build Graph**. BeeSearch maps the paper's academic neighborhood using:
+- **Bibliographic coupling** (Kessler, 1963) — two papers share references
+- **Co-citation** (Small, 1973) — two papers are frequently cited together
+
+The result is a force-directed graph where nodes are papers (colour = year, size = citation count). Click any node to see its abstract and metadata; click **Set as new origin** to re-centre the graph on that paper. Use the sliders to tune the balance between the two similarity measures and the number of candidates to consider.
+
+**Discovery Network** tab — add one or more seed paper IDs or titles and click **Create Collection**. BeeSearch fetches the seed papers from Semantic Scholar and displays them as an initial graph. Click any node, then choose a relationship type and click **Expand**:
+
+| Relationship | What it fetches |
+|---|---|
+| Earlier work (references) | Papers cited by this paper |
+| Later work (citations) | Papers that cite this paper |
+| Similar papers (recommended) | Semantic Scholar recommendations |
+| Author network | Other papers by the same authors |
+
+The collection grows with each expand — edges between newly added papers and existing ones are built automatically.
+
+> **API rate limits** — the free Semantic Scholar tier allows roughly 100 requests/minute. For faster graphs or collections, add your key to `.env`: `SEMANTIC_SCHOLAR_API_KEY=your_key_here`. Keys are free at [semanticscholar.org](https://www.semanticscholar.org/product/api).
 
 ---
 
