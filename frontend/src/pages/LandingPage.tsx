@@ -1,7 +1,7 @@
 import beeSearchLogo from "../assets/logo.png";
 import "./LandingPage.css";
 
-export type ProjectId = "mode1" | "mode2" | "mode3";
+export type ProjectId = "mode1" | "mode2" | "mode3" | "mode4";
 
 interface Project {
   id: ProjectId;
@@ -49,6 +49,19 @@ const PROJECTS: Project[] = [
       "arXiv, Semantic Scholar and the web, reads what it finds, and rebuilds an accurate " +
       "citation list from the sources it actually used.",
     tags: ["Free-form Q&A", "Literature-grounded", "Inline Citations", "Google Scholar", "arXiv", "Web Search"],
+  },
+  {
+    id: "mode4",
+    label: "04",
+    name: "Paper Discovery",
+    description:
+      "Explore the academic neighborhood of any paper. Similarity Graph builds a " +
+      "Connected Papers–style force-directed map using bibliographic coupling (Kessler, " +
+      "1963) and co-citation (Small, 1973) scored via the Semantic Scholar API. " +
+      "Discovery Network lets you incrementally grow a persistent collection by " +
+      "exploring earlier work (references), later work (citations), similar papers " +
+      "(recommendations), and author networks.",
+    tags: ["Similarity Graph", "Discovery Network", "Bibliographic Coupling", "Co-citation", "Semantic Scholar", "Force Layout"],
   },
 ];
 

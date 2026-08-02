@@ -3,6 +3,7 @@ import "./App.css";
 import AskPage from "./pages/AskPage";
 import LandingPage, { type ProjectId } from "./pages/LandingPage";
 import NotebookPage from "./pages/NotebookPage";
+import PaperDiscoveryPage from "./pages/PaperDiscoveryPage";
 import SystematicReviewPage from "./pages/SystematicReviewPage";
 import SettingsPanel from "./components/SettingsPanel";
 import { SettingsProvider } from "./context/SettingsContext";
@@ -11,11 +12,14 @@ const PROJECT_NAMES: Record<ProjectId, string> = {
   mode1: "Systematic Literature Review",
   mode2: "Research Notebook",
   mode3: "AI Research Assistant",
+  mode4: "Paper Discovery",
 };
 
 function readModeFromUrl(): ProjectId | null {
   const mode = new URLSearchParams(window.location.search).get("mode");
-  return mode === "mode1" || mode === "mode2" || mode === "mode3" ? mode : null;
+  return mode === "mode1" || mode === "mode2" || mode === "mode3" || mode === "mode4"
+    ? mode
+    : null;
 }
 
 function App() {
@@ -70,6 +74,7 @@ function App() {
         {activeMode === "mode1" && <SystematicReviewPage />}
         {activeMode === "mode3" && <AskPage />}
         {activeMode === "mode2" && <NotebookPage />}
+        {activeMode === "mode4" && <PaperDiscoveryPage />}
 
         {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       </div>
