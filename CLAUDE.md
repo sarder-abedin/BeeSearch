@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-BeeSearch (repo: ResearchBuddy / BeeSearch) is a local-first AI research app with three
+BeeSearch (repo: ResearchBuddy / BeeSearch) is a local-first AI research app with four
 user-facing modes, built on LangGraph + Ollama (no cloud LLM, no API keys required):
 
 - **Mode 1 — Systematic Literature Review**: PRISMA pipeline (Google Scholar, arXiv,
@@ -18,6 +18,12 @@ user-facing modes, built on LangGraph + Ollama (no cloud LLM, no API keys requir
 - **Mode 3 — AI Research Assistant**: stateless free-form question answering grounded in
   published literature with code-rebuilt inline citations (`agents/research_assistant.py`,
   `ui/tabs/research_assistant.py`, `main.py --ask`) — no upload, no PRISMA workflow.
+- **Mode 4 — Paper Discovery** (web-only, no CLI): two sub-features backed by the
+  Semantic Scholar Academic Graph API. **Similarity Graph** builds a Connected Papers–style
+  force-directed map from a single origin paper using bibliographic coupling (Kessler, 1963)
+  and co-citation (Small, 1973). **Discovery Network** lets the user grow a persistent paper
+  collection by incrementally exploring earlier work (references), later work (citations),
+  similar papers (S2 recommendations), or author networks.
 
 All modes are reachable from the CLI (`main.py`, plus `cli.py` for the section-by-section
 breakdown tool) and from the React + FastAPI web app (`frontend/` + `backend/`) — see
@@ -95,15 +101,15 @@ stub `sys.modules["rich"]` (and submodules) with `MagicMock()` before importing 
 
 A REST API (`backend/`) and a React + TypeScript SPA (`frontend/`) are the primary
 web interface. They expose the same core logic as the CLI — `main.py` and `app.py`
-are unmodified. Current coverage: all three modes are fully
-covered. Mode 1 and Mode 3 are complete; Mode 2 covers the core notebook
-workflow (create/rename/delete, source upload, grounded chat with citations),
-the 7-agent analysis pipeline, the standalone advanced tools (cross-document
-summary, FAQ, literature review, mind map, audio summary, source comparison,
-knowledge graph, citation timeline, study comparison), the Explain tab, and
-the Research Report workflow (`backend/app/routers/notebook_report.py` +
-`notebook_report_service.py`, `frontend/src/components/notebook/
-ResearchReportTab.tsx`).
+are unmodified. Current coverage: all four modes are fully covered. Mode 1 and
+Mode 3 are complete; Mode 2 covers the core notebook workflow (create/rename/delete,
+source upload, grounded chat with citations), the 7-agent analysis pipeline, the
+standalone advanced tools (cross-document summary, FAQ, literature review, mind map,
+audio summary, source comparison, knowledge graph, citation timeline, study
+comparison), the Explain tab, and the Research Report workflow
+(`backend/app/routers/notebook_report.py` + `notebook_report_service.py`,
+`frontend/src/components/notebook/ResearchReportTab.tsx`). Mode 4 is web-only
+(no Streamlit/CLI equivalent) — see "Mode 4 — Paper Discovery" below.
 
 - `backend/app/main.py` — FastAPI app factory; CORS via `BEESEARCH_CORS_ORIGINS`
   (defaults to the Vite dev ports); mounts `backend/app/routers/{health,
@@ -130,9 +136,9 @@ ResearchReportTab.tsx`).
   `apiFetchText`); base URL defaults to `""` (relative), so the Vite dev/preview
   proxy (`frontend/vite.config.ts`) routes `/api/*` to the backend with zero
   frontend env configuration.
-- `frontend/src/pages/{LandingPage,SystematicReviewPage,NotebookPage,AskPage}.tsx`
-  — one page per mode (`AskPage` = Mode 3); `App.tsx` does `?mode=mode1|mode2|mode3`
-  query-param routing, no router dependency.
+- `frontend/src/pages/{LandingPage,SystematicReviewPage,NotebookPage,AskPage,PaperDiscoveryPage}.tsx`
+  — one page per mode (`AskPage` = Mode 3, `PaperDiscoveryPage` = Mode 4);
+  `App.tsx` does `?mode=mode1|mode2|mode3|mode4` query-param routing, no router dependency.
 - **Docker**: the root `Dockerfile` is multi-stage -- a `node:20-alpine` stage runs
   `npm run build` for `frontend/`, then `COPY --from=` copies the built static assets
   into the final `python:3.11-slim` stage at `frontend/dist`. `backend/app/main.py`
@@ -147,6 +153,51 @@ ResearchReportTab.tsx`).
   build` → nginx, reverse-proxying `/api/*`) still work standalone (`docker build -t
   beesearch-frontend ./frontend`) but are no longer referenced by the default Compose
   files.
+
+### Mode 4 — Paper Discovery
+
+Web-only (no Streamlit/CLI); does not call Ollama. All data comes from the
+[Semantic Scholar Academic Graph API](https://api.semanticscholar.org/) — no API key
+required on the free tier (rate-limited; set `SEMANTIC_SCHOLAR_API_KEY` in `.env` for
+higher limits).
+
+**`paper_graph/` package** (pure backend logic, no FastAPI coupling):
+- `s2_client.py` — `SemanticScholarClient` with tenacity exponential backoff (429/5xx),
+  `lru_cache` per-process on `get_paper`/`get_references`/`get_citations`, a
+  `_meta_cache` dict for batch-populated entries, and `PaperGraphDataSource` Protocol
+  as a swap point for OpenAlex. `get_client()` returns a module-level singleton.
+- `similarity.py` — pure, zero-I/O functions: `bibliographic_coupling()` (reference-set
+  intersection), `co_citation()` (shared-citers count from a pre-built citing index),
+  `combined_score()` (min-max normalised, configurable bc/cc weights), `rank_candidates()`.
+- `graph_builder.py` — `GraphData` / `GraphEdge` / `PaperNode` dataclasses and two
+  assembly helpers: `build_similarity_graph()` and `build_discovery_graph()`.
+- `collection_store.py` — `CollectionStore` (thread-safe `threading.Lock`, in-memory,
+  lost on restart — same trade-off as `jobs.py`). `get_store()` returns a module-level
+  singleton.
+
+**Backend layer** (`backend/app/`):
+- `schemas/paper_graph.py` — Pydantic request/response models for all endpoints.
+- `services/paper_graph_service.py` — `_resolve_paper_id()` (40-hex S2 ID or title
+  search fallback), `run_similarity_graph()` (5-stage pipeline: resolve → fetch refs →
+  score → batch-fetch metadata → build graph), `create_collection()`,
+  `expand_collection()` (handles all 4 relationship types).
+- `routers/paper_graph.py` — prefix `/api/paper-graph`; POST triggers return 202 +
+  `job_id`, GET polls follow the standard job pattern from `backend/app/jobs.py`.
+
+**Frontend** (`frontend/src/`):
+- `api/paperGraphTypes.ts` / `paperGraph.ts` — TypeScript types and API helpers;
+  `pollSimilarityGraphJob` / `pollExpandJob` reuse `pollUntilTerminal`.
+- `components/paper-graph/ForceGraph.tsx` — `react-force-graph-2d` canvas wrapper;
+  `yearToColor()` year→colour gradient, `nodeRadius()` log-scaled by citation count,
+  `paintNode` draws labels for selected/large nodes, directional arrows on
+  reference/citation edges.
+- `components/paper-graph/PaperDetailPanel.tsx` — node inspector; "Set as new origin"
+  button (Feature 1) or relationship selector + "Expand" button (Feature 2).
+- `components/paper-graph/SimilarityGraphPanel.tsx` — Feature 1 UI: paper ID/title
+  input, top-N and BC/CC weight sliders, job polling, `ResizeObserver`-based width.
+- `components/paper-graph/DiscoveryNetworkPanel.tsx` — Feature 2 UI: seed-paper input
+  with chip list, collection creation, incremental expand with job polling.
+- `pages/PaperDiscoveryPage.tsx` — tab switcher; wired into `App.tsx` as `mode4`.
 
 ### Internal "Mode N" numbering vs. user-facing modes
 
