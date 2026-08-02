@@ -2,7 +2,7 @@
 
 ## System Overview
 
-BeeSearch is a **3-mode, local-first AI research system** built on LangGraph state machines, Ollama LLMs, and Hybrid RAG. All computation runs locally — no cloud LLM, no paid API.
+BeeSearch is a **4-mode, local-first AI research system** built on LangGraph state machines, Ollama LLMs, and Hybrid RAG. All computation runs locally — no cloud LLM, no paid API. (Mode 4 — Paper Discovery — is web-only and uses the Semantic Scholar API directly, with no Ollama call.)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -699,12 +699,13 @@ The **primary interface** (`backend/` + `frontend/`) exposes Mode 1, Mode 3,
 and the core of Mode 2 over a REST API. It calls the exact same `agents/*` / `projects/*`
 logic as the CLI — no parallel business logic, no parallel state machine.
 
-**Coverage:** all three modes are fully covered. Mode 1 (Systematic Review)
+**Coverage:** all four modes are fully covered. Mode 1 (Systematic Review)
 and Mode 3 (AI Research Assistant) are complete. Mode 2 (Research Notebook)
 covers the core Q&A workflow (2a above) — create/rename/delete notebooks,
 upload sources, chat with citations and Self-Reflective RAG status — plus
 the 7-agent pipeline (2b), the advanced one-shot tools, Explain/Storyteller
-(2c), and the Research Report workflow.
+(2c), and the Research Report workflow. Mode 4 (Paper Discovery) is web-only,
+backed entirely by the Semantic Scholar API with no Ollama dependency.
 
 ```
 Browser (React SPA — Vite dev server, a static `vite build` output, or the
@@ -716,7 +717,8 @@ FastAPI (backend/app/main.py)
   ├── routers/health.py               GET  /api/health
   ├── routers/research_assistant.py   Mode 3 — /api/research-assistant/...
   ├── routers/systematic_review.py    Mode 1 — /api/systematic-review/...
-  └── routers/notebook.py             Mode 2 — /api/notebook/...
+  ├── routers/notebook.py             Mode 2 — /api/notebook/...
+  └── routers/paper_graph.py          Mode 4 — /api/paper-graph/...
         │  each router delegates to a services/*_service.py
         ▼
 services/*_service.py  →  agents/*.py, projects/*.py   (same modules the CLI calls)
@@ -753,6 +755,89 @@ See the README's "Web App (React + FastAPI)" section for exact run commands.
 
 ---
 
+## Mode 4: Paper Discovery
+
+Web-only. No Ollama model, no LangGraph, no Hybrid RAG. All data from the
+[Semantic Scholar Academic Graph API](https://api.semanticscholar.org/) (free tier;
+set `SEMANTIC_SCHOLAR_API_KEY` for higher rate limits).
+
+### Feature 1 — Similarity Graph
+
+One-shot background job: POST `/api/paper-graph/similarity-graph` → GET poll
+`/api/paper-graph/jobs/{id}`.
+
+```
+resolve_paper_id
+  │  • 40-hex string? → use as-is
+  │  • Otherwise → search_paper(title) → first result's paperId
+  ▼
+fetch_refs_and_citations
+  │  • get_references(origin_id)  → origin_refs: FrozenSet[str]
+  │  • get_citations(origin_id)   → citing_index[origin_id]: FrozenSet[str]
+  │  • Collects union of candidate IDs from both lists (capped at _CANDIDATE_CAP=100)
+  ▼
+score_candidates
+  │  • For each candidate:
+  │      bc = bibliographic_coupling(origin_refs, get_references(candidate))
+  │      cc = co_citation(origin_id, candidate, citing_index)
+  │  • combined_score() with min-max normalisation across candidate pool
+  │  • rank_candidates() → top-N (origin, score) pairs
+  ▼
+batch_fetch_metadata
+  │  • batch_get_papers(top_n_ids) → PaperNode list
+  ▼
+build_graph
+  │  • build_similarity_graph(origin, scored_pairs, paper_meta)
+  │  • Returns GraphData(nodes, edges, partial, notice)
+```
+
+**Scoring formulas** (`paper_graph/similarity.py`):
+
+```
+bc(A, B) = |refs(A) ∩ refs(B)|                         # Kessler, 1963
+cc(A, B) = |citers(A) ∩ citers(B)|                     # Small, 1973
+
+norm_bc = bc / max(bc across candidates)   (0 if max=0)
+norm_cc = cc / max(cc across candidates)   (0 if max=0)
+
+combined = bc_weight × norm_bc + cc_weight × norm_cc
+           (defaults: bc_weight=0.5, cc_weight=0.5)
+```
+
+### Feature 2 — Discovery Network
+
+Persistent collection. `create_collection` is synchronous (HTTP 201).
+Each `expand_collection` is a background job (HTTP 202 + `job_id`).
+
+```
+POST /api/paper-graph/collections          → CollectionResponse (sync)
+  • batch_get_papers(seed_paper_ids) → seed PaperNodes
+  • CollectionStore.create(seed_nodes)
+
+POST /api/paper-graph/collections/{id}/expand  → { job_id } (async)
+  • relationship = "earlier" → get_references(node_id)
+                 = "later"   → get_citations(node_id)
+                 = "similar" → get_recommendations([node_id])
+                 = "authors" → get_author_papers per author of node
+  • batch_get_papers(new_ids)
+  • Build edges: new_node → node (or node → new_node for references)
+  • CollectionStore.add_papers(collection_id, new_nodes, new_edges)
+    (deduplicates edges by (source, target, edge_type))
+```
+
+**Frontend graph** (`frontend/src/components/paper-graph/`):
+
+- `ForceGraph.tsx` — `react-force-graph-2d` canvas; `yearToColor()` gradient
+  (muted grey 2000 → amber 2025+); `nodeRadius()` = `4 + log10(citations+1) × 4`
+  capped at 20px; directional arrows on `reference`/`citation` edges; label on
+  selected node and nodes with radius ≥ 10.
+- `SimilarityGraphPanel.tsx` — BC/CC weight sliders (`input[type=range]`), top-N
+  slider, paper ID/title input, job polling, `ResizeObserver`-driven graph width.
+- `DiscoveryNetworkPanel.tsx` — seed chip list, collection creation, per-node
+  expand with relationship selector and job polling.
+
+---
+
 ## File Map
 
 ```
@@ -761,20 +846,26 @@ BeeSearch/
 ├── app.py                    ← Streamlit entry point; landing page dispatcher
 ├── main.py                   ← CLI — SR + Notebook modes
 │
+├── paper_graph/              ← Mode 4 backend logic (no FastAPI coupling)
+│   ├── s2_client.py          ← SemanticScholarClient (tenacity, lru_cache, batch fetch)
+│   ├── similarity.py         ← Pure BC / co-citation scoring + rank_candidates()
+│   ├── graph_builder.py      ← GraphData / GraphEdge / PaperNode dataclasses
+│   └── collection_store.py   ← Thread-safe in-memory CollectionStore singleton
+│
 ├── backend/                  ← FastAPI REST API (additive, alongside CLI/Streamlit)
 │   └── app/
 │       ├── main.py           ← App factory, CORS, mock-LLM bootstrap, router includes
 │       ├── jobs.py           ← In-memory background job runner (chat/run polling)
-│       ├── routers/          ← health, research_assistant, systematic_review, notebook
-│       ├── services/         ← thin layer calling straight into agents/*, projects/*
+│       ├── routers/          ← health, research_assistant, systematic_review, notebook, paper_graph
+│       ├── services/         ← thin layer calling straight into agents/*, projects/*, paper_graph/*
 │       └── schemas/          ← Pydantic request/response models
 │
 ├── frontend/                 ← React + TypeScript SPA (Vite), talks to backend/ over REST
 │   ├── Dockerfile            ← standalone multi-stage build -> nginx (optional; default Docker build instead serves frontend/dist via the root Dockerfile + FastAPI)
 │   ├── src/
 │   │   ├── api/              ← fetch wrapper (client.ts) + per-mode API clients
-│   │   ├── pages/            ← one page per mode (SystematicReviewPage, NotebookPage, AskPage)
-│   │   └── components/       ← mode-specific UI components
+│   │   ├── pages/            ← one page per mode (SystematicReviewPage, NotebookPage, AskPage, PaperDiscoveryPage)
+│   │   └── components/       ← mode-specific UI components (paper-graph/ for Mode 4)
 │   └── e2e/                  ← Playwright tests (run against the mock-LLM backend)
 │
 ├── projects/

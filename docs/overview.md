@@ -1,12 +1,13 @@
 # BeeSearch — Technical Overview
 
-BeeSearch is a local-first AI tool for three research workflows:
+BeeSearch is a local-first AI tool for four research workflows:
 
 1. **Systematic Literature Review** — PRISMA-compliant pipeline with Google Scholar, abstract screener, risk-of-bias/GRADE/contradiction quality assessment, and post-synthesis analysis tools
 2. **Research Notebook** — NotebookLM-style grounded Q&A with Hybrid RAG and a 7-agent analysis pipeline
 3. **AI Research Assistant** — stateless, free-form literature-grounded Q&A with code-rebuilt inline citations; no upload, no PRISMA workflow
+4. **Paper Discovery** (web-only, no Ollama required) — Similarity Graph via bibliographic coupling + co-citation, and an incremental Discovery Network, both backed by the Semantic Scholar Academic Graph API
 
-Everything runs locally via Ollama. No cloud LLM calls, no API keys (except CrossRef/Semantic Scholar which are free and unauthenticated).
+Everything runs locally via Ollama. No cloud LLM calls, no API keys (except CrossRef/Semantic Scholar which are free and unauthenticated). Mode 4 uses Semantic Scholar exclusively and requires no Ollama model.
 
 ---
 
@@ -14,10 +15,15 @@ Everything runs locally via Ollama. No cloud LLM calls, no API keys (except Cros
 
 ```
 BeeSearch/
-├── app.py                          ← Streamlit entry point (3 modes)
-├── main.py                         ← CLI entry point (3 modes)
+├── app.py                          ← Streamlit entry point (Modes 1–3)
+├── main.py                         ← CLI entry point (Modes 1–3)
 ├── requirements.txt
-├── backend/                        ← FastAPI REST API (additive; all 3 modes)
+├── paper_graph/                    ← Mode 4 backend logic (no FastAPI coupling)
+│   ├── s2_client.py                ← Semantic Scholar API client (tenacity, lru_cache)
+│   ├── similarity.py               ← Pure BC / co-citation scoring functions
+│   ├── graph_builder.py            ← GraphData / GraphEdge / PaperNode dataclasses
+│   └── collection_store.py         ← Thread-safe in-memory collection store
+├── backend/                        ← FastAPI REST API (all 4 modes)
 │   └── app/
 │       ├── main.py                 ← App factory, CORS, mock-LLM bootstrap
 │       ├── jobs.py                 ← In-memory background job runner
@@ -275,15 +281,51 @@ If no sources are found, the result is marked ungrounded: the answer carries an 
 A REST API (`backend/`) and a React SPA (`frontend/`) form the **primary Docker
 interface** (port 8000), added alongside Streamlit/CLI without modifying either — same
 `agents/*`/`projects/*` logic underneath, no parallel business logic.
-**Coverage:** all three modes are fully covered. Mode 1 and Mode 3 are
+**Coverage:** all four modes are fully covered. Mode 1 and Mode 3 are
 complete; Mode 2 covers the core Q&A workflow (create/upload/chat with
 citations), the 7-agent pipeline, the advanced one-shot tools, the Explain
-tab, and Research Report. Long-running calls go through an in-memory background
-job runner (`backend/app/jobs.py`); the frontend polls for status every
-700ms. `BEESEARCH_MOCK_LLM=1` swaps in canned LLM/search responses for
-dev/test use, no Ollama required. See the README's "Web App (React +
-FastAPI)" section for run commands, and `docs/architecture.md`'s "React +
-FastAPI Web App" section for the request-flow diagram.
+tab, and Research Report; Mode 4 is web-only (no Streamlit/CLI equivalent).
+Long-running calls go through an in-memory background job runner
+(`backend/app/jobs.py`); the frontend polls for status every 700ms.
+`BEESEARCH_MOCK_LLM=1` swaps in canned LLM/search responses for dev/test use,
+no Ollama required. See the README's "Web App (React + FastAPI)" section for
+run commands, and `docs/architecture.md`'s "React + FastAPI Web App" section
+for the request-flow diagram.
+
+---
+
+## Mode 4 — Paper Discovery
+
+Web-only; no Ollama model required. Queries the Semantic Scholar Academic Graph API.
+
+### Similarity Graph (Feature 1)
+
+One-shot graph from a single origin paper. Pipeline (background job):
+
+```
+resolve_paper_id → fetch_refs_and_citations → score_candidates → batch_fetch_metadata → build_graph
+```
+
+| Step | What happens |
+|------|-------------|
+| `resolve_paper_id` | Detects 40-hex S2 IDs; falls back to title search via `search_paper()` |
+| `fetch_refs_and_citations` | Calls `get_references()` and `get_citations()` for the origin paper; builds a citing index for co-citation scoring |
+| `score_candidates` | `bibliographic_coupling()` (shared-reference intersection), `co_citation()` (shared-citers count), `combined_score()` (min-max normalised), `rank_candidates()` returns top-N pairs |
+| `batch_fetch_metadata` | `batch_get_papers()` for all candidate IDs in one S2 call |
+| `build_graph` | `build_similarity_graph()` assembles `GraphData` with similarity edges weighted by combined score |
+
+### Discovery Network (Feature 2)
+
+Persistent in-memory collection. `create_collection()` fetches seed papers via `batch_get_papers()`. Each `expand_collection()` call is a background job dispatching on `relationship`:
+
+| Relationship | S2 call | Edge type |
+|---|---|---|
+| `earlier` | `get_references(node_id)` | `reference` |
+| `later` | `get_citations(node_id)` | `citation` |
+| `similar` | `get_recommendations([node_id])` | `recommendation` |
+| `authors` | `get_author_papers(author_id)` for each author of the node | `co_author` |
+
+New nodes and edges are merged into the existing collection; edges deduplicated by `(source, target, edge_type)`.
 
 ---
 
