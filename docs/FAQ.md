@@ -89,6 +89,19 @@ These results feed the narrative synthesis (so it reflects certainty and disagre
 
 ---
 
+**Q: What is Paper Discovery (Mode 4)?**
+A: Mode 4 is a web-only feature for exploring the academic neighborhood of any paper. It does not require an Ollama model — all data comes from the [Semantic Scholar Academic Graph API](https://api.semanticscholar.org/) (free, unauthenticated).
+
+It has two sub-tools:
+
+- **Similarity Graph** — enter a Semantic Scholar paper ID or a title. BeeSearch fetches the paper's references and citations, then scores every candidate by **bibliographic coupling** (Kessler, 1963: two papers share references) and **co-citation** (Small, 1973: two papers are frequently cited together). Both scores are min-max normalised and combined with configurable weights. The result is a force-directed graph (node size = citation count, colour = year) where you can click any node to see its abstract and "Set as new origin" to re-explore from there.
+
+- **Discovery Network** — add one or more seed paper IDs or titles to create a persistent collection. Click any node and choose how to expand it: *Earlier work* (its references), *Later work* (papers that cite it), *Similar papers* (Semantic Scholar recommendations), or *Author network* (other papers by the same authors). Each expand is a background job; the collection grows incrementally.
+
+To increase Semantic Scholar rate limits beyond the free tier, add `SEMANTIC_SCHOLAR_API_KEY=your_key` to your `.env`. Keys are free at [semanticscholar.org](https://www.semanticscholar.org/product/api).
+
+---
+
 **Q: What is the AI Research Assistant (Mode 3)?**
 A: Mode 3 answers a **free-form research question** from published literature in general — no documents to upload and no PRISMA workflow. It searches Google Scholar, arXiv, Semantic Scholar (and optionally the web), numbers every retrieved source, grounds an LLM answer in them, then rebuilds the citation list **in code** from whichever `[n]` markers the answer actually used (never the LLM's self-written references). If no sources can be retrieved it answers from general knowledge with an explicit caveat and no citations. Use it from the Mode 3 tab or `python main.py --ask "your question"` (add `--no-web` for academic-only).
 
