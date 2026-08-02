@@ -55,6 +55,7 @@ from .routers import (
     notebook_explain,
     notebook_pipeline,
     notebook_report,
+    paper_graph,
     research_assistant,
     system,
     systematic_review,
@@ -98,6 +99,7 @@ app.include_router(notebook_pipeline.router)
 app.include_router(notebook_advanced.router)
 app.include_router(notebook_explain.router)
 app.include_router(notebook_report.router)
+app.include_router(paper_graph.router)
 
 # Serves the built React SPA (see the root Dockerfile's frontend-build
 # stage) at "/" so the combined Streamlit+CLI+FastAPI container needs no
