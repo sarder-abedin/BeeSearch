@@ -110,7 +110,7 @@ export default function DiscoveryNetworkPanel() {
           <div className="pg-input-row">
             <input
               type="text"
-              placeholder="Semantic Scholar paper ID or title…"
+              placeholder="S2 ID, arXiv ID (2312.01234), DOI, or title…"
               value={seedInput}
               onChange={(e) => setSeedInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addSeed()}

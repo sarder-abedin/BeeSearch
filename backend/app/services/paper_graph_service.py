@@ -20,6 +20,7 @@ Every node/edge shown to the user traces back to an actual API response.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Callable, Dict, FrozenSet, List, Optional
 
 from paper_graph.collection_store import get_store
@@ -79,38 +80,56 @@ def _graph_to_schema(nodes, edges, partial=False, notice="") -> GraphDataSchema:
     )
 
 
+# arXiv ID: optional "arXiv:" prefix + YYMM.NNNNN[vN]
+_ARXIV_RE = re.compile(r'^(?:arXiv:)?(\d{4}\.\d{4,5}(?:v\d+)?)$', re.IGNORECASE)
+# DOI: optional "DOI:" prefix + 10.XXXX/anything
+_DOI_RE = re.compile(r'^(?:DOI:)?(10\.\d{4,}/.+)$', re.IGNORECASE)
+
+
 def _resolve_paper_id(paper_id_or_title: str) -> Optional[PaperNode]:
     """Resolve a paper_id string to a PaperNode.
 
-    Accepts either a raw S2 paperId (40-hex-char) or a title string.
-    Title strings are resolved via S2 paper search with progressive fallbacks:
-    full title → first 100 chars → first 8 words (S2 BM25 search scores shorter
-    queries more reliably for long titles).
+    Accepts, in priority order:
+      - 40-hex-char S2 paperId
+      - arXiv ID  (e.g. 2312.01234 or arXiv:2312.01234)
+      - DOI       (e.g. 10.1109/TNNLS.2023.x or DOI:10.xxx/yyy)
+      - Free-text title, with progressive fallbacks:
+          full title → first 100 chars → first 8 words
+        (S2 BM25 search degrades on long exact titles)
     Returns None if the paper cannot be found.
     """
     client = get_client()
-    # Heuristic: S2 paperIds are 40-character hex strings
-    looks_like_id = len(paper_id_or_title) == 40 and all(
-        c in "0123456789abcdefABCDEF" for c in paper_id_or_title
-    )
-    if looks_like_id:
-        node = client.get_paper(paper_id_or_title)
+    q = paper_id_or_title.strip()
+
+    # 40-char hex S2 paperId
+    if len(q) == 40 and all(c in "0123456789abcdefABCDEF" for c in q):
+        node = client.get_paper(q)
         if node:
             return node
 
-    # Strategy 1: full title/query
-    results = client.search_paper(paper_id_or_title, limit=3)
+    # arXiv ID  (S2 accepts "arXiv:YYMM.NNNNN")
+    m = _ARXIV_RE.match(q)
+    if m:
+        node = client.get_paper(f"arXiv:{m.group(1)}")
+        if node:
+            return node
+
+    # DOI  (S2 accepts "DOI:10.xxx/yyy")
+    m = _DOI_RE.match(q)
+    if m:
+        node = client.get_paper(f"DOI:{m.group(1)}")
+        if node:
+            return node
+
+    # Title search — three progressively shorter queries
+    results = client.search_paper(q, limit=3)
     if results:
         return results[0]
-
-    # Strategy 2: truncated to first 100 chars (handles S2 BM25 long-query degradation)
-    if len(paper_id_or_title) > 100:
-        results = client.search_paper(paper_id_or_title[:100], limit=3)
+    if len(q) > 100:
+        results = client.search_paper(q[:100], limit=3)
         if results:
             return results[0]
-
-    # Strategy 3: first 8 words (core topic keywords only)
-    words = paper_id_or_title.split()
+    words = q.split()
     if len(words) > 8:
         results = client.search_paper(" ".join(words[:8]), limit=3)
         if results:
