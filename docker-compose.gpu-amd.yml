@@ -45,11 +45,23 @@ services:
       - GPU_TYPE=amd
 
   # Use the ROCm image for init containers so the Ollama CLI version matches the server.
+  # The ollama/ollama:rocm image returns SERVFAIL from Docker's embedded DNS (127.0.0.11)
+  # when resolving service names like "ollama". Bypass Docker DNS entirely by routing
+  # through host.docker.internal (the host gateway), which reaches the Ollama container's
+  # exposed port 11434 without going through the internal resolver.
   model-init:
     image: ollama/ollama:rocm
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434
 
   vision-init:
     image: ollama/ollama:rocm
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434
 
   ollama:
     image: ollama/ollama:rocm    # ROCm-enabled image; replaces ollama/ollama:latest
