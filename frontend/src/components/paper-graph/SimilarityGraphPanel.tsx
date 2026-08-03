@@ -96,7 +96,7 @@ export default function SimilarityGraphPanel() {
       <div className="pg-input-row">
         <input
           type="text"
-          placeholder="S2 ID, arXiv ID (2312.01234), DOI, or title…"
+          placeholder="S2 ID, arXiv ID, DOI, PubMed ID, URL, or title…"
           value={paperInput}
           onChange={(e) => setPaperInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleBuild()}
