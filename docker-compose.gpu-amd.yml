@@ -46,18 +46,19 @@ services:
 
   # Use the ROCm image for init containers so the Ollama CLI version matches the server.
   # The ollama/ollama:rocm image has a DNS incompatibility with Docker's embedded resolver
-  # (127.0.0.11 returns SERVFAIL for service names). Using network_mode: host bypasses
-  # Docker's bridge networking entirely — the container uses the host's network namespace
-  # and reaches the Ollama container via its published port at localhost:11434.
+  # (127.0.0.11 returns SERVFAIL for service names), and Linux's iptables DNAT rules
+  # don't cover loopback traffic so host-mode workarounds also fail.
+  # network_mode: service:ollama shares the Ollama container's network namespace directly —
+  # localhost:11434 IS the Ollama server with no DNS, no routing, and no iptables involved.
   model-init:
     image: ollama/ollama:rocm
-    network_mode: host
+    network_mode: "service:ollama"
     environment:
       - OLLAMA_HOST=http://localhost:11434
 
   vision-init:
     image: ollama/ollama:rocm
-    network_mode: host
+    network_mode: "service:ollama"
     environment:
       - OLLAMA_HOST=http://localhost:11434
 
