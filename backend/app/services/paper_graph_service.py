@@ -83,7 +83,9 @@ def _resolve_paper_id(paper_id_or_title: str) -> Optional[PaperNode]:
     """Resolve a paper_id string to a PaperNode.
 
     Accepts either a raw S2 paperId (40-hex-char) or a title string.
-    Title strings are resolved via S2 paper search; the top result is used.
+    Title strings are resolved via S2 paper search with progressive fallbacks:
+    full title → first 100 chars → first 8 words (S2 BM25 search scores shorter
+    queries more reliably for long titles).
     Returns None if the paper cannot be found.
     """
     client = get_client()
@@ -95,9 +97,26 @@ def _resolve_paper_id(paper_id_or_title: str) -> Optional[PaperNode]:
         node = client.get_paper(paper_id_or_title)
         if node:
             return node
-    # Fall back to title search whether it looks like an ID or not
-    results = client.search_paper(paper_id_or_title, limit=1)
-    return results[0] if results else None
+
+    # Strategy 1: full title/query
+    results = client.search_paper(paper_id_or_title, limit=3)
+    if results:
+        return results[0]
+
+    # Strategy 2: truncated to first 100 chars (handles S2 BM25 long-query degradation)
+    if len(paper_id_or_title) > 100:
+        results = client.search_paper(paper_id_or_title[:100], limit=3)
+        if results:
+            return results[0]
+
+    # Strategy 3: first 8 words (core topic keywords only)
+    words = paper_id_or_title.split()
+    if len(words) > 8:
+        results = client.search_paper(" ".join(words[:8]), limit=3)
+        if results:
+            return results[0]
+
+    return None
 
 
 # ── Feature 1: Similarity Graph ───────────────────────────────────────────────
@@ -125,7 +144,11 @@ def run_similarity_graph(
     cb("resolving", {"step": "Resolving seed paper…"})
     origin = _resolve_paper_id(req.paper_id)
     if origin is None:
-        raise ValueError(f"Paper not found: {req.paper_id!r}")
+        raise ValueError(
+            f"Could not find '{req.paper_id}' on Semantic Scholar. "
+            "Try pasting the Semantic Scholar paper ID directly (the 40-character "
+            "hex string from the paper's URL at semanticscholar.org)."
+        )
 
     cb("fetching_refs", {"step": f"Fetching references and citations for '{origin.title[:60]}'…"})
     origin_refs_list = client.get_references(origin.id)[:_CANDIDATE_CAP]
@@ -219,7 +242,11 @@ def create_collection(req: CreateCollectionRequest) -> CollectionResponse:
             logger.warning("Could not resolve seed paper: %r", paper_id_or_title)
 
     if not seed_nodes:
-        raise ValueError("None of the provided seed papers could be resolved.")
+        raise ValueError(
+            "None of the provided seed papers could be found on Semantic Scholar. "
+            "Try using Semantic Scholar paper IDs (40-character hex strings from "
+            "the paper URLs at semanticscholar.org) instead of titles."
+        )
 
     store = get_store()
     collection = store.create(seed_nodes)
