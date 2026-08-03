@@ -305,7 +305,7 @@ class SemanticScholarClient:
                     self._lru_set(node.id, node)
             return nodes
         except Exception as exc:
-            logger.debug("S2 search_paper failed for '%s': %s", query[:60], exc)
+            logger.warning("S2 search_paper failed for '%s': %s", query[:60], exc)
             return []
 
 
