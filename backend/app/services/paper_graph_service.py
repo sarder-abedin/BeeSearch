@@ -82,8 +82,41 @@ def _graph_to_schema(nodes, edges, partial=False, notice="") -> GraphDataSchema:
 
 # arXiv ID: optional "arXiv:" prefix + YYMM.NNNNN[vN]
 _ARXIV_RE = re.compile(r'^(?:arXiv:)?(\d{4}\.\d{4,5}(?:v\d+)?)$', re.IGNORECASE)
-# DOI: optional "DOI:" prefix + 10.XXXX/anything
+# DOI bare or prefixed: 10.XXXX/anything
 _DOI_RE = re.compile(r'^(?:DOI:)?(10\.\d{4,}/.+)$', re.IGNORECASE)
+# PubMed ID: plain digits or PMID:digits
+_PMID_RE = re.compile(r'^(?:PMID:|pmid:)?(\d{6,9})$')
+
+
+def _extract_id_from_url(url: str) -> Optional[str]:
+    """Extract an S2-compatible identifier from a paper page URL.
+
+    Handles:
+      - arxiv.org/abs/XXXX.XXXXX  → "arXiv:XXXX.XXXXX"
+      - doi.org/10.xxx/yyy        → "DOI:10.xxx/yyy"
+      - pubmed.ncbi.nlm.nih.gov/NNNNNNN → "PMID:NNNNNNN"
+      - URLs with DOI in path (Springer, Science, Wiley, etc.)
+        e.g. link.springer.com/article/10.1007/s00xxx
+             science.org/doi/10.1126/science.xxx
+             onlinelibrary.wiley.com/doi/10.1111/xxx
+    """
+    # arXiv URL
+    m = re.search(r'arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)', url, re.IGNORECASE)
+    if m:
+        return f"arXiv:{m.group(1)}"
+    # doi.org redirect
+    m = re.search(r'(?:dx\.)?doi\.org/(10\.\d{4,}/.+?)(?:[?#\s]|$)', url, re.IGNORECASE)
+    if m:
+        return f"DOI:{m.group(1).rstrip('/')}"
+    # DOI embedded in URL path (Springer, Science, Wiley, F1000Research, …)
+    m = re.search(r'/(?:doi/(?:full/|abs/|10\.|)?|article/)(10\.\d{4,}/[^\s?#]+)', url, re.IGNORECASE)
+    if m:
+        return f"DOI:{m.group(1).rstrip('/')}"
+    # PubMed
+    m = re.search(r'pubmed\.ncbi\.nlm\.nih\.gov/(\d{6,9})', url, re.IGNORECASE)
+    if m:
+        return f"PMID:{m.group(1)}"
+    return None
 
 
 def _resolve_paper_id(paper_id_or_title: str) -> Optional[PaperNode]:
@@ -91,12 +124,20 @@ def _resolve_paper_id(paper_id_or_title: str) -> Optional[PaperNode]:
 
     Accepts, in priority order:
       - 40-hex-char S2 paperId
-      - arXiv ID  (e.g. 2312.01234 or arXiv:2312.01234)
-      - DOI       (e.g. 10.1109/TNNLS.2023.x or DOI:10.xxx/yyy)
+      - arXiv ID      (2312.01234 or arXiv:2312.01234)
+      - DOI           (10.1109/xxx or DOI:10.xxx/yyy)
+      - PubMed ID     (PMID:12345678 or plain 6–9-digit number)
+      - Paper page URL from arxiv.org, doi.org, Springer, Science, Wiley,
+        PubMed — DOI/arXiv ID extracted from URL then looked up via S2
+      - Google Scholar URL — extracts the search query (?q=…) and runs a
+        title search on Semantic Scholar
       - Free-text title, with progressive fallbacks:
           full title → first 100 chars → first 8 words
         (S2 BM25 search degrades on long exact titles)
-    Returns None if the paper cannot be found.
+
+    Note: IEEE Xplore, ScienceDirect, and Springer papers all have DOIs shown
+    on their paper pages ("Cite this article" / "Export citation" sections).
+    Paste the DOI directly (e.g. 10.1109/TNNLS.2023.xxx) or the full DOI URL.
     """
     client = get_client()
     q = paper_id_or_title.strip()
@@ -120,6 +161,34 @@ def _resolve_paper_id(paper_id_or_title: str) -> Optional[PaperNode]:
         node = client.get_paper(f"DOI:{m.group(1)}")
         if node:
             return node
+
+    # PubMed ID  (S2 accepts "PMID:nnnnnnn")
+    m = _PMID_RE.match(q)
+    if m:
+        node = client.get_paper(f"PMID:{m.group(1)}")
+        if node:
+            return node
+
+    # URL from any major publisher — extract arXiv ID, DOI, or PMID from URL
+    if q.startswith(("http://", "https://")):
+        if "scholar.google." in q:
+            # Google Scholar doesn't embed paper IDs in URLs; extract the search query
+            try:
+                from urllib.parse import parse_qs, unquote_plus, urlparse
+                gs_params = parse_qs(urlparse(q).query)
+                gs_title = (gs_params.get("q") or [""])[0]
+                if gs_title:
+                    results = client.search_paper(unquote_plus(gs_title), limit=3)
+                    if results:
+                        return results[0]
+            except Exception:
+                pass
+        else:
+            extracted = _extract_id_from_url(q)
+            if extracted:
+                node = client.get_paper(extracted)
+                if node:
+                    return node
 
     # Title search — three progressively shorter queries
     results = client.search_paper(q, limit=3)
