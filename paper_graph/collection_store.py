@@ -79,10 +79,13 @@ class CollectionStore:
 
 # Module-level singleton — shared across all FastAPI requests in the process
 _store: Optional[CollectionStore] = None
+_store_lock = threading.Lock()
 
 
 def get_store() -> CollectionStore:
     global _store
     if _store is None:
-        _store = CollectionStore()
+        with _store_lock:
+            if _store is None:
+                _store = CollectionStore()
     return _store
