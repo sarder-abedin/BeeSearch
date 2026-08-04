@@ -80,12 +80,16 @@ def _graph_to_schema(nodes, edges, partial=False, notice="") -> GraphDataSchema:
     )
 
 
-# arXiv ID: optional "arXiv:" prefix + YYMM.NNNNN[vN]
-_ARXIV_RE = re.compile(r'^(?:arXiv:)?(\d{4}\.\d{4,5}(?:v\d+)?)$', re.IGNORECASE)
+# arXiv ID: optional "arXiv:" prefix + YYMM.NNNNN[vN] (post-2007)
+#           OR category/YYMMNNN (pre-2007, e.g. hep-th/9901001)
+_ARXIV_RE = re.compile(
+    r'^(?:arXiv:)?(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[A-Z]{2})?/\d{7})$',
+    re.IGNORECASE,
+)
 # DOI bare or prefixed: 10.XXXX/anything
 _DOI_RE = re.compile(r'^(?:DOI:)?(10\.\d{4,}/.+)$', re.IGNORECASE)
-# PubMed ID: plain digits or PMID:digits
-_PMID_RE = re.compile(r'^(?:PMID:|pmid:)?(\d{6,9})$')
+# PubMed ID: with PMID: prefix (any length) OR bare 6–9 digit number
+_PMID_RE = re.compile(r'^(?:PMID:(\d+)|(\d{6,9}))$', re.IGNORECASE)
 
 
 def _extract_id_from_url(url: str) -> Optional[str]:
@@ -100,8 +104,11 @@ def _extract_id_from_url(url: str) -> Optional[str]:
              science.org/doi/10.1126/science.xxx
              onlinelibrary.wiley.com/doi/10.1111/xxx
     """
-    # arXiv URL
-    m = re.search(r'arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)', url, re.IGNORECASE)
+    # arXiv URL (both post-2007 and pre-2007 category/ID format)
+    m = re.search(
+        r'arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[A-Z]{2})?/\d{7})',
+        url, re.IGNORECASE,
+    )
     if m:
         return f"arXiv:{m.group(1)}"
     # doi.org redirect
@@ -113,7 +120,7 @@ def _extract_id_from_url(url: str) -> Optional[str]:
     if m:
         return f"DOI:{m.group(1).rstrip('/')}"
     # PubMed
-    m = re.search(r'pubmed\.ncbi\.nlm\.nih\.gov/(\d{6,9})', url, re.IGNORECASE)
+    m = re.search(r'pubmed\.ncbi\.nlm\.nih\.gov/(\d+)', url, re.IGNORECASE)
     if m:
         return f"PMID:{m.group(1)}"
     return None
@@ -165,20 +172,22 @@ def _resolve_paper_id(paper_id_or_title: str) -> Optional[PaperNode]:
     # PubMed ID  (S2 accepts "PMID:nnnnnnn")
     m = _PMID_RE.match(q)
     if m:
-        node = client.get_paper(f"PMID:{m.group(1)}")
+        pmid = m.group(1) or m.group(2)
+        node = client.get_paper(f"PMID:{pmid}")
         if node:
             return node
 
     # URL from any major publisher — extract arXiv ID, DOI, or PMID from URL
     if q.startswith(("http://", "https://")):
         if "scholar.google." in q:
-            # Google Scholar doesn't embed paper IDs in URLs; extract the search query
+            # Google Scholar doesn't embed paper IDs in URLs; extract the search query.
+            # parse_qs already applies unquote_plus internally, so don't call it again.
             try:
-                from urllib.parse import parse_qs, unquote_plus, urlparse
+                from urllib.parse import parse_qs, urlparse
                 gs_params = parse_qs(urlparse(q).query)
                 gs_title = (gs_params.get("q") or [""])[0]
                 if gs_title:
-                    results = client.search_paper(unquote_plus(gs_title), limit=3)
+                    results = client.search_paper(gs_title, limit=3)
                     if results:
                         return results[0]
             except Exception:
@@ -189,6 +198,8 @@ def _resolve_paper_id(paper_id_or_title: str) -> Optional[PaperNode]:
                 node = client.get_paper(extracted)
                 if node:
                     return node
+        # Don't fall through to title search with a raw URL as the query
+        return None
 
     # Title search — three progressively shorter queries
     results = client.search_paper(q, limit=3)
@@ -233,14 +244,22 @@ def run_similarity_graph(
     origin = _resolve_paper_id(req.paper_id)
     if origin is None:
         raise ValueError(
-            f"Could not find '{req.paper_id}' on Semantic Scholar. "
-            "Try pasting the Semantic Scholar paper ID directly (the 40-character "
-            "hex string from the paper's URL at semanticscholar.org)."
+            f"Paper not found: '{req.paper_id}'. "
+            "Try an arXiv ID (e.g. 2312.01234), a DOI (10.1109/…), a publisher page URL, "
+            "or paste the 40-character Semantic Scholar paper ID from semanticscholar.org."
         )
 
     cb("fetching_refs", {"step": f"Fetching references and citations for '{origin.title[:60]}'…"})
     origin_refs_list = client.get_references(origin.id)[:_CANDIDATE_CAP]
     origin_citers_list = client.get_citations(origin.id)[:_CANDIDATE_CAP]
+
+    # Set partial flag immediately if either list hit the cap (may have dropped entries)
+    if len(origin_refs_list) == _CANDIDATE_CAP or len(origin_citers_list) == _CANDIDATE_CAP:
+        partial = True
+        notices.append(
+            f"Candidate pool capped at {_CANDIDATE_CAP} references and "
+            f"{_CANDIDATE_CAP} citations; some related papers may not appear."
+        )
 
     # Candidate pool = union of references + citers (excluding origin itself)
     candidate_ids = list(
@@ -267,21 +286,17 @@ def run_similarity_graph(
         cid_refs = client.get_references(cid)
         refs_index[cid] = frozenset(cid_refs)
 
-    # Build citing_index from the union of all candidates' citation lists
-    # (who cites each paper in our pool).  We approximate: the origin's own
-    # citers are already in origin_citers_list; for candidates we check
-    # intersection of origin_refs_list citers.
+    # Build citing_index: who cites each paper in our pool.
+    # origin → its actual citers (already fetched).
+    # candidate → which other candidates cite it (proxy for "papers citing cid").
+    # For higher fidelity with a partner key, replace the candidate loop with:
+    #   citing_index[cid] = frozenset(client.get_citations(cid))
     citing_index: Dict[str, FrozenSet[str]] = {
         origin.id: frozenset(origin_citers_list),
     }
     for cid in candidate_ids:
-        # Papers that cite cid are expensive to fetch per-candidate under the
-        # free rate limit.  Approximate: any candidate that cites origin also
-        # co-cites another candidate citing origin = use candidate_ids as proxy.
-        # For higher fidelity with a partner key, replace with:
-        #   citing_index[cid] = frozenset(client.get_citations(cid))
         citing_index[cid] = frozenset(
-            c for c in origin_citers_list if c in refs_index.get(cid, frozenset())
+            c for c in candidate_ids if cid in refs_index.get(c, frozenset())
         )
 
     scored = rank_candidates(
@@ -293,13 +308,6 @@ def run_similarity_graph(
         bc_weight=req.bc_weight,
         cc_weight=req.cc_weight,
     )
-
-    if len(candidate_ids) > req.top_n * 3:
-        partial = True
-        notices.append(
-            f"Candidate pool capped at {_CANDIDATE_CAP} references and "
-            f"{_CANDIDATE_CAP} citations; some related papers may not appear."
-        )
 
     cb("fetching_metadata", {"step": f"Fetching metadata for top {len(scored)} papers…"})
     top_ids = [pid for pid, _ in scored]
@@ -397,38 +405,17 @@ def expand_collection(
             new_edges.append(GraphEdge(source=node_id, target=n.id, weight=1.0, edge_type="recommendation"))
 
     elif relationship == "authors":
-        # Fetch the focal paper to get its author list, then pull each author's papers
-        focal = client.get_paper(node_id)
-        if focal:
-            # S2 author lookup requires the raw author object with an authorId field
-            # We re-fetch with author fields to get authorIds
-            try:
-                import requests as _req
-                from config.settings import get_settings as _cfg
-                _s = _cfg()
-                headers = {"User-Agent": "BeeSearch/1.0"}
-                if _s.semantic_scholar_api_key:
-                    headers["x-api-key"] = _s.semantic_scholar_api_key
-                r = _req.get(
-                    f"https://api.semanticscholar.org/graph/v1/paper/{node_id}",
-                    params={"fields": "authors"},
-                    headers=headers,
-                    timeout=15,
-                )
-                r.raise_for_status()
-                authors_data = r.json().get("authors", [])
-                for author in authors_data[:3]:  # cap to 3 authors to stay within rate limit
-                    author_id = author.get("authorId")
-                    if author_id:
-                        author_papers = client.get_author_papers(author_id)
-                        for n in author_papers[:15]:
-                            if n.id != node_id:
-                                new_nodes.append(n)
-                                new_edges.append(
-                                    GraphEdge(source=node_id, target=n.id, weight=1.0, edge_type="co_author")
-                                )
-            except Exception as exc:
-                logger.warning("Author papers fetch failed: %s", exc)
+        # Re-fetch the paper with author IDs (get_paper only retrieves author names),
+        # then pull each author's papers via the client (includes retry/backoff).
+        author_ids = client.get_paper_author_ids(node_id)
+        for author_id in author_ids[:3]:  # cap to 3 authors to stay within rate limit
+            author_papers = client.get_author_papers(author_id)
+            for n in author_papers[:15]:
+                if n.id != node_id:
+                    new_nodes.append(n)
+                    new_edges.append(
+                        GraphEdge(source=node_id, target=n.id, weight=1.0, edge_type="co_author")
+                    )
 
     cb("merging", {"step": "Merging into collection…"})
     updated = store.add_papers(collection_id, new_nodes, new_edges)

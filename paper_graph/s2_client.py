@@ -71,6 +71,7 @@ class PaperGraphDataSource(Protocol):
     def get_citations(self, paper_id: str) -> List[str]: ...
     def batch_get_papers(self, ids: List[str]) -> List[PaperNode]: ...
     def get_recommendations(self, paper_ids: List[str]) -> List[PaperNode]: ...
+    def get_paper_author_ids(self, paper_id: str) -> List[str]: ...
     def get_author_papers(self, author_id: str) -> List[PaperNode]: ...
     def search_paper(self, query: str, limit: int = 1) -> List[PaperNode]: ...
 
@@ -99,10 +100,9 @@ class SemanticScholarClient:
     def __init__(self) -> None:
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": "BeeSearch/1.0"})
-        # Partner API key: unlocks higher rate limits (~1 000 req/min vs ~100/5 min)
-        # Insert key here for production use; leave empty for free-tier access.
         if cfg.semantic_scholar_api_key:
             self._session.headers["x-api-key"] = cfg.semantic_scholar_api_key
+        self._meta_cache: Dict[str, PaperNode] = {}
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -154,7 +154,10 @@ class SemanticScholarClient:
                 f"{_S2_GRAPH}/paper/{paper_id}",
                 params={"fields": _PAPER_FIELDS},
             )
-            return self._parse_paper(resp.json())
+            node = self._parse_paper(resp.json())
+            if node:
+                self._lru_set(node.id, node)
+            return node
         except Exception as exc:
             logger.debug("S2 get_paper failed for %s: %s", paper_id, exc)
             return None
@@ -200,10 +203,8 @@ class SemanticScholarClient:
         Papers already cached by get_paper() are returned without an API call.
         """
         results: List[PaperNode] = []
-        # Pull from lru_cache for IDs already fetched
         uncached = []
         for pid in ids:
-            cached = self.get_paper.cache_info  # just to confirm cache exists
             node = self._lru_get(pid)
             if node is not None:
                 results.append(node)
@@ -241,8 +242,21 @@ class SemanticScholarClient:
     def _lru_set(self, paper_id: str, node: PaperNode) -> None:
         self._meta_cache[paper_id] = node
 
-    # Backing dict for batch-populated entries (avoids lru_cache coupling)
-    _meta_cache: Dict[str, PaperNode] = {}
+    def get_paper_author_ids(self, paper_id: str) -> List[str]:
+        """Fetch S2 authorIds for a paper (separate call; get_paper only returns names)."""
+        try:
+            resp = self._get(
+                f"{_S2_GRAPH}/paper/{paper_id}",
+                params={"fields": "authors"},
+            )
+            return [
+                a.get("authorId")
+                for a in resp.json().get("authors", [])
+                if a.get("authorId")
+            ]
+        except Exception as exc:
+            logger.warning("S2 get_paper_author_ids failed for %s: %s", paper_id, exc)
+            return []
 
     def get_recommendations(self, paper_ids: List[str]) -> List[PaperNode]:
         """Call S2 Recommendations API using collection papers as positive examples.
@@ -305,7 +319,7 @@ class SemanticScholarClient:
                     self._lru_set(node.id, node)
             return nodes
         except Exception as exc:
-            logger.warning("S2 search_paper failed for '%s': %s", query[:60], exc)
+            logger.debug("S2 search_paper failed for '%s': %s", query[:60], exc)
             return []
 
 

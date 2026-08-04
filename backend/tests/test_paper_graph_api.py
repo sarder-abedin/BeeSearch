@@ -80,6 +80,9 @@ class _MockClient:
     def get_recommendations(self, paper_ids: List[str]) -> List[PaperNode]:
         return [_PAPER_C]
 
+    def get_paper_author_ids(self, paper_id: str) -> List[str]:
+        return ["author_1"]
+
     def get_author_papers(self, author_id: str) -> List[PaperNode]:
         return [_PAPER_B]
 
