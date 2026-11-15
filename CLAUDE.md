@@ -87,6 +87,18 @@ test needs a package not in `requirements-ci.txt`, CI fails with
 errors remain in `ReviewerPanel.tsx` and `SettingsContext.tsx`; fix those and
 the flag can be dropped to make lint a real gate. Playwright E2E is not in CI.
 
+**Secrets.** `scripts/scan-secrets.sh` runs as a blocking CI job and can be run
+locally. Four live Langfuse API keys were once committed to this **public** repo
+(in `.env.example` and `config/settings.py`) and remain in its git history —
+deleting a secret from the tree does not un-publish it, so a leaked key must be
+revoked with the provider, not just removed. The scanner only reads **tracked**
+files, so a developer's real `.env` (gitignored) is never scanned, and its
+patterns require a real key's shape so `.env.example`/README placeholders like
+`pk-lf-your-key-here` stay allowed. `--self-test` asserts every pattern still
+fires on a realistic key and ignores the placeholders; CI runs it before the
+scan, because a guard that silently matches nothing is worse than none. Real
+secrets belong in `.env` only, with a placeholder in `.env.example`.
+
 `rich` may not be installed in some sandboxes even though it's in `requirements.txt`. If
 so, `py_compile` is enough for a syntax check; to exercise `main.py`'s argparse logic,
 stub `sys.modules["rich"]` (and submodules) with `MagicMock()` before importing `main`.
